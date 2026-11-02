@@ -6,7 +6,7 @@ from pdfmapper import ocr, template as tpl
 from pdfmapper.document import Document, Glyph, group_lines, is_garbled, line_text
 from pdfmapper.excel import write_excel
 from pdfmapper.extract import read_box, shape_value
-from pdfmapper.parser import parse_pdf
+from pdfmapper.parser import parse_best, parse_pdf
 
 CLEAN = ["sample_1_standard.pdf", "sample_2_shifted.pdf", "sample_3_hidden_labels.pdf", "sample_4_scanned.pdf"]
 FIELD_MAP = {"declaration_no": "no", "tax_id": "tax_id", "fob_amount": "fob", "tax_total": "tax_total"}
@@ -87,7 +87,7 @@ def test_excel_output(samples, template, tmp_path):
     results = [parse_pdf(folder / name, template) for name in ("sample_1_standard.pdf", "sample_5_errors.pdf")]
     path = write_excel(results, tmp_path / "out.xlsx")
     book = load_workbook(path)
-    assert book.sheetnames == ["待檢查", "欄位資料", "貨物明細"]
+    assert book.sheetnames == ["待檢查", "檔案總覽", "欄位資料", "貨物明細"]
     assert book["欄位資料"].max_row == 3
     assert book["欄位資料"]["A2"].value == "sample_1_standard.pdf"
     assert any(row[0].value == "sample_5_errors.pdf" for row in book["待檢查"].iter_rows(min_row=2))
@@ -105,6 +105,59 @@ def test_detection_survives_single_line_mode(samples):
     blank_with_rule[30, :] = 0
     ocr.read(blank_with_rule)
     assert ocr.read(crop)[0][0] == expected
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("sample_1_standard.pdf", "customs_demo"),
+    ("sample_4_scanned.pdf", "customs_demo"),
+    ("sample_6_invoice.pdf", "invoice_demo"),
+])
+def test_best_template_is_chosen_in_any_order(samples, template, invoice_template, name, expected):
+    folder, _ = samples
+    for order in ([template, invoice_template], [invoice_template, template]):
+        result = parse_best(folder / name, order)
+        assert result["template_id"] == expected
+        assert result["selection"]["candidates"][0]["id"] == expected
+        assert result["match"] >= 0.9
+
+
+def test_single_template_is_not_auto_selected(samples, template):
+    folder, _ = samples
+    result = parse_best(folder / "sample_1_standard.pdf", [template])
+    assert "selection" not in result
+
+
+def test_no_matching_template_is_flagged(samples, invoice_template):
+    folder, _ = samples
+    other = {**invoice_template, "template_id": "other"}
+    result = parse_best(folder / "sample_1_standard.pdf", [invoice_template, other])
+    assert result["status"] != "ok"
+    assert "no_template_match" in {issue["code"] for issue in result["issues"]}
+
+
+def test_close_templates_are_flagged(samples, template):
+    folder, _ = samples
+    twin = {**template, "template_id": "twin", "name": "雙胞胎"}
+    result = parse_best(folder / "sample_1_standard.pdf", [template, twin])
+    assert "ambiguous_template" in {issue["code"] for issue in result["issues"]}
+
+
+def test_excel_keeps_templates_apart(samples, template, invoice_template, tmp_path):
+    from openpyxl import load_workbook
+
+    folder, _ = samples
+    pair = [template, invoice_template]
+    results = [parse_best(folder / name, pair) for name in ("sample_1_standard.pdf", "sample_6_invoice.pdf")]
+    book = load_workbook(write_excel(results, tmp_path / "out.xlsx"))
+    assert "欄位_進口報單（示範）" in book.sheetnames
+    invoice = book["欄位_商業發票（示範）"]
+    headers = [cell.value for cell in invoice[1]]
+    assert "發票號碼" in headers and "報單號碼" not in headers
+    assert invoice["C2"].value == "商業發票（示範）"
+    assert invoice.cell(row=2, column=headers.index("發票號碼") + 1).value == "INV-2023-0042"
+    assert len(list(book["商業發票（示範）_品項明細"].iter_rows(min_row=2))) == 2
+    overview = book["檔案總覽"]
+    assert overview["B3"].value == "商業發票（示範）" and overview["D3"].value == "自動"
 
 
 def test_garbled_detection():

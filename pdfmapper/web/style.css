@@ -127,7 +127,25 @@ button { cursor: pointer; }
   background: none; border: 0; border-bottom: 1px solid var(--rule);
 }
 .docs li button:hover, .items li > button:hover { background: #fff; }
-.docs li[aria-current="true"] button, .items li[aria-current="true"] > button { background: #fff; box-shadow: inset 3px 0 0 var(--green); }
+.docs li[aria-current="true"] > button.doc-open, .items li[aria-current="true"] > button { background: #fff; box-shadow: inset 3px 0 0 var(--green); }
+.docs li { position: relative; }
+.docs li > button.doc-open { padding-right: 34px; }
+.docs li > button.doc-remove {
+  position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; padding: 0;
+  background: none; border: 0; text-align: center; color: var(--ink-soft); font-size: 16px; line-height: 1;
+}
+.docs li > button.doc-remove:hover:not(:disabled) { background: var(--seal-soft); color: var(--seal); }
+.docs li > button.doc-remove:disabled { color: var(--rule); cursor: default; }
+.docs li > button.doc-reference {
+  padding: 0 8px 6px; color: var(--green); font-size: 12.5px; text-decoration: underline;
+}
+.docs li:has(.doc-reference) > button.doc-open { border-bottom: 0; }
+.list-actions { display: flex; gap: 12px; justify-content: space-between; margin-top: 6px; }
+.template-picks { list-style: none; margin: 0; padding: 0; }
+.template-picks label { display: flex; align-items: flex-start; gap: 6px; padding: 4px 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.template-picks input { margin-top: 4px; }
+.picked-template { padding: 7px 9px; background: #fff; border-left: 3px solid var(--green); font-size: 13.5px; }
+.picked-template small { display: block; color: var(--ink-soft); font-size: 12px; }
 .docs .name { display: block; overflow-wrap: anywhere; font-size: 13px; }
 .docs .meta { display: block; font-size: 12px; color: var(--ink-soft); }
 .meta.warn { color: var(--review); }

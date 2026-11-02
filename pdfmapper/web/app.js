@@ -51,9 +51,8 @@ const state = {
   testing: false,
   read: null,          // 選取欄位的即時預覽
   templates: [],
-  templateId: "",
+  templateIds: [],     // 解析時選用的範本
   run: null,           // {id, total, done, current, results, finished}
-  fileIndex: 0,
   focusRef: null,
   showAllValues: false,
   drawerOpen: false,
@@ -398,7 +397,7 @@ function tableBox(table, region) {
   return node;
 }
 function activeResult() {
-  if (state.view === "run") return state.run?.results[state.fileIndex] || null;
+  if (state.view === "run") return state.run?.results.find((r) => r.doc_id === state.docId) || null;
   if (isReference() && !state.tests.length) return null;
   return state.tests.find((r) => r.doc_id === state.docId) || null;
 }
@@ -521,10 +520,90 @@ function renderHint() {
 }
 
 /* ---------- 左欄 ---------- */
-function docRow(doc, meta, metaClass, onClick) {
+function docRow(doc, meta, metaClass, onClick, extra) {
+  const running = state.run && !state.run.finished;
   return h("li", { "aria-current": String(doc.id === state.docId) },
-    h("button", { onclick: onClick }, h("span", { class: "name" }, doc.name),
-      h("span", { class: `meta ${metaClass}` }, meta)));
+    h("button", { class: "doc-open", onclick: onClick }, h("span", { class: "name" }, doc.name),
+      h("span", { class: `meta ${metaClass}` }, meta)),
+    h("button", {
+      class: "doc-remove", title: "移除這份 PDF", "aria-label": `移除 ${doc.name}`,
+      disabled: running, onclick: () => removeDoc(doc.id),
+    }, "×"),
+    extra);
+}
+const hasDefinitions = () => T().fields.length + T().tables.length + T().anchors.length > 0;
+function forgetReferenceImages() {
+  // 影像圖塊來自舊基準，改基準後要重新擷取
+  const targets = [...T().anchors, ...T().fields.map((f) => f.label).filter(Boolean)];
+  for (const item of targets) { delete item.patch; delete item.text_center; }
+}
+function setReference(id) {
+  if (id === state.referenceId) return;
+  if (hasDefinitions() && !window.confirm(
+    "改用這份當基準範例？已標注的框線不會自動移動，請逐一確認位置。定位點會改用這份的影像比對。")) return;
+  snapshot();
+  state.referenceId = id;
+  forgetReferenceImages();
+  state.tests = [];
+  state.docId = id;
+  state.page = 0;
+  state.selected = null;
+  state.pending = null;
+  saveDraft();
+  renderAll();
+}
+const removeDoc = guard(async (id) => {
+  const train = state.view === "train";
+  const list = train ? state.docs : state.runDocs;
+  const others = list.filter((d) => d.id !== id);
+  if (train && id === state.referenceId && hasDefinitions() && others.length && !window.confirm(
+    `移除基準範例後，會改用「${others[0].name}」當基準。已標注的框線不會自動移動，要繼續嗎？`)) return;
+  await api(`/api/docs/${id}`, { method: "DELETE" });
+  if (train) {
+    state.docs = others;
+    state.tests = state.tests.filter((r) => r.doc_id !== id);
+    if (id === state.referenceId) {
+      state.referenceId = others[0]?.id || null;
+      if (others.length) { forgetReferenceImages(); state.tests = []; saveDraft(); }
+      state.selected = null;
+      state.pending = null;
+    }
+  } else {
+    state.runDocs = others;
+    if (state.run) state.run.results = state.run.results.filter((r) => r.doc_id !== id);
+    state.focusRef = null;
+  }
+  if (state.docId === id) { state.docId = others[0]?.id || null; state.page = 0; }
+  renderAll();
+});
+const removeAllDocs = guard(async () => {
+  const train = state.view === "train";
+  const list = train ? state.docs : state.runDocs;
+  const lost = !train && hasUnsavedResults();
+  if (!window.confirm(lost ? "全部移除？尚未匯出的解析結果也會一起清除。" : `移除全部 ${list.length} 份 PDF？範本不受影響。`)) return;
+  for (const doc of list) await api(`/api/docs/${doc.id}`, { method: "DELETE" });
+  if (train) {
+    state.docs = [];
+    state.referenceId = null;
+    state.tests = [];
+    state.selected = null;
+    state.pending = null;
+  } else {
+    state.runDocs = [];
+    state.run = null;
+    state.focusRef = null;
+  }
+  state.docId = null;
+  state.page = 0;
+  state.drawerOpen = false;
+  renderAll();
+});
+function listActions(count) {
+  return h("div", { class: "list-actions" },
+    h("button", { class: "linkish", onclick: () => $("filePicker").click() }, "再加入 PDF"),
+    h("button", {
+      class: "linkish", disabled: !count || (state.run && !state.run.finished), onclick: removeAllDocs,
+    }, "全部移除"));
 }
 function thumbs() {
   const doc = currentDoc();
@@ -553,7 +632,9 @@ function renderLeftTrain() {
       meta = pending ? `${meta}，${pending} 項待檢查` : `${meta}，全部通過`;
       cls = pending ? "warn" : "good";
     }
-    return docRow(doc, meta, cls, () => openDoc(doc.id));
+    const makeReference = doc.id === state.referenceId ? null
+      : h("button", { class: "doc-reference", onclick: () => setReference(doc.id) }, "設為基準範例");
+    return docRow(doc, meta, cls, () => openDoc(doc.id), makeReference);
   });
   fill($("left"), 
     h("h2", {}, "範本名稱"),
@@ -562,8 +643,8 @@ function renderLeftTrain() {
       oninput: (e) => { T().name = e.target.value; T().template_id = e.target.value.trim().replace(/[^\p{L}\p{N}_-]+/gu, "_"); saveDraft(); renderRightActions(); },
     }),
     h("h2", {}, "範例 PDF"),
-    h("ul", { class: "docs" }, list),
-    h("button", { class: "drop", onclick: () => $("filePicker").click() }, "加入 PDF"),
+    list.length ? [h("ul", { class: "docs" }, list), listActions(list.length)]
+      : h("button", { class: "drop", onclick: () => $("filePicker").click() }, "加入 PDF"),
     h("h2", {}, "開啟已存的範本"),
     h("select", { "aria-label": "開啟已存的範本", onchange: (e) => openTemplate(e.target.value) },
       h("option", { value: "" }, "選擇範本"),
@@ -579,37 +660,46 @@ const openTemplate = guard(async (id) => {
   toast(state.docs.length ? "範本已開啟" : "範本已開啟，請加入基準範例 PDF 才能看到框線");
   renderAll();
 });
+function togglePick(id, checked) {
+  state.templateIds = checked ? [...state.templateIds, id] : state.templateIds.filter((t) => t !== id);
+  renderLeft();
+}
 function renderLeftRun() {
   const results = state.run?.results || [];
-  const list = state.runDocs.map((doc, i) => {
+  const list = state.runDocs.map((doc) => {
     const result = results.find((r) => r.doc_id === doc.id);
     let meta = `${doc.pages} 頁`;
     let cls = "";
     if (result) {
       const pending = result.counts.review + result.counts.missing + result.issues.length;
+      const used = result.template_name ? `${result.template_name}，` : "";
       if (result.status === "failed") { meta = "解析失敗"; cls = "bad"; }
-      else if (pending) { meta = `${pending} 項待檢查`; cls = "warn"; }
-      else { meta = "全部正常"; cls = "good"; }
+      else if (pending) { meta = `${used}${pending} 項待檢查`; cls = "warn"; }
+      else { meta = `${used}全部正常`; cls = "good"; }
     }
     return docRow(doc, meta, cls, () => {
       state.docId = doc.id; state.page = 0;
-      state.fileIndex = Math.max(0, results.findIndex((r) => r.doc_id === doc.id));
       state.focusRef = null;
       renderAll();
     });
   });
   const running = state.run && !state.run.finished;
-  fill($("left"), 
+  const picks = state.templates.map((t) => h("li", {}, h("label", {},
+    h("input", {
+      type: "checkbox", checked: state.templateIds.includes(t.id),
+      onchange: (e) => togglePick(t.id, e.target.checked),
+    }), t.name)));
+  fill($("left"),
     h("h2", {}, "使用範本"),
-    h("select", { "aria-label": "使用範本", onchange: (e) => { state.templateId = e.target.value; renderLeft(); } },
-      h("option", { value: "" }, "選擇範本"),
-      state.templates.map((t) => h("option", { value: t.id, selected: t.id === state.templateId }, t.name))),
+    picks.length ? h("ul", { class: "template-picks" }, picks)
+      : h("p", { class: "note" }, "還沒有範本，請先到「建立範本」。"),
+    state.templates.length > 1 ? h("p", { class: "note" }, "可以複選。選多個時，每份 PDF 會自動用最符合的範本。") : null,
     h("h2", {}, "要解析的 PDF"),
-    h("ul", { class: "docs" }, list),
-    h("button", { class: "drop", onclick: () => $("filePicker").click() }, "加入 PDF"),
+    list.length ? [h("ul", { class: "docs" }, list), listActions(list.length)]
+      : h("button", { class: "drop", onclick: () => $("filePicker").click() }, "加入 PDF"),
     h("div", { style: "margin-top:12px" },
       h("button", {
-        class: "btn primary wide", disabled: !state.templateId || !state.runDocs.length || running,
+        class: "btn primary wide", disabled: !state.templateIds.length || !state.runDocs.length || running,
         onclick: startRun,
       }, running ? "解析中" : "開始解析")),
     running ? [h("div", { class: "progress" }, h("div", { style: `width:${state.run.done / state.run.total * 100}%` })),
@@ -887,7 +977,7 @@ const testTemplate = guard(async () => {
 const saveTemplate = guard(async () => {
   await api("/api/templates", { json: { template: T(), reference: state.referenceId } });
   await loadTemplates();
-  state.templateId = T().template_id;
+  if (!state.templateIds.includes(T().template_id)) state.templateIds.push(T().template_id);
   toast(`範本「${T().name}」已儲存`);
   renderLeft();
 });
@@ -905,14 +995,21 @@ function focusValue(ref) {
   document.querySelector(".box.focus")?.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
 }
 const editValue = guard(async (ref, action, value) => {
+  const index = state.run.results.findIndex((r) => r.doc_id === state.docId);
   const result = await api(`/api/runs/${state.run.id}/edit`, {
-    json: { file_index: state.fileIndex, ref, action, value },
+    json: { file_index: index, ref, action, value },
   });
-  result.doc_id = state.run.results[state.fileIndex].doc_id;
   state.run.exported = false;
-  state.run.results[state.fileIndex] = result;
+  state.run.results[index] = result;
   renderLeft(); renderRight(); renderOverlay(); renderDrawer();
 });
+function templateNote(result) {
+  const match = result.match === null || result.match === undefined ? "" : `，符合 ${Math.round(result.match * 100)}%`;
+  const candidates = result.selection?.candidates || [];
+  return h("div", { class: "picked-template" },
+    `${candidates.length ? "自動選用" : "使用範本"}：${result.template_name}${match}`,
+    candidates.length ? h("small", {}, candidates.map((c) => `${c.name} ${Math.round(c.match * 100)}%`).join("，")) : null);
+}
 function renderRightRun() {
   const result = activeResult();
   if (!result) {
@@ -933,6 +1030,7 @@ function renderRightRun() {
   fill($("right"), 
     h("h2", {}, `${result.file}`),
     h("p", { class: "note" }, `${result.pages} 頁，${result.counts.total} 個值。`),
+    templateNote(result),
     result.issues.map((issue) => h("div", { class: "issue" }, issue.page ? `第 ${issue.page} 頁：${issue.message}` : issue.message)),
     h("h2", {}, `待檢查 ${pending.length} 項`),
     items.length ? items : h("p", { class: "note" }, "這份沒有需要檢查的值。"),
@@ -973,9 +1071,8 @@ function renderDrawer() {
 /* ---------- 解析流程 ---------- */
 const startRun = guard(async () => {
   const docs = state.runDocs.map((d) => d.id);
-  const { run_id: id } = await api("/api/runs", { json: { template_id: state.templateId, docs } });
+  const { run_id: id } = await api("/api/runs", { json: { template_ids: state.templateIds, docs } });
   state.run = { id, total: docs.length, done: 0, current: "", results: [], finished: false };
-  state.fileIndex = 0;
   state.drawerOpen = true;
   renderLeft();
   while (!state.run.finished) {

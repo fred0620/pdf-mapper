@@ -270,7 +270,59 @@ def build_all(folder: Path, font_path=None) -> dict[str, dict]:
         item["no"] = str(i + 1 if i < 4 else i + 2)
     write_pdf(folder / "sample_5_errors.pdf", broken, font_path)
     docs["sample_5_errors.pdf"] = broken
+    write_invoice(folder / "sample_6_invoice.pdf", font_path)
     return docs
+
+
+def write_invoice(path, font_path=None):
+    """另一種版面的虛構單據，用來示範多範本自動選擇。"""
+    sheet = Sheet(font_path)
+    sheet.label("商業發票", 0.08, 0.05, sheet.big)
+    for y in (0.16, 0.22, 0.28, 0.40, 0.46):
+        sheet.line(0.08, y, 0.92, y)
+    for text, x, y in (("發票號碼", 0.1, 0.175), ("開立日期", 0.1, 0.235), ("品項", 0.1, 0.415),
+                       ("數量", 0.6, 0.415), ("金額", 0.78, 0.415), ("總金額", 0.6, 0.86)):
+        sheet.label(text, x, y)
+    buffer = io.BytesIO()
+    sheet.image.save(buffer, "JPEG", quality=85)
+    buffer.seek(0)
+    out = canvas.Canvas(str(path), pagesize=(W, H))
+    out.drawImage(ImageReader(buffer), 0, 0, W, H)
+    out.setFont(MONO, 10)
+    rows = [("1", "A-100", "2", "1,200"), ("2", "B-200", "5", "3,500")]
+    values = [("INV-2023-0042", 0.3, 0.188), ("2023/04/14", 0.3, 0.248), ("4,700", 0.78, 0.873)]
+    for i, (no, name, qty, amount) in enumerate(rows):
+        y = 0.49 + i * 0.04
+        values += [(no, 0.1, y), (name, 0.2, y), (qty, 0.6, y), (amount, 0.78, y)]
+    for text, x, y in values:
+        out.drawString(x * W, H - y * H - 3, text)
+    out.showPage()
+    out.save()
+
+
+def build_invoice_template() -> dict:
+    """欄位與表格代號刻意和報單範本相同，用來確認輸出不會混欄。"""
+    def field(fid, name, label_box, box, **kw):
+        return {"id": fid, "name": name, "kind": "key_value", "page_rule": "first", "ref_page": 0,
+                "label": {"text": name, "box": label_box}, "value_box": box, "required": True} | kw
+    dividers = [0.08, 0.18, 0.58, 0.76, 0.92]
+    return {
+        "schema_version": 1, "template_id": "invoice_demo", "name": "商業發票（示範）",
+        "fields": [
+            field("declaration_no", "發票號碼", [0.1, 0.173, 0.2, 0.196], [0.28, 0.17, 0.9, 0.21]),
+            field("tax_id", "開立日期", [0.1, 0.233, 0.2, 0.256], [0.28, 0.23, 0.9, 0.27], type="date"),
+            field("tax_total", "總金額", [0.6, 0.858, 0.68, 0.881], [0.76, 0.855, 0.92, 0.89], type="number"),
+        ],
+        "anchors": [{"id": "title", "text": "商業發票", "box": [0.08, 0.05, 0.34, 0.11],
+                     "page_rule": "first", "ref_page": 0}],
+        "tables": [{
+            "id": "items", "name": "品項明細", "key_column": "no", "key_position": "middle", "required": True,
+            "columns": [{"id": "no", "name": "序號", "band": 0}, {"id": "name", "name": "品項", "band": 1},
+                        {"id": "qty", "name": "數量", "band": 2}, {"id": "amount", "name": "金額", "band": 3}],
+            "regions": [{"page_rule": "first", "ref_page": 0, "box": [0.08, 0.47, 0.92, 0.8], "dividers": dividers}],
+        }],
+        "validations": [{"type": "sum_column", "table": "items", "column": "amount", "equals": "tax_total", "tolerance": 1}],
+    }
 
 
 def build_template() -> dict:

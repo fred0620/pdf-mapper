@@ -15,7 +15,7 @@ from pathlib import Path
 def _command_run(args) -> int:
     from . import postprocess, template as tpl
     from .excel import write_excel
-    from .parser import choose_template, parse_pdf
+    from .parser import parse_best
 
     source = Path(args.template)
     templates = ([tpl.load(p) for p in sorted(source.glob("*.json"))] if source.is_dir() else [tpl.load(source)])
@@ -26,14 +26,10 @@ def _command_run(args) -> int:
         return 2
     results = []
     for index, path in enumerate(files, start=1):
-        chosen = templates[0] if len(templates) == 1 else choose_template(path, templates)
-        if chosen is None:
-            print(f"[{index}/{len(files)}] {path.name}：沒有適用的範本")
-            continue
-        result = parse_pdf(path, chosen, use_ocr=not args.no_ocr)
+        result = parse_best(path, templates, use_ocr=not args.no_ocr)
         results.append(result)
         counts = result["counts"]
-        print(f"[{index}/{len(files)}] {path.name}：{result['status']}，"
+        print(f"[{index}/{len(files)}] {path.name}：{result['template_name']}，{result['status']}，"
               f"需檢查 {counts['review']}，缺值 {counts['missing']}")
     results = postprocess.apply(results, args.post)
     output = write_excel(results, args.output)
@@ -70,7 +66,7 @@ def main() -> int:
     parser.add_argument("--no-browser", action="store_true")
     commands = parser.add_subparsers(dest="command")
     run = commands.add_parser("run", help="批次解析")
-    run.add_argument("-t", "--template", required=True, help="範本 JSON，或放範本的資料夾（自動判斷）")
+    run.add_argument("-t", "--template", required=True, help="範本 JSON，或放範本的資料夾（每份自動挑最符合的）")
     run.add_argument("-i", "--input", required=True, help="PDF 或資料夾")
     run.add_argument("-o", "--output", default="output/解析結果.xlsx")
     run.add_argument("--json", help="同時輸出完整結果 JSON")

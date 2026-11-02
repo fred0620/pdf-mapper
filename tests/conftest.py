@@ -24,3 +24,11 @@ def template(samples):
     data = make_samples.build_template()
     with Document(folder / "sample_1_standard.pdf") as reference:
         return tpl.finalize(data, reference)
+
+
+@pytest.fixture(scope="session")
+def invoice_template(samples):
+    folder, _docs = samples
+    data = make_samples.build_invoice_template()
+    with Document(folder / "sample_6_invoice.pdf") as reference:
+        return tpl.finalize(data, reference)

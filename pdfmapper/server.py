@@ -22,7 +22,7 @@ from . import template as tpl
 from .document import Document
 from .excel import write_excel
 from .extract import REASONS, read_box
-from .parser import find_value, parse_pdf, summarize
+from .parser import find_value, parse_best, parse_pdf, summarize
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = Path(__file__).resolve().parent / "web"
@@ -153,6 +153,21 @@ def upload():
     return jsonify({"docs": added, "failed": failed})
 
 
+@app.delete("/api/docs/<doc_id>")
+def remove_doc(doc_id):
+    if _busy():
+        return _error("解析進行中，完成後才能移除檔案", 409)
+    path = _doc_path(doc_id)
+    with _docs_lock:
+        doc = _docs.pop(doc_id, None)
+        if doc:
+            doc.close()
+    path.unlink(missing_ok=True)
+    for run in _runs.values():
+        run["results"] = [r for r in run["results"] if r.get("doc_id") != doc_id]
+    return jsonify({"removed": doc_id})
+
+
 @app.get("/api/docs/<doc_id>/page/<int:index>.png")
 def page_image(doc_id, index):
     dpi = min(int(request.args.get("dpi", PREVIEW_DPI)), 220)
@@ -224,13 +239,13 @@ def save_template():
     return jsonify({"saved": str(path)})
 
 
-def _run_job(run_id: str, template: dict, docs: list[str]) -> None:
+def _run_job(run_id: str, templates: list[dict], docs: list[str]) -> None:
     run = _runs[run_id]
     for doc_id in docs:
         path = _doc_path(doc_id)
         name = path.name.split("__", 1)[-1]
         run["current"] = name
-        result = parse_pdf(path, template)
+        result = parse_best(path, templates)
         result.update(file=name, doc_id=doc_id)
         run["results"].append(result)
         run["done"] += 1
@@ -240,12 +255,14 @@ def _run_job(run_id: str, template: dict, docs: list[str]) -> None:
 @app.post("/api/runs")
 def start_run():
     body = request.get_json()
-    template = tpl.load(_template_path(body["template_id"]))
+    if not body.get("template_ids"):
+        return _error("請先選擇範本")
     if not body.get("docs"):
         return _error("請先加入 PDF")
+    templates = [tpl.load(_template_path(template_id)) for template_id in body["template_ids"]]
     run_id = uuid.uuid4().hex
     _runs[run_id] = {"total": len(body["docs"]), "done": 0, "current": "", "results": [], "finished": False}
-    threading.Thread(target=_run_job, args=(run_id, template, body["docs"]), daemon=True).start()
+    threading.Thread(target=_run_job, args=(run_id, templates, body["docs"]), daemon=True).start()
     return jsonify({"run_id": run_id})
 
 

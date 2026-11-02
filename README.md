@@ -15,7 +15,7 @@
 
 環境全部放在專案資料夾內的 `.tools` 和 `.venv`，不會裝進系統的 Python，也不會改動 PATH。刪掉資料夾就完全移除。OCR 模型已包含在套件內，執行時資料不會離開這台電腦。
 
-想先試用：到「解析 PDF」，範本選「進口報單（示範）」，加入 `samples/` 裡的 PDF。範例都是虛構資料。
+想先試用：到「解析 PDF」，勾選兩個示範範本，加入 `samples/` 裡的 PDF。範例都是虛構資料。
 
 ### 公司網路擋 GitHub 或 PyPI 時
 
@@ -71,7 +71,7 @@ Excel 的「待檢查」工作表會列出每個項目，並附原圖截圖，�
 
 ```powershell
 .\start.ps1 run -t templates\customs_demo.json -i 資料夾 -o output\結果.xlsx
-.\start.ps1 run -t templates -i 資料夾                 # 多個範本時自動判斷
+.\start.ps1 run -t templates -i 資料夾                 # 多個範本時，每份自動挑最符合的
 .\start.ps1 run -t x.json -i 資料夾 --post custom\example_transform.py
 .\start.ps1 doctor                                      # 檢查環境
 ```

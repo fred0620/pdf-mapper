@@ -11,6 +11,10 @@ from .extract import REASONS, extract_field, extract_table
 from .template import collect_anchors, rule_matches
 
 MIN_TEMPLATE_MATCH = 0.5
+MATCH_PAGES = 3
+SHORTLIST_MARGIN = 0.1
+MAX_FINALISTS = 3
+AMBIGUOUS_MARGIN = 0.03
 
 
 def _anchors_for(anchors: list[dict], index: int, total: int) -> list[dict]:
@@ -107,6 +111,7 @@ def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
               progress: Callable[[str], None] | None = None) -> dict:
     path = Path(path)
     result: dict = {"file": path.name, "path": str(path), "template_id": template.get("template_id"),
+                    "template_name": template.get("name") or template.get("template_id"),
                     "pages": 0, "fields": [], "tables": [], "issues": [], "align": []}
     try:
         with Document(path) as doc:
@@ -155,14 +160,58 @@ def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
     return result
 
 
-def choose_template(path: str | Path, templates: list[dict]) -> dict | None:
-    """多個範本時，挑第一頁定位點命中率最高的。"""
-    best, best_score = None, 0.0
-    with Document(path) as doc:
-        for template in templates:
-            anchors = _anchors_for(collect_anchors(template), 0, len(doc))
-            transform = align_page(doc.pages[0], anchors, allow_ocr=False)
-            score = transform.found / transform.total if transform.total else 0.0
-            if score > best_score:
-                best, best_score = template, score
+def _match_score(doc: Document, template: dict) -> float:
+    """定位點命中率。只看前幾頁、不用 OCR，範本多時也不會太慢。"""
+    anchors = collect_anchors(template)
+    found = expected = 0
+    for page in doc.pages[:MATCH_PAGES]:
+        applicable = _anchors_for(anchors, page.index, len(doc))
+        if applicable:
+            transform = align_page(page, applicable, allow_ocr=False)
+            found += transform.found
+            expected += transform.total
+    return found / expected if expected else 0.0
+
+
+def _quality(result: dict) -> float:
+    """綜合分數：定位點命中率，再扣掉實際取值的問題比例。"""
+    counts = result["counts"]
+    if result.get("error") or not counts["total"]:
+        return -1.0
+    problems = 2 * counts["missing"] + counts["review"] + 2 * len(result["issues"])
+    return (result.get("match") or 0.0) - 0.5 * min(1.0, problems / counts["total"])
+
+
+def parse_best(path: str | Path, templates: list[dict], use_ocr: bool = True,
+               progress: Callable[[str], None] | None = None) -> dict:
+    """從多個範本中挑最符合這份 PDF 的，並在結果中記錄挑選依據。"""
+    if len(templates) == 1:
+        return parse_pdf(path, templates[0], use_ocr, progress)
+    try:
+        with Document(path) as doc:
+            scored = sorted(((_match_score(doc, t), i) for i, t in enumerate(templates)), reverse=True)
+    except Exception:  # 打不開的檔案交給 parse_pdf 回報
+        return parse_pdf(path, templates[0], use_ocr, progress)
+
+    top = scored[0][0]
+    # 命中率接近時才實際解析比較，取值結果比定位點更能分出高下
+    finalists = [i for score, i in scored if score >= top - SHORTLIST_MARGIN][:MAX_FINALISTS]
+    parsed = sorted(((_quality(r), order, r) for order, r in enumerate(
+        parse_pdf(path, templates[i], use_ocr, progress) for i in finalists)),
+        key=lambda item: (-item[0], item[1]))
+    best = parsed[0][2]
+    best["selection"] = {
+        "auto": True,
+        "candidates": [{"id": templates[i].get("template_id"),
+                        "name": templates[i].get("name") or templates[i].get("template_id"),
+                        "match": round(score, 3)} for score, i in scored],
+    }
+    if top == 0:
+        best["issues"].append({"code": "no_template_match", "page": None,
+                               "message": "選取的範本都找不到定位點，這份 PDF 可能沒有適用的範本"})
+    elif len(parsed) > 1 and parsed[0][0] - parsed[1][0] < AMBIGUOUS_MARGIN:
+        other = parsed[1][2]["template_name"]
+        best["issues"].append({"code": "ambiguous_template", "page": None,
+                               "message": f"「{best['template_name']}」和「{other}」分數接近，請確認用對範本"})
+    summarize(best)
     return best
