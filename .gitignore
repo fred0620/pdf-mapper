@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# 公司資料不進版控
+workspace/
+output/
+wheels/
+*.xlsx
+# 只保留合成範例
+*.pdf
+!samples/*.pdf
+.DS_Store

@@ -1,0 +1,4 @@
+# 只有跑測試、重新產生合成範例或手冊才需要
+pytest>=8
+reportlab>=4
+markdown>=3.5

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF 解析器</title>
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<header class="bar">
+  <h1>PDF 解析器</h1>
+  <nav aria-label="主要功能">
+    <button id="tabTrain" class="tab">建立範本</button>
+    <button id="tabRun" class="tab">解析 PDF</button>
+  </nav>
+  <div id="engine" class="engine"></div>
+  <a class="manual-link" href="/manual" target="_blank" rel="noopener">使用手冊</a>
+</header>
+<div class="workspace">
+  <aside id="left" class="side left" aria-label="檔案"></aside>
+  <main class="center">
+    <div id="toolbar" class="toolbar"></div>
+    <p id="hint" class="hint" role="status"></p>
+    <div id="stage" class="stage">
+      <div id="empty" class="empty"></div>
+      <div id="sheet" class="sheet" hidden>
+        <img id="pageImage" alt="PDF 頁面" draggable="false">
+        <div id="overlay" class="overlay"></div>
+      </div>
+    </div>
+    <section id="drawer" class="drawer" hidden aria-label="抓取結果"></section>
+  </main>
+  <aside id="right" class="side right" aria-label="設定"></aside>
+</div>
+<div id="toast" class="toast" role="alert" hidden></div>
+<input id="filePicker" type="file" accept="application/pdf" multiple hidden>
+<script src="/web/app.js"></script>
+</body>
+</html>
