@@ -1,6 +1,6 @@
 """把 docs/使用手冊.md 轉成單一 HTML（圖片內嵌），放在專案根目錄，雙擊就能看。
 
-需要 markdown 套件，見 requirements-dev.txt。
+用 uv run python scripts/build_manual.py 執行。
 """
 import base64
 import re

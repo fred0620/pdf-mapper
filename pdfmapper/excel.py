@@ -111,6 +111,20 @@ def _crop_image(doc: Document | None, value: dict) -> io.BytesIO | None:
     return buffer
 
 
+def _write_pending(sheet, result: dict, pending: list, doc: Document | None) -> None:
+    for name, value in pending:
+        sheet.append([result["file"], value.get("page"), name, value.get("value", ""),
+                      VALUE_STATUS[value["status"]], reason_text(value),
+                      SOURCE_TEXT.get(value.get("source", ""), "")])
+        row = sheet.max_row
+        sheet.cell(row=row, column=4).fill = FILL[value["status"]]
+        crop = _crop_image(doc, value)
+        if crop:
+            picture = XLImage(crop)
+            sheet.add_image(picture, f"H{row}")
+            sheet.row_dimensions[row].height = max(18, picture.height * 0.78)
+
+
 def _review_sheet(book: Workbook, results: list[dict]) -> None:
     sheet = book.create_sheet("待檢查", 0)
     _header(sheet, ["檔名", "頁", "項目", "抓到的值", "狀態", "原因", "來源", "原圖"])
@@ -125,19 +139,11 @@ def _review_sheet(book: Workbook, results: list[dict]) -> None:
             doc = Document(result["path"])
         except Exception:
             doc = None
-        for name, value in pending:
-            sheet.append([result["file"], value.get("page"), name, value.get("value", ""),
-                          VALUE_STATUS[value["status"]], reason_text(value),
-                          SOURCE_TEXT.get(value.get("source", ""), "")])
-            row = sheet.max_row
-            sheet.cell(row=row, column=4).fill = FILL[value["status"]]
-            crop = _crop_image(doc, value)
-            if crop:
-                picture = XLImage(crop)
-                sheet.add_image(picture, f"H{row}")
-                sheet.row_dimensions[row].height = max(18, picture.height * 0.78)
-        if doc:
-            doc.close()
+        try:
+            _write_pending(sheet, result, pending, doc)
+        finally:
+            if doc:
+                doc.close()
     _widths(sheet)
     sheet.column_dimensions["H"].width = 48
     if sheet.max_row == 1:

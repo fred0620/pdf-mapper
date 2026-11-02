@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import shutil
+import socket
 import threading
 import time
+import urllib.request
 import uuid
 import webbrowser
 from pathlib import Path
@@ -29,6 +32,12 @@ TEMPLATES = ROOT / "templates"
 OUTPUT = ROOT / "output"
 PREVIEW_DPI = 120
 MAX_OPEN_DOCS = 8
+PORT_RANGE = 20
+CLOSE_GRACE_SECONDS = 8      # 容許重新整理頁面，不會誤關
+CLIENT_TIMEOUT_SECONDS = 1800  # 瀏覽器當掉、沒通知就消失時的上限
+NO_CLIENT_TIMEOUT_SECONDS = 600  # 啟動後一直沒有開啟頁面
+WATCH_SECONDS = 2
+SLEEP_GAP_SECONDS = 30       # 檢查間隔突然變長，代表電腦剛從睡眠醒來
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
@@ -36,6 +45,8 @@ app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
 _docs: dict[str, Document] = {}
 _docs_lock = threading.Lock()
 _runs: dict[str, dict] = {}
+_clients: dict[str, float] = {}
+_clients_lock = threading.Lock()
 
 
 def _doc_path(doc_id: str) -> Path:
@@ -49,7 +60,9 @@ def _doc_path(doc_id: str) -> Path:
 
 def _doc(doc_id: str) -> Document:
     with _docs_lock:
-        if doc_id not in _docs:
+        if doc_id in _docs:
+            _docs[doc_id] = _docs.pop(doc_id)  # 移到最新，淘汰最久沒用的
+        else:
             if len(_docs) >= MAX_OPEN_DOCS:
                 _docs.pop(next(iter(_docs))).close()
             _docs[doc_id] = Document(_doc_path(doc_id))
@@ -96,6 +109,26 @@ def manual():
 @app.get("/web/<path:name>")
 def web_file(name):
     return send_from_directory(WEB, name)
+
+
+@app.get("/api/ping")
+def ping():
+    """給第二次啟動判斷「工具是否已經開著」，不能碰到載入中的 OCR。"""
+    return jsonify({"app": "pdfmapper", "root": str(ROOT)})
+
+
+@app.post("/api/heartbeat")
+def heartbeat():
+    with _clients_lock:
+        _clients[request.args["client"]] = time.time()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/bye")
+def bye():
+    with _clients_lock:
+        _clients.pop(request.args.get("client", ""), None)
+    return jsonify({"ok": True})
 
 
 @app.get("/api/status")
@@ -246,29 +279,106 @@ def export(run_id):
     return send_file(path, as_attachment=True, download_name=path.name)
 
 
-@app.post("/api/clear")
-def clear_workspace():
+def _clear_uploads() -> None:
     with _docs_lock:
         for doc in _docs.values():
             doc.close()
         _docs.clear()
-    _runs.clear()
     shutil.rmtree(UPLOADS, ignore_errors=True)
-    return jsonify({"cleared": True})
+
+
+def _busy() -> bool:
+    return any(not run["finished"] for run in _runs.values())
+
+
+def _shutdown(reason: str) -> None:
+    print(f"\n  {reason}，工具已關閉。\n", flush=True)
+    _clear_uploads()
+    os._exit(0)  # 結束整個行程，連接埠、檔案和記憶體都由系統回收
+
+
+def _watch_clients() -> None:
+    """所有頁面都關閉後自動結束，避免背景程式一直留著。"""
+    started = last_tick = time.time()
+    empty_since: float | None = None
+    seen_client = False
+    while True:
+        time.sleep(WATCH_SECONDS)
+        now = time.time()
+        with _clients_lock:
+            if now - last_tick > SLEEP_GAP_SECONDS:  # 睡眠期間頁面也無法回報，不算離線
+                for client in _clients:
+                    _clients[client] = now
+            for client, seen in list(_clients.items()):
+                if now - seen > CLIENT_TIMEOUT_SECONDS:
+                    del _clients[client]
+            seen_client = seen_client or bool(_clients)
+            active = bool(_clients)
+        last_tick = now
+        if active or _busy():
+            empty_since = None
+            continue
+        if not seen_client:
+            if now - started > NO_CLIENT_TIMEOUT_SECONDS:
+                _shutdown("沒有開啟頁面")
+            continue
+        empty_since = empty_since or now
+        if now - empty_since >= CLOSE_GRACE_SECONDS:
+            _shutdown("頁面已全部關閉")
+
+
+def _port_is_free(port: int) -> bool:
+    with socket.socket() as probe:
+        if os.name != "nt":  # Windows 的這個選項會允許搶佔使用中的埠，不能設定
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def _is_this_tool(port: int) -> bool:
+    # 不走系統代理：公司電腦常設 HTTP_PROXY，會讓 127.0.0.1 的檢查失敗
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(f"http://127.0.0.1:{port}/api/ping", timeout=2) as response:
+            data = json.loads(response.read())
+    except (OSError, ValueError):
+        return False
+    return data.get("app") == "pdfmapper" and data.get("root") == str(ROOT)
+
+
+def _pick_port(start: int) -> tuple[int, bool]:
+    """回傳 (埠, 工具是否已在這個埠上執行)。"""
+    for port in range(start, start + PORT_RANGE):
+        if _port_is_free(port):
+            return port, False
+        if _is_this_tool(port):
+            return port, True
+    raise OSError(f"連接埠 {start} 到 {start + PORT_RANGE - 1} 都被其他程式佔用")
 
 
 def serve(port: int = 8765, open_browser: bool = True) -> None:
-    import socket
-
     TEMPLATES.mkdir(exist_ok=True)
-    for candidate in range(port, port + 20):
-        with socket.socket() as probe:
-            if probe.connect_ex(("127.0.0.1", candidate)) != 0:
-                port = candidate
-                break
-    url = f"http://127.0.0.1:{port}"
-    print(f"\n  PDF 解析器已啟動：{url}\n  使用完畢後關閉這個視窗即可。\n")
-    if open_browser:
-        threading.Timer(0.8, webbrowser.open, args=(url,)).start()
-    threading.Thread(target=ocr_engine.available, daemon=True).start()  # 先載入模型
-    app.run(host="127.0.0.1", port=port, threaded=True)
+    for attempt in range(3):
+        chosen, running = _pick_port(port)
+        url = f"http://127.0.0.1:{chosen}"
+        if running:
+            print(f"\n  工具已經開著，直接開啟 {url}\n", flush=True)
+            if open_browser:
+                webbrowser.open(url)
+            return
+        if attempt == 0:
+            shutil.rmtree(UPLOADS, ignore_errors=True)  # 清掉上次異常結束留下的暫存
+        print(f"\n  PDF 解析器已啟動：{url}\n  使用完畢後關閉瀏覽器頁面，或關閉這個視窗。\n", flush=True)
+        if open_browser:
+            threading.Timer(0.8, webbrowser.open, args=(url,)).start()
+            threading.Thread(target=_watch_clients, daemon=True).start()
+        threading.Thread(target=ocr_engine.available, daemon=True).start()  # 先載入模型
+        try:
+            app.run(host="127.0.0.1", port=chosen, threaded=True)
+            return
+        except (OSError, SystemExit):  # 兩次啟動幾乎同時發生，等一下再判斷
+            time.sleep(1)
+    raise SystemExit("無法啟動工具，請關閉其他視窗後再試一次。")

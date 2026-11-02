@@ -909,6 +909,7 @@ const editValue = guard(async (ref, action, value) => {
     json: { file_index: state.fileIndex, ref, action, value },
   });
   result.doc_id = state.run.results[state.fileIndex].doc_id;
+  state.run.exported = false;
   state.run.results[state.fileIndex] = result;
   renderLeft(); renderRight(); renderOverlay(); renderDrawer();
 });
@@ -936,7 +937,11 @@ function renderRightRun() {
     h("h2", {}, `待檢查 ${pending.length} 項`),
     items.length ? items : h("p", { class: "note" }, "這份沒有需要檢查的值。"),
     h("div", { class: "actions" },
-      h("a", { class: "btn primary wide", style: "text-align:center;text-decoration:none", href: done ? `/api/runs/${state.run.id}/excel` : undefined }, "匯出 Excel")));
+      h("a", {
+        class: "btn primary wide", style: "text-align:center;text-decoration:none", download: "",
+        href: done ? `/api/runs/${state.run.id}/excel` : undefined,
+        onclick: () => { state.run.exported = true; },
+      }, "匯出 Excel")));
 }
 function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); }
 
@@ -1001,6 +1006,29 @@ const addFiles = guard(async (files) => {
   renderAll();
 });
 
+/* ---------- 與本機程式的連線 ---------- */
+/* 頁面全部關閉後，本機程式會自動結束，不會留在背景。 */
+const clientId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+let heartbeatFailures = 0;
+async function heartbeat() {
+  try {
+    const response = await fetch(`/api/heartbeat?client=${encodeURIComponent(clientId)}`, { method: "POST" });
+    if (!response.ok) throw new Error();
+    heartbeatFailures = 0;
+  } catch (_error) {
+    heartbeatFailures += 1;
+    if (heartbeatFailures === 2) toast("工具已經關閉。請重新執行 start.bat，再重新整理這個頁面。", true);
+  }
+}
+const hasUnsavedResults = () => !!state.run?.results.length && !state.run.exported;
+function watchConnection() {
+  heartbeat();
+  setInterval(heartbeat, 15000);
+  window.addEventListener("pagehide", () => navigator.sendBeacon(`/api/bye?client=${encodeURIComponent(clientId)}`));
+  window.addEventListener("pageshow", (event) => { if (event.persisted) heartbeat(); });
+  window.addEventListener("beforeunload", (event) => { if (hasUnsavedResults()) event.preventDefault(); });
+}
+
 /* ---------- 切換與啟動 ---------- */
 function setView(view) {
   state.view = view;
@@ -1048,6 +1076,7 @@ async function main() {
   });
   loadDraft();
   renderAll();
+  watchConnection();
   try {
     const status = await api("/api/status");
     state.reasons = status.reasons;

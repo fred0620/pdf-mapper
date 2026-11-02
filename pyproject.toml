@@ -1,0 +1,23 @@
+[project]
+name = "pdf-mapper"
+version = "0.1.0"
+description = "標注範本後，批次把 PDF 轉成 Excel 的本機工具"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "flask>=3.0",
+    "numpy>=1.24",
+    "onnxruntime>=1.17",
+    "opencv-python-headless>=4.8",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.11",
+    "pillow>=10.0",
+    "pypdfium2>=4.30",
+    "rapidocr>=3.4",
+]
+
+[dependency-groups]
+# 只有跑測試、重新產生範例或手冊才需要，一般使用者不會安裝
+dev = ["markdown>=3.5", "pytest>=8", "reportlab>=4"]
+
+[tool.uv]
+package = false

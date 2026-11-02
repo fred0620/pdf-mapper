@@ -6,19 +6,21 @@
 
 ## 開始使用
 
-需要 Python 3.10 以上版本。
+不需要先安裝 Python。
 
 - **Windows**：雙擊 `start.bat`，或在 PowerShell 執行 `.\start.ps1`
 - **macOS / Linux**：執行 `bash start.sh`
 
-第一次會自動建立環境並安裝套件（約 1 到 3 分鐘），之後直接開啟瀏覽器。OCR 模型已包含在套件內，執行時不會連網，資料也不會離開這台電腦。
+第一次會自動下載 [uv](https://docs.astral.sh/uv/)，再由 uv 準備 Python 3.12 和套件，約 1 到 3 分鐘，之後直接開啟瀏覽器。
+
+環境全部放在專案資料夾內的 `.tools` 和 `.venv`，不會裝進系統的 Python，也不會改動 PATH。刪掉資料夾就完全移除。OCR 模型已包含在套件內，執行時資料不會離開這台電腦。
 
 想先試用：到「解析 PDF」，範本選「進口報單（示範）」，加入 `samples/` 裡的 PDF。範例都是虛構資料。
 
-### 公司網路擋 pip 時
+### 公司網路擋 GitHub 或 PyPI 時
 
-1. 在可連網、作業系統和 Python 版本都相同的電腦上，執行 `scripts\build_offline_bundle.ps1`
-2. 把整個資料夾（含產生的 `wheels`）複製過去
+1. 在可連網、作業系統和 CPU 架構相同的 Windows 電腦上，執行 `scripts\build_offline_bundle.ps1`
+2. 把整個資料夾複製過去，但不要複製 `.venv` 和 `.tools\cache`
 3. 雙擊 `start.bat`，會自動改用離線安裝
 
 ## 三層架構
@@ -99,8 +101,12 @@ output/           匯出結果（不進版控）
 ## 開發
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
-pytest
-python scripts/build_demo.py   # 重建範例與示範範本
-python scripts/build_manual.py # 由 docs/使用手冊.md 重建使用手冊.html
+uv sync                          # 含開發用套件
+uv run pytest
+uv run python scripts/build_demo.py     # 重建範例與示範範本
+uv run python scripts/build_manual.py   # 由 docs/使用手冊.md 重建使用手冊.html
 ```
+
+新增套件用 `uv add 套件名稱`，`uv.lock` 會鎖定版本，讓每台電腦裝到一樣的環境。
+
+`start.ps1` 和 `start.sh` 用 `--frozen` 安裝，不會改動 `uv.lock`。要升級 uv 時，改這兩個檔案裡的版本號。
