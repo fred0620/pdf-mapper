@@ -875,6 +875,55 @@ function markerRow(label, marker, action, onPick, onRemove) {
       : h("button", { class: "linkish", onclick: onPick }, action));
 }
 const redraw = () => { saveDraft(); renderRight(); };
+const VALUE_MODES = [
+  ["whole", "整格內容（預設）"], ["line", "第幾行"], ["start", "開頭文字"],
+  ["regex", "正規表達式"], ["space", "依空格分段"], ["gap", "依字距分段"],
+];
+function valueMode(column) {
+  if (column.start !== undefined) return "start";
+  if (column.extract !== undefined) return "regex";
+  if (column.part_by) return column.part_by;
+  if (column.pick_line) return "line";
+  return "whole";
+}
+function setValueMode(table, column, mode) {
+  for (const key of ["start", "extract", "part_by", "part", "pick_line"]) delete column[key];
+  const peers = table.columns.filter((c) => c.band === column.band && c !== column);
+  if (mode === "line") column.pick_line = peers.filter((c) => c.pick_line).length + 1;
+  if (mode === "start") column.start = "";
+  if (mode === "regex") column.extract = "";
+  if (mode === "space" || mode === "gap") {
+    column.part_by = mode;
+    column.part = peers.filter((c) => c.part_by === mode).length + 1;
+  }
+}
+function valueOptions(column) {
+  const mode = valueMode(column);
+  const text = (key, label, placeholder, note) => [
+    h("label", {}, label, h("input", {
+      type: "text", value: column[key] ?? "", placeholder, "aria-label": label,
+      oninput: (e) => { column[key] = e.target.value; saveDraft(); },
+    })),
+    h("p", { class: "note" }, note),
+  ];
+  const number = (key, label, note) => [
+    h("label", {}, label, h("input", {
+      type: "number", value: column[key] ?? "", "aria-label": label,
+      oninput: (e) => { if (e.target.value) column[key] = Number(e.target.value); saveDraft(); },
+    })),
+    note ? h("p", { class: "note" }, note) : null,
+  ];
+  if (mode === "line") return number("pick_line", "只取第幾行", "行數固定時使用。-1 是最後一行。");
+  if (mode === "start") {
+    return text("start", "開頭文字", "例如：sub2:", "取到同一直欄的下一個開頭為止，折行會接回來。同一格的其他欄也要設定開頭文字。");
+  }
+  if (mode === "regex") {
+    return text("extract", "正規表達式", "例如：^(\\S+)", "有括號時取第一組。比對不到會保留整格內容並標記。");
+  }
+  if (mode === "space") return number("part", "取第幾段", "每段不能含空格。段數不對時，內容放在第一段並標記。");
+  if (mode === "gap") return number("part", "取第幾段", "依字和字的實際距離分段，適合有文字層的 PDF。段數不對時，內容放在第一段並標記。");
+  return null;
+}
 function columnDetail(table, column) {
   const siblings = table.columns.filter((c) => c.band === column.band);
   const split = siblings.length > 1;
@@ -889,18 +938,21 @@ function columnDetail(table, column) {
       onchange: (e) => { if (e.target.checked) column.row_required = true; else delete column.row_required; saveDraft(); },
     }), "每一列都一定有這欄"),
     h("p", { class: "note" }, "用來判斷跨頁：這欄沒抓到，代表這一列還沒結束。"),
-    split || column.pick_line ? h("label", {}, "只取第幾行", h("input", {
-      type: "number", value: column.pick_line ?? "",
-      oninput: (e) => { if (e.target.value) column.pick_line = Number(e.target.value); else delete column.pick_line; saveDraft(); },
-    })) : null,
+    h("label", {}, "這一欄怎麼取值", h("select", {
+      "aria-label": "這一欄怎麼取值",
+      onchange: (e) => { snapshot(); setValueMode(table, column, e.target.value); renderRight(); },
+    }, VALUE_MODES.map(([value, label]) =>
+      h("option", { value, selected: valueMode(column) === value }, label)))),
+    valueOptions(column),
     h("div", { class: "row" },
       h("button", {
         class: "linkish", style: "text-align:left", onclick: () => {
           snapshot();
-          if (siblings.length === 1 && !siblings[0].pick_line) siblings[0].pick_line = 1;
-          table.columns.push({
-            id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band: column.band, pick_line: siblings.length + 1,
-          });
+          const added = { id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band: column.band };
+          const mode = valueMode(column) === "whole" ? "line" : valueMode(column);
+          if (valueMode(column) === "whole") setValueMode(table, column, "line");
+          table.columns.push(added);
+          setValueMode(table, added, mode);
           table.columns.sort((x, y) => x.band - y.band);
           renderAll();
         },
