@@ -271,6 +271,8 @@ def build_all(folder: Path, font_path=None) -> dict[str, dict]:
     write_pdf(folder / "sample_5_errors.pdf", broken, font_path)
     docs["sample_5_errors.pdf"] = broken
     write_invoice(folder / "sample_6_invoice.pdf", font_path)
+    write_floating(folder / "sample_7_table_a.pdf", 0.2, FLOAT_ROWS, font_path)
+    write_floating(folder / "sample_8_table_b.pdf", 0.42, FLOAT_ROWS[:3], font_path)
     return docs
 
 
@@ -298,6 +300,65 @@ def write_invoice(path, font_path=None):
         out.drawString(x * W, H - y * H - 3, text)
     out.showPage()
     out.save()
+
+
+FLOAT_COLS = [0.08, 0.18, 0.46, 0.6, 0.92]
+FLOAT_ROWS = [
+    # (序號, 內容行, 代碼, 金額)
+    ("1", ["1243", "1234", "dfegfrgs", "sfg"], "A", "1"),
+    ("2", ["123"], "12345667765-long-code", "20"),
+    ("3", ["78"], "B", "300"),
+    ("4", ["a", "b"], "C", "4"),
+    ("5", ["9"], "D", "5"),
+]
+
+
+def write_floating(path, top, rows, font_path=None, text_header=False):
+    """表頭位置和列數都不固定、內容會跨欄的表格，表尾緊跟在最後一列之後。"""
+    sheet = Sheet(font_path)
+    sheet.label("明細報表", 0.08, 0.04, sheet.big)
+    labels = (("序號", FLOAT_COLS[0]), ("內容", FLOAT_COLS[1]), ("代碼", FLOAT_COLS[2]), ("金額", FLOAT_COLS[3]))
+    if not text_header:
+        for text, x in labels:
+            sheet.label(text, x + 0.008, top)
+    step = 0.022
+    y = top + 0.05
+    placed = []
+    for no, lines, code, amount in rows:
+        placed += [(no, FLOAT_COLS[0] + 0.01, y, False), (code, FLOAT_COLS[2] + 0.01, y, False),
+                   (amount, FLOAT_COLS[4] - 0.02, y, True)]
+        for offset, line in enumerate(lines):
+            placed.append((line, FLOAT_COLS[1] + 0.01, y + offset * step, False))
+        y += step * max(len(lines), 1)
+    sheet.label("合計", 0.46, y + 0.02)
+    buffer = io.BytesIO()
+    sheet.image.save(buffer, "JPEG", quality=85)
+    buffer.seek(0)
+    pdfmetrics.registerFont(UnicodeCIDFont("MSung-Light"))
+    out = canvas.Canvas(str(path), pagesize=(W, H))
+    out.drawImage(ImageReader(buffer), 0, 0, W, H)
+    out.setFont(MONO, 9)
+    for text, x, y_pos, right in placed:
+        (out.drawRightString if right else out.drawString)(x * W, H - y_pos * H - 3, text)
+    out.showPage()
+    out.save()
+
+
+def build_floating_template() -> dict:
+    """基準為 top=0.2 的版面。代碼欄的長內容會跨到金額欄的範圍。"""
+    columns = [{"id": "no", "name": "序號", "band": 0}, {"id": "body", "name": "內容", "band": 1, "join": "newline"},
+               {"id": "code", "name": "代碼", "band": 2}, {"id": "amount", "name": "金額", "band": 3}]
+    return {
+        "schema_version": 1, "template_id": "floating_demo", "name": "浮動表格（示範）",
+        "fields": [], "validations": [],
+        "anchors": [{"id": "title", "text": "明細報表", "box": [0.08, 0.04, 0.34, 0.1], "page_rule": "first", "ref_page": 0}],
+        "tables": [{
+            "id": "items", "name": "明細", "columns": columns, "key_column": "no", "key_position": "auto", "required": True,
+            "regions": [{"page_rule": "first", "ref_page": 0, "box": [0.08, 0.236, 0.92, 0.9], "dividers": FLOAT_COLS,
+                         "header": {"text": "序號", "box": [0.086, 0.198, 0.18, 0.222]}}],
+            "end_marker": {"text": "合計", "box": [0.458, 0.466, 0.53, 0.49], "ref_page": 0},
+        }],
+    }
 
 
 def build_invoice_template() -> dict:
@@ -365,7 +426,7 @@ def build_template() -> dict:
         ],
         "tables": [{
             "id": "items", "name": "貨物明細", "columns": columns,
-            "key_column": "item", "key_position": "middle", "required": True,
+            "key_column": "item", "key_position": "auto", "required": True,
             "regions": [
                 {"page_rule": "first", "ref_page": 0, "box": [0.04, ROW_FIRST[0], 0.96, ROW_FIRST[1]], "dividers": COLS},
                 {"page_rule": "rest", "ref_page": 1, "box": [0.04, ROW_REST[0], 0.96, ROW_REST[1]], "dividers": COLS},

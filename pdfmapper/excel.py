@@ -45,6 +45,8 @@ def _header(sheet, titles: list[str]) -> None:
 def _write(cell, value: dict) -> None:
     cell.value = value.get("value", "")
     cell.number_format = "@"  # 保持原樣，不讓 Excel 自動轉格式
+    if "\n" in str(cell.value):
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
     fill = FILL.get(value.get("status"))
     if fill:
         cell.fill = fill

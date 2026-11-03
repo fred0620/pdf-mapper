@@ -19,4 +19,8 @@ invoice = make_samples.build_invoice_template()
 with Document(ROOT / "samples" / "sample_6_invoice.pdf") as reference:
     tpl.finalize(invoice, reference)
 tpl.save(invoice, ROOT / "templates" / "invoice_demo.json")
+floating = make_samples.build_floating_template()
+with Document(ROOT / "samples" / "sample_7_table_a.pdf") as reference:
+    tpl.finalize(floating, reference)
+tpl.save(floating, ROOT / "templates" / "floating_demo.json")
 print("完成")

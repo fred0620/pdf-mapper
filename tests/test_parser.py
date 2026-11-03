@@ -160,6 +160,61 @@ def test_excel_keeps_templates_apart(samples, template, invoice_template, tmp_pa
     assert overview["B3"].value == "商業發票（示範）" and overview["D3"].value == "自動"
 
 
+def _table_values(result):
+    return [{key: cell["value"] for key, cell in row["cells"].items()} for row in result["tables"][0]["rows"]]
+
+
+def test_header_and_end_marker_follow_the_table(samples, floating_template):
+    folder, _ = samples
+    for name, count in (("sample_7_table_a.pdf", 5), ("sample_8_table_b.pdf", 3)):
+        result = parse_pdf(folder / name, floating_template)
+        rows = _table_values(result)
+        assert len(rows) == count, name
+        assert [r["no"] for r in rows] == [str(i + 1) for i in range(count)]
+        assert result["issues"] == []
+
+
+def test_overlapping_and_multiline_cells(samples, floating_template):
+    folder, _ = samples
+    rows = _table_values(parse_pdf(folder / "sample_7_table_a.pdf", floating_template))
+    assert rows[0] == {"no": "1", "body": "1243\n1234\ndfegfrgs\nsfg", "code": "A", "amount": "1"}
+    assert rows[1]["code"] == "12345667765-long-code"
+    assert rows[1]["amount"] == "20"
+    assert rows[3]["body"] == "a\nb"
+
+
+def test_missing_header_and_end_are_reported(samples, floating_template):
+    folder, _ = samples
+    table = floating_template["tables"][0]
+    broken = {**floating_template, "tables": [{
+        **table,
+        "regions": [{**table["regions"][0], "header": {"text": "不存在", "box": table["regions"][0]["header"]["box"]}}],
+        "end_marker": {"text": "不存在", "box": table["end_marker"]["box"]},
+    }]}
+    result = parse_pdf(folder / "sample_7_table_a.pdf", broken, use_ocr=False)
+    codes = {issue["code"] for issue in result["issues"]}
+    assert {"header_not_found", "end_not_found"} <= codes
+
+
+def test_header_found_by_text_without_image(samples, floating_template):
+    folder, _ = samples
+    table = floating_template["tables"][0]
+    region = table["regions"][0]
+    header = {k: v for k, v in region["header"].items() if k != "patch"}
+    marker = {k: v for k, v in table["end_marker"].items() if k != "patch"}
+    text_only = {**floating_template, "tables": [{**table, "regions": [{**region, "header": header}], "end_marker": marker}]}
+    rows = _table_values(parse_pdf(folder / "sample_8_table_b.pdf", text_only))
+    assert [r["no"] for r in rows] == ["1", "2", "3"]
+
+
+def test_key_position_detection():
+    from pdfmapper.extract import _key_on_first_line
+
+    key = [Glyph("1", 0.1, 0.30, 0.11, 0.32)]
+    assert _key_on_first_line([key], key + [Glyph("a", 0.3, 0.30, 0.31, 0.32)])
+    assert not _key_on_first_line([key], key + [Glyph("a", 0.3, 0.25, 0.31, 0.27)])
+
+
 def test_garbled_detection():
     assert is_garbled("(cid:1234)")
     assert is_garbled("")

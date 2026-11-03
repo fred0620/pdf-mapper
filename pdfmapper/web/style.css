@@ -81,6 +81,7 @@ button { cursor: pointer; }
 .sheet img { display: block; width: 100%; }
 .overlay { position: absolute; inset: 0; touch-action: none; }
 .overlay.drawing { cursor: crosshair; }
+.overlay.drawing > * { pointer-events: none; } /* 框選時不要碰到既有的框線和分隔線 */
 .empty {
   height: 100%; min-height: 260px; display: grid; place-content: center; text-align: center;
   border: 2px dashed var(--ink-soft); color: var(--ink-soft); padding: 24px;
@@ -107,6 +108,10 @@ button { cursor: pointer; }
 }
 .box.anchor .tag { background: var(--ink-soft); }
 .box.label .tag { display: none; }
+.box.marker { border: 1.5px solid var(--ink); background: rgba(0, 0, 0, .05); }
+.box.marker .tag { background: var(--ink); }
+.marker-row { align-items: center; justify-content: space-between; font-size: 13px; overflow-wrap: anywhere; }
+.marker-row > :last-child { flex: 0 0 auto; }
 .handle { position: absolute; width: 9px; height: 9px; background: #fff; border: 1.5px solid var(--green); }
 .handle.nw { left: -5px; top: -5px; cursor: nwse-resize; }
 .handle.ne { right: -5px; top: -5px; cursor: nesw-resize; }

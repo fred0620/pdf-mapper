@@ -433,7 +433,7 @@
         }
       ],
       "key_column": "item",
-      "key_position": "middle",
+      "key_position": "auto",
       "required": true,
       "regions": [
         {

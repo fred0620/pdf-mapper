@@ -78,6 +78,10 @@ def validate(template: dict) -> list[str]:
             needed = max((c.get("band", i) for i, c in enumerate(columns)), default=0) + 1
             if bands < needed:
                 errors.append(f"{where} 的分隔線數量與欄數不符")
+            if region.get("header"):
+                _check_box(region["header"].get("box"), f"{where} 的表頭", errors)
+        if t.get("end_marker"):
+            _check_box(t["end_marker"].get("box"), f"{where} 的表尾標記", errors)
         key = t.get("key_column")
         if key and key not in {c.get("id") for c in columns}:
             errors.append(f"{where} 的列判斷欄不存在")
@@ -121,7 +125,15 @@ def finalize(template: dict, reference: Document) -> dict:
     """用基準範例補齊每個定位點的影像圖塊與文字中心，之後解析就不用再開基準檔。"""
     label_items = [f["label"] | {"ref_page": f.get("ref_page", 0), "_owner": f}
                    for f in template.get("fields", []) if f.get("kind") == "key_value" and f.get("label")]
-    for item in template.get("anchors", []) + label_items:
+    marker_items = []
+    for table in template.get("tables", []):
+        for region in table.get("regions", []):
+            if region.get("header"):
+                marker_items.append(region["header"] | {"ref_page": region.get("ref_page", 0),
+                                                        "_owner": {"label": region["header"]}})
+        if table.get("end_marker"):
+            marker_items.append(table["end_marker"] | {"_owner": {"label": table["end_marker"]}})
+    for item in template.get("anchors", []) + label_items + marker_items:
         page_index = min(item.get("ref_page", 0), len(reference) - 1)
         page = reference.pages[page_index]
         target = item["_owner"]["label"] if "_owner" in item else item

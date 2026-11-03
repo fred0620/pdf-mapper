@@ -172,7 +172,7 @@ const onBox = guard(async (box) => {
     snapshot();
     const table = {
       id: nextId("t", T().tables), name: `表格${T().tables.length + 1}`,
-      columns: [{ id: "c1", name: "欄1", band: 0 }], key_column: null, key_position: "middle", required: true,
+      columns: [{ id: "c1", name: "欄1", band: 0 }], key_column: null, key_position: "auto", required: true,
       regions: [{ page_rule: defaultRule(), ref_page: state.page, box, dividers: [box[0], box[2]] }],
     };
     T().tables.push(table);
@@ -189,6 +189,24 @@ const onBox = guard(async (box) => {
       page_rule: defaultRule(), ref_page: state.page, box,
       dividers: base.dividers.map((x) => round5(box[0] + ratio(x) * (box[2] - box[0]))),
     });
+    setTool("select");
+    renderAll();
+    return;
+  }
+  if (tool === "header") {
+    const read = await readBox(box);
+    const table = selectedItem();
+    snapshot();
+    table.regions[state.markerRegion].header = { text: cleanName(read.text), box };
+    setTool("select");
+    renderAll();
+    return;
+  }
+  if (tool === "endmark") {
+    const read = await readBox(box);
+    const table = selectedItem();
+    snapshot();
+    table.end_marker = { text: cleanName(read.text), box, ref_page: state.page };
     setTool("select");
     renderAll();
     return;
@@ -355,6 +373,16 @@ function renderDefinitions(layer) {
       if (region.ref_page !== page) continue;
       layer.append(tableBox(table, region));
     }
+    // 表頭和表尾要畫在表格之後，才點得到
+    const active = selected?.type === "table" && selected.id === table.id;
+    const markers = table.regions.filter((r) => r.header && r.ref_page === page).map((r) => [r.header, "表頭"]);
+    if (table.end_marker && table.end_marker.ref_page === page) markers.push([table.end_marker, "表尾"]);
+    for (const [marker, name] of markers) {
+      const node = markBox(marker.box, `anchor marker${active ? " selected" : ""}`, name,
+        () => { if (state.tool === "select" && !active) selectItem("table", table.id); });
+      if (active) editableBox(node, () => marker.box, (b) => { marker.box = b; delete marker.patch; delete marker.text_center; });
+      layer.append(node);
+    }
   }
 }
 function tableBox(table, region) {
@@ -515,6 +543,8 @@ function renderHint() {
     else if (state.tool === "pos") text = "框住數值的範圍。這類欄位沒有標題，靠定位點找位置。";
     else if (state.tool === "table") text = "框住表格的資料區，不含標題列。";
     else if (state.tool === "region") text = `框住這一頁的資料區，第 ${state.page + 1} 頁起會用這個範圍。`;
+    else if (state.tool === "header") text = "框住表頭文字，例如第一欄的標題。要選每份都長得一樣的部分。按 Esc 取消。";
+    else if (state.tool === "endmark") text = "框住表格結束後緊接著出現的文字，例如「合計」。按 Esc 取消。";
     else if (state.tool === "anchor") text = "框住每份都一樣的文字，例如表單標題。定位點越分散，對位越準。";
     else if (state.selected?.type === "table") text = "在表格內點一下加分隔線。拖曳分隔線可移動，雙擊可刪除。";
   }
@@ -536,7 +566,10 @@ function docRow(doc, meta, metaClass, onClick, extra) {
 const hasDefinitions = () => T().fields.length + T().tables.length + T().anchors.length > 0;
 function forgetReferenceImages() {
   // 影像圖塊來自舊基準，改基準後要重新擷取
-  const targets = [...T().anchors, ...T().fields.map((f) => f.label).filter(Boolean)];
+  const targets = [
+    ...T().anchors, ...T().fields.map((f) => f.label).filter(Boolean),
+    ...T().tables.flatMap((t) => [...t.regions.map((r) => r.header), t.end_marker]).filter(Boolean),
+  ];
   for (const item of targets) { delete item.patch; delete item.text_center; }
 }
 function setReference(id) {
@@ -813,10 +846,21 @@ function columnRow(table, column) {
         type: "radio", name: keyName, checked: table.key_column === column.id,
         onchange: () => { table.key_column = column.id; saveDraft(); },
       }), " 用這欄判斷新的一列"),
+      h("label", {}, "多行 ", h("select", {
+        "aria-label": "多行內容的處理方式", style: "width:auto",
+        onchange: (e) => { if (e.target.value === "newline") column.join = "newline"; else delete column.join; saveDraft(); },
+      }, [["space", "接成一行"], ["newline", "保留換行"]].map(([value, label]) =>
+        h("option", { value, selected: (column.join || "space") === value }, label)))),
       split || column.pick_line ? h("label", {}, "第 ", h("input", {
         type: "number", value: column.pick_line ?? "", style: "width:46px",
         oninput: (e) => { if (e.target.value) column.pick_line = Number(e.target.value); else delete column.pick_line; saveDraft(); },
       }), " 行") : null)));
+}
+function markerRow(label, marker, action, onPick, onRemove) {
+  return h("div", { class: "row marker-row" },
+    h("span", {}, marker ? `${label}：${marker.text || "已設定"}` : label),
+    marker ? h("button", { class: "linkish", onclick: onRemove }, "移除")
+      : h("button", { class: "linkish", onclick: onPick }, action));
 }
 function tablePanel(table) {
   const bands = table.regions[0].dividers.length - 1;
@@ -848,15 +892,26 @@ function tablePanel(table) {
       i ? h("button", { class: "linkish", style: "flex:0 0 auto", onclick: () => { snapshot(); table.regions.splice(i, 1); renderAll(); } }, "移除") : null))),
     h("p", { class: "note" }, "明細會接到下一頁時，切到第 2 頁再加一個範圍。"),
     h("button", { class: "btn", onclick: () => setTool("region") }, "在這一頁加範圍"),
+    h("h2", {}, "表頭"),
+    h("p", { class: "note" }, "表格的起始位置不固定時才需要。設定後，範圍和分隔線會跟著表頭移動。"),
+    table.regions.map((region, i) => markerRow(
+      `範圍 ${i + 1}`, region.header, "框選表頭",
+      () => { state.markerRegion = i; setPage(region.ref_page); setTool("header"); },
+      () => { snapshot(); delete region.header; renderAll(); })),
+    h("h2", {}, "表格結尾"),
+    h("p", { class: "note" }, "沒有設定時，抓到範圍底部為止。表格下方緊跟著其他內容時，建議框選表尾。"),
+    markerRow("表尾標記", table.end_marker, "框選表尾",
+      () => setTool("endmark"), () => { snapshot(); delete table.end_marker; renderAll(); }),
+    h("div", { class: "form", style: "margin-top:6px" },
+      bind(table, "stop_pattern", "或遇到這段文字就結束", { placeholder: "例如：以下空白" })),
     h("h2", {}, "欄"),
     h("p", { class: "note" }, "在表格內點一下可以切出新的直欄。"),
     groups,
     h("details", {}, h("summary", {}, "進階設定"), h("div", { class: "form" },
       h("label", {}, "列判斷欄的位置", h("select", { onchange: (e) => { table.key_position = e.target.value; saveDraft(); } },
-        [["middle", "在列的中間，或不固定"], ["top", "在列的最上方"]].map(([value, label]) =>
+        [["auto", "自動判斷"], ["middle", "在列的中間，或不固定"], ["top", "在列的最上方"]].map(([value, label]) =>
           h("option", { value, selected: table.key_position === value }, label)))),
-      bind(table, "key_pattern", "新一列的格式（正規表達式）", { placeholder: "預設為純數字" }),
-      bind(table, "stop_pattern", "遇到這段文字就結束表格", { placeholder: "例如：以下空白" }))),
+      bind(table, "key_pattern", "新一列的格式（正規表達式）", { placeholder: "預設為純數字" }))),
     h("div", { style: "margin-top:10px" }, h("button", { class: "btn danger", onclick: deleteSelected }, "刪除表格")),
   ];
 }

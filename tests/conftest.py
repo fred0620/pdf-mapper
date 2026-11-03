@@ -32,3 +32,11 @@ def invoice_template(samples):
     data = make_samples.build_invoice_template()
     with Document(folder / "sample_6_invoice.pdf") as reference:
         return tpl.finalize(data, reference)
+
+
+@pytest.fixture(scope="session")
+def floating_template(samples):
+    folder, _docs = samples
+    data = make_samples.build_floating_template()
+    with Document(folder / "sample_7_table_a.pdf") as reference:
+        return tpl.finalize(data, reference)

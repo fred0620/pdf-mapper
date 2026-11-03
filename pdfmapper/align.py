@@ -73,11 +73,11 @@ def _decode_patch(data: str) -> np.ndarray | None:
     return cv2.imdecode(np.frombuffer(base64.b64decode(data), np.uint8), cv2.IMREAD_GRAYSCALE)
 
 
-def _find_by_patch(page: Page, anchor: dict, box: Box) -> tuple[float, float, float] | None:
+def _find_by_patch(page: Page, anchor: dict, roi_box: Box) -> tuple[float, float, float] | None:
+    """在 roi_box 範圍內找圖塊，回傳 (中心 x, 中心 y, 分數)。"""
     patch = _decode_patch(anchor.get("patch", ""))
     if patch is None or patch.std() < 6:  # 幾乎全白的圖塊比不出東西
         return None
-    roi_box = expand(box, SEARCH_MARGIN)
     roi = cv2.cvtColor(page.crop(roi_box, PATCH_DPI), cv2.COLOR_RGB2GRAY)
     best = (0.0, None)
     for scale in (1.0, 0.98, 1.02, 0.96, 1.04, 0.93, 1.07):
@@ -140,7 +140,7 @@ def box_center(box: Box) -> tuple[float, float]:
 def locate(page: Page, anchor: dict, allow_ocr: bool) -> Hit | None:
     box = tuple(anchor["box"])
     expected = box_center(box)
-    found = _find_by_patch(page, anchor, box)
+    found = _find_by_patch(page, anchor, expand(box, SEARCH_MARGIN))
     if found:
         return Hit(anchor["id"], expected, found[:2], "image", found[2])
     text = anchor.get("text", "")
@@ -153,6 +153,29 @@ def locate(page: Page, anchor: dict, allow_ocr: bool) -> Hit | None:
             found = find_text(page.ocr(), text, near=expected, fuzzy=True)
             if found and _plausible(found, expected):
                 return Hit(anchor["id"], ref, found[:2], "ocr", found[2])
+    return None
+
+
+def find_marker(page: Page, marker: dict, search: Box, allow_ocr: bool) -> Hit | None:
+    """找表頭或表尾。它們的位置會隨內容變動，所以搜尋範圍比定位點大得多。"""
+    box = tuple(marker["box"])
+    expected = box_center(box)
+    found = _find_by_patch(page, marker, search)
+    if found:
+        return Hit("marker", expected, found[:2], "image", found[2])
+    text = marker.get("text", "")
+    if not text:
+        return None
+    ref = tuple(marker.get("text_center") or expected)
+    near = (expected[0], search[1])  # 同樣的字出現多次時，取最靠近搜尋起點的
+    inside_search = lambda glyphs: [g for g in glyphs if search[0] <= g.cx <= search[2] and search[1] <= g.cy <= search[3]]
+    found = find_text(inside_search(page.glyphs), text, near=near)
+    if found:
+        return Hit("marker", ref, found[:2], "text", found[2])
+    if allow_ocr and ocr_engine.available():
+        found = find_text(inside_search(page.ocr()), text, near=near, fuzzy=True)
+        if found:
+            return Hit("marker", ref, found[:2], "ocr", found[2])
     return None
 
 
