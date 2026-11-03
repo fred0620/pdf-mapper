@@ -889,7 +889,21 @@ function columnDetail(table, column) {
       onchange: (e) => { if (e.target.checked) column.row_required = true; else delete column.row_required; saveDraft(); },
     }), "每一列都一定有這欄"),
     h("p", { class: "note" }, "用來判斷跨頁：這欄沒抓到，代表這一列還沒結束。"),
-    split || column.pick_line ? h("label", {}, "只取第幾行", h("input", {
+    split ? h("label", {}, "這一欄怎麼取值", h("select", {
+      "aria-label": "這一欄怎麼取值",
+      onchange: (e) => {
+        snapshot();
+        if (e.target.value === "start") { delete column.pick_line; column.start = column.start || ""; }
+        else { delete column.start; column.pick_line = column.pick_line || 1; }
+        renderRight();
+      },
+    }, [["line", "第幾行"], ["start", "開頭文字"]].map(([value, label]) =>
+      h("option", { value, selected: (column.start !== undefined ? "start" : "line") === value }, label)))) : null,
+    split && column.start !== undefined ? h("label", {}, "開頭文字", h("input", {
+      type: "text", value: column.start, placeholder: "例如：sub2:", "aria-label": "開頭文字",
+      oninput: (e) => { column.start = e.target.value; saveDraft(); },
+    })) : null,
+    split && column.start === undefined ? h("label", {}, "只取第幾行", h("input", {
       type: "number", value: column.pick_line ?? "",
       oninput: (e) => { if (e.target.value) column.pick_line = Number(e.target.value); else delete column.pick_line; saveDraft(); },
     })) : null,
@@ -897,10 +911,11 @@ function columnDetail(table, column) {
       h("button", {
         class: "linkish", style: "text-align:left", onclick: () => {
           snapshot();
-          if (siblings.length === 1 && !siblings[0].pick_line) siblings[0].pick_line = 1;
-          table.columns.push({
-            id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band: column.band, pick_line: siblings.length + 1,
-          });
+          if (siblings.length === 1 && !siblings[0].pick_line && siblings[0].start === undefined) siblings[0].pick_line = 1;
+          const added = { id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band: column.band };
+          if (siblings.some((c) => c.start !== undefined)) added.start = "";
+          else added.pick_line = siblings.length + 1;
+          table.columns.push(added);
           table.columns.sort((x, y) => x.band - y.band);
           renderAll();
         },

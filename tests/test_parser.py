@@ -335,6 +335,57 @@ def test_key_value_without_continuation_text_is_unchanged(tmp_path):
     assert field["value"] == "only" and field["status"] == "ok"
 
 
+def test_split_sections_with_uneven_subs():
+    from pdfmapper.extract import split_sections
+
+    text = "sub1:jijijij sub2: knni nininininin sub3: njnnn sub4: ji"
+    sections, leftover = split_sections(text, ["sub1:", "sub2:", "sub3:", "sub4:"])
+    assert sections == {"sub1:": "jijijij", "sub2:": "knni nininininin", "sub3:": "njnnn", "sub4:": "ji"}
+    assert leftover == ""
+
+
+def test_split_sections_tolerates_spacing_and_full_width_colon():
+    from pdfmapper.extract import split_sections
+
+    assert split_sections("sub 2： abc", ["sub2:"])[0] == {"sub2:": "abc"}
+
+
+def test_split_sections_keeps_unknown_sub_and_reports_leftover():
+    from pdfmapper.extract import split_sections
+
+    sections, leftover = split_sections("note sub1: a sub5: b", ["sub1:"])
+    assert sections == {"sub1:": "a sub5: b"}
+    assert leftover == "note"
+
+
+def test_split_sections_any_order():
+    from pdfmapper.extract import split_sections
+
+    assert split_sections("sub2: b sub1: a", ["sub1:", "sub2:"])[0] == {"sub1:": "a", "sub2:": "b"}
+
+
+def test_table_columns_split_by_start_text(tmp_path):
+    import make_samples
+
+    path = tmp_path / "split.pdf"
+    pages = [[(0, 0.20, "1"), (1, 0.20, "sub1: aaa"), (1, 0.23, "sub2: bbb"), (1, 0.26, "ccc"),
+              (1, 0.29, "sub3: ddd sub4: eee"), (2, 0.20, "A1"),
+              (0, 0.36, "2"), (1, 0.36, "sub1: fff"), (2, 0.36, "A2"),
+              (0, 0.42, "3"), (1, 0.42, "plain text"), (2, 0.42, "A3")]]
+    make_samples.write_split(path, pages)
+    template = make_samples.build_split_template("top")
+    columns = template["tables"][0]["columns"]
+    columns[1:2] = [{"id": f"s{i}", "name": f"sub{i}", "band": 1, "start": f"sub{i}:"} for i in range(1, 5)]
+    with Document(path) as reference:
+        tpl.finalize(template, reference)
+    result = parse_pdf(path, template)
+    rows = _table_values(result)
+    assert (rows[0]["s1"], rows[0]["s2"], rows[0]["s3"], rows[0]["s4"]) == ("aaa", "bbb ccc", "ddd", "eee")
+    assert rows[1]["s1"] == "fff" and rows[1]["s2"] == ""
+    cell = result["tables"][0]["rows"][2]["cells"]["s1"]
+    assert cell["status"] == "review" and "unassigned_text" in cell["reasons"]
+
+
 def test_garbled_detection():
     assert is_garbled("(cid:1234)")
     assert is_garbled("")

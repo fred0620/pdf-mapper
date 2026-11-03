@@ -35,6 +35,7 @@ REASONS = {
     "possible_row_split": "這頁開頭的內容可能屬於上一列，請確認",
     "row_incomplete": "這一列缺必要欄位，可能跨頁或切錯列",
     "value_spans_pages": "內容接到下一頁，已合併，請確認",
+    "unassigned_text": "有內容沒有分到任何欄，請確認開頭文字",
     "column_collision": "同一行有兩段內容搶同一欄，請確認分欄",
 }
 
@@ -432,9 +433,41 @@ def _band(column: dict, index: int) -> int:
     return column.get("band", index)
 
 
-def _cell(column, lines, glyphs, source, page, transform, box, crossed, extra_reasons):
+def _start_regex(start: str) -> str:
+    """開頭文字容許空白多寡不同，以及全形、半形冒號的差異。"""
+    parts = []
+    for char in start.strip():
+        if char.isspace():
+            continue
+        parts.append("[:：]" if char in ":：" else re.escape(char))
+    return r"\s*".join(parts)
+
+
+def split_sections(text: str, starts: list[str]) -> tuple[dict[str, str], str]:
+    """依開頭文字把一格切成多段。回傳 ({開頭: 內容}, 第一個開頭之前多出來的文字)。
+
+    每段到下一個已知開頭為止，所以 sub5 沒設定欄時會留在 sub4 裡，不會消失。
+    """
+    found = sorted((match.start(), match.end(), start)
+                   for start in starts for match in [re.search(_start_regex(start), text)] if match)
+    if not found:
+        return {}, text.strip()
+    sections = {}
+    for (_, end, start), following in zip(found, found[1:] + [(len(text), 0, "")]):
+        sections[start] = text[end:following[0]].strip()
+    return sections, text[:found[0][0]].strip()
+
+
+def _cell(column, lines, glyphs, source, page, transform, box, crossed, extra_reasons, starts=()):
     joined = ("\n" if column.get("join") == "newline" else " ").join(lines).strip()
-    value, reasons = shape_value(joined, lines, column)
+    if column.get("start"):
+        sections, leftover = split_sections(" ".join(joined.split()), list(starts))
+        section = sections.get(column["start"], "")
+        value, reasons = shape_value(section, [section], {k: v for k, v in column.items() if k != "pick_line"})
+        if leftover:
+            reasons.append("unassigned_text")
+    else:
+        value, reasons = shape_value(joined, lines, column)
     if crossed:
         reasons.append(crossed if isinstance(crossed, str) else "crosses_column")
     confidence = _confidence(glyphs) if glyphs else 0.0
@@ -571,7 +604,8 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
                     round(v, 5) for v in (piece.dividers[i], piece.box[1], piece.dividers[i + 1], piece.box[3])]})
         reasons = list(first.reasons) + (["row_spans_pages"] if extra_boxes else [])
         box = (first.dividers[i], first.box[1], first.dividers[i + 1], first.box[3])
-        cell = _cell(column, lines, glyphs, first.source, first.page, first.transform, box, flag, reasons)
+        starts = [c["start"] for n, c in enumerate(columns) if _band(c, n) == i and c.get("start")]
+        cell = _cell(column, lines, glyphs, first.source, first.page, first.transform, box, flag, reasons, starts)
         if extra_boxes:
             cell["extra_boxes"] = extra_boxes
         row["cells"][column["id"]] = cell
