@@ -383,7 +383,75 @@ def test_table_columns_split_by_start_text(tmp_path):
     assert (rows[0]["s1"], rows[0]["s2"], rows[0]["s3"], rows[0]["s4"]) == ("aaa", "bbb ccc", "ddd", "eee")
     assert rows[1]["s1"] == "fff" and rows[1]["s2"] == ""
     cell = result["tables"][0]["rows"][2]["cells"]["s1"]
+    assert cell["value"] == "plain text"  # 沒有開頭的內容留在第一欄，不能消失
     assert cell["status"] == "review" and "unassigned_text" in cell["reasons"]
+
+
+def _band_template(columns):
+    import make_samples
+
+    template = make_samples.build_split_template("top")
+    template["tables"][0]["columns"][1:2] = columns
+    return template
+
+
+def _band_result(tmp_path, lines, columns):
+    import make_samples
+
+    path = tmp_path / "band.pdf"
+    items = [(0, 0.20, "1"), (2, 0.20, "A1")] + [(1, 0.20 + i * 0.03, text) for i, text in enumerate(lines)]
+    make_samples.write_split(path, [items])
+    template = _band_template(columns)
+    with Document(path) as reference:
+        tpl.finalize(template, reference)
+    return parse_pdf(path, template)
+
+
+def test_default_keeps_whole_cell(tmp_path):
+    rows = _table_values(_band_result(tmp_path, ["sub3: x sub4: y", "more"], [{"id": "a", "name": "A", "band": 1}]))
+    assert rows[0]["a"] == "sub3: x sub4: y more"
+
+
+def test_split_by_regex_and_no_match_keeps_text(tmp_path):
+    columns = [{"id": "a", "name": "A", "band": 1, "extract": r"^(\S+)"},
+               {"id": "b", "name": "B", "band": 1, "extract": r"^\S+\s+(\d+)$"}]
+    result = _band_result(tmp_path, ["njnnn ji"], columns)
+    cells = result["tables"][0]["rows"][0]["cells"]
+    assert cells["a"]["value"] == "njnnn" and cells["a"]["status"] == "ok"
+    assert cells["b"]["value"] == "njnnn ji" and "format_mismatch" in cells["b"]["reasons"]
+
+
+def _part_columns(mode, count=2):
+    return [{"id": f"p{i}", "name": f"P{i}", "band": 1, "part_by": mode, "part": i} for i in range(1, count + 1)]
+
+
+def test_split_by_space(tmp_path):
+    rows = _table_values(_band_result(tmp_path, ["njnnn ji"], _part_columns("space")))
+    assert (rows[0]["p1"], rows[0]["p2"]) == ("njnnn", "ji")
+
+
+def test_split_count_mismatch_loses_nothing(tmp_path):
+    result = _band_result(tmp_path, ["one two three"], _part_columns("space"))
+    cells = result["tables"][0]["rows"][0]["cells"]
+    assert cells["p1"]["value"] == "one two three" and cells["p2"]["value"] == ""
+    assert "split_count_mismatch" in cells["p1"]["reasons"] and "split_count_mismatch" in cells["p2"]["reasons"]
+
+
+def test_non_consecutive_parts_lose_nothing(tmp_path):
+    columns = [{"id": "p1", "name": "P1", "band": 1, "part_by": "space", "part": 2},
+               {"id": "p2", "name": "P2", "band": 1, "part_by": "space", "part": 3}]
+    rows = _table_values(_band_result(tmp_path, ["aa bb"], columns))
+    assert rows[0]["p1"] == "aa bb" and rows[0]["p2"] == ""
+
+
+def test_split_by_gap_uses_real_distance(tmp_path):
+    rows = _table_values(_band_result(tmp_path, ["two words      ji"], _part_columns("gap")))
+    assert (rows[0]["p1"], rows[0]["p2"]) == ("two words", "ji")
+
+
+def test_bad_regex_is_rejected_when_saving():
+    template = _band_template([{"id": "a", "name": "A", "band": 1, "extract": "("}])
+    assert any("正規表達式" in error for error in tpl.validate(template))
 
 
 def test_garbled_detection():

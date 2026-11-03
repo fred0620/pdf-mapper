@@ -43,6 +43,15 @@ def _check_rule(rule, where: str, errors: list[str]) -> None:
         errors.append(f"{where} 的頁面規則不正確：{rule}")
 
 
+def _check_regex(spec: dict, keys: tuple[str, ...], where: str, errors: list[str]) -> None:
+    for key in keys:
+        if spec.get(key):
+            try:
+                re.compile(spec[key])
+            except re.error as exc:
+                errors.append(f"{where} 的正規表達式有誤：{spec[key]}（{exc}）")
+
+
 def validate(template: dict) -> list[str]:
     errors: list[str] = []
     if not template.get("template_id"):
@@ -58,6 +67,7 @@ def validate(template: dict) -> list[str]:
         if f.get("kind") not in FIELD_KINDS:
             errors.append(f"{where} 的類型不正確")
         _check_box(f.get("value_box"), where, errors)
+        _check_regex(f, ("extract", "pattern"), where, errors)
         _check_rule(f.get("page_rule", "first"), where, errors)
         if f.get("kind") == "key_value":
             _check_box((f.get("label") or {}).get("box"), f"{where} 的標題", errors)
@@ -69,6 +79,9 @@ def validate(template: dict) -> list[str]:
             errors.append(f"{where} 的 id 重複")
         ids.add(t.get("id"))
         columns = t.get("columns", [])
+        _check_regex(t, ("key_pattern", "stop_pattern"), where, errors)
+        for column in columns:
+            _check_regex(column, ("extract", "pattern"), f"{where} 的欄「{column.get('name', '?')}」", errors)
         if not columns:
             errors.append(f"{where} 沒有欄")
         if not t.get("regions"):

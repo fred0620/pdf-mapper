@@ -35,6 +35,7 @@ REASONS = {
     "possible_row_split": "這頁開頭的內容可能屬於上一列，請確認",
     "row_incomplete": "這一列缺必要欄位，可能跨頁或切錯列",
     "value_spans_pages": "內容接到下一頁，已合併，請確認",
+    "split_count_mismatch": "段數和設定不符，內容先放在第一欄，請確認",
     "unassigned_text": "有內容沒有分到任何欄，請確認開頭文字",
     "column_collision": "同一行有兩段內容搶同一欄，請確認分欄",
 }
@@ -138,7 +139,7 @@ def make_value(spec: dict, value: str, source: str, confidence: float, reasons: 
         reasons.append("required_missing")
         status = "missing"
     elif not value:
-        reasons = [r for r in reasons if r == "ocr_unavailable"]
+        reasons = [r for r in reasons if r in ("ocr_unavailable", "split_count_mismatch", "unassigned_text")]
         status = "review" if reasons else "ok"
     else:
         status = "review" if reasons else "ok"
@@ -458,16 +459,36 @@ def split_sections(text: str, starts: list[str]) -> tuple[dict[str, str], str]:
     return sections, text[:found[0][0]].strip()
 
 
-def _cell(column, lines, glyphs, source, page, transform, box, crossed, extra_reasons, starts=()):
-    joined = ("\n" if column.get("join") == "newline" else " ").join(lines).strip()
+def _plain_spec(column: dict) -> dict:
+    """已經切好內容後，只留下類型和格式檢查。"""
+    return {key: value for key, value in column.items() if key in ("type", "pattern")}
+
+
+def _cell_value(column, joined, lines, starts, parts) -> tuple[str, list[str]]:
+    """依欄位的取值方式取出內容。沒有設定時整格保留，這也是最安全的預設。"""
     if column.get("start"):
         sections, leftover = split_sections(" ".join(joined.split()), list(starts))
         section = sections.get(column["start"], "")
-        value, reasons = shape_value(section, [section], {k: v for k, v in column.items() if k != "pick_line"})
-        if leftover:
-            reasons.append("unassigned_text")
-    else:
-        value, reasons = shape_value(joined, lines, column)
+        if leftover and column["start"] == starts[0]:  # 沒分到的文字留在第一欄，不能消失
+            section = f"{leftover} {section}".strip()
+        value, reasons = shape_value(section, [section], _plain_spec(column))
+        return value, reasons + (["unassigned_text"] if leftover else [])
+    if column.get("part_by"):
+        tokens, peers = parts[column["part_by"]]
+        if not joined:
+            return "", []
+        numbers = sorted(c.get("part", 1) for c in peers)
+        if len(tokens) == len(peers) and numbers == list(range(1, len(peers) + 1)):
+            token = tokens[column.get("part", 1) - 1]
+            return shape_value(token, [token], _plain_spec(column))
+        # 段數不對就不猜：內容全部留在第一個分段欄，一個字都不丟
+        return (joined if column is peers[0] else ""), ["split_count_mismatch"]
+    return shape_value(joined, lines, column)
+
+
+def _cell(column, lines, glyphs, source, page, transform, box, crossed, extra_reasons, starts=(), parts=None):
+    joined = ("\n" if column.get("join") == "newline" else " ").join(lines).strip()
+    value, reasons = _cell_value(column, joined, lines, starts, parts or {})
     if crossed:
         reasons.append(crossed if isinstance(crossed, str) else "crosses_column")
     confidence = _confidence(glyphs) if glyphs else 0.0
@@ -591,6 +612,7 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
         i = _band(column, index)
         lines: list[str] = []
         glyphs: list[Glyph] = []
+        gaps: list[str] = []
         flag = None
         extra_boxes = []
         for number, (piece, (cells, flags)) in enumerate(zip(pieces, split)):
@@ -598,6 +620,7 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
                 continue
             lines += _text_lines(cells[i])  # 不同頁的座標不能放在一起分行
             glyphs += cells[i]
+            gaps += [line_text(chunk) for line in group_lines(cells[i]) for chunk in _split_chunks(line)]
             flag = flag or flags[i]
             if number:
                 extra_boxes.append({"page": piece.page.index + 1, "box": [
@@ -605,7 +628,13 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
         reasons = list(first.reasons) + (["row_spans_pages"] if extra_boxes else [])
         box = (first.dividers[i], first.box[1], first.dividers[i + 1], first.box[3])
         starts = [c["start"] for n, c in enumerate(columns) if _band(c, n) == i and c.get("start")]
-        cell = _cell(column, lines, glyphs, first.source, first.page, first.transform, box, flag, reasons, starts)
+        peers = [c for n, c in enumerate(columns) if _band(c, n) == i]
+        parts = {
+            "space": (" ".join(lines).split(), [c for c in peers if c.get("part_by") == "space"]),
+            "gap": (gaps, [c for c in peers if c.get("part_by") == "gap"]),
+        }
+        cell = _cell(column, lines, glyphs, first.source, first.page, first.transform, box, flag, reasons,
+                     starts, parts)
         if extra_boxes:
             cell["extra_boxes"] = extra_boxes
         row["cells"][column["id"]] = cell

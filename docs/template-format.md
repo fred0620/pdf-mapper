@@ -55,7 +55,7 @@
 | 鍵 | 說明 |
 |---|---|
 | `id` / `name` | 代號與顯示名稱 |
-| `columns` | 輸出欄：`{id, name, band, type, pick_line, start, extract, pattern, join, row_required}` |
+| `columns` | 輸出欄：`{id, name, band, type, pick_line, start, extract, part_by, part, pattern, join, row_required}` |
 | `regions` | 各頁範圍：`{page_rule, ref_page, box, dividers, header}`，`header` 為選用的表頭 |
 | `end_marker` | 選用的表尾標記：`{text, box, ref_page}` |
 | `key_column` | 判斷新一列的欄，例如項次。沒設定時每行文字算一列 |
@@ -64,7 +64,7 @@
 | `stop_pattern` | 遇到這段文字就結束表格 |
 | `source` | `auto`、`text`、`ocr` |
 
-`band` 指向實際的直欄，`dividers` 的相鄰兩條線圍出一個直欄。同一格有上下兩行要分開時，讓兩個輸出欄指向同一個 `band`，再用 `pick_line` 區分行數固定的內容，或用 `start` 依開頭文字切段。`start` 切段時，每段到同一直欄的下一個開頭為止；沒有設定的開頭會留在前一段，第一個開頭之前的文字會標記。
+`band` 指向實際的直欄，`dividers` 的相鄰兩條線圍出一個直欄。同一格有上下兩行要分開時，讓兩個輸出欄指向同一個 `band`，再用 `pick_line` 區分行數固定的內容，或用 `start` 依開頭文字切段。`start` 切段時，每段到同一直欄的下一個開頭為止；沒有設定的開頭會留在前一段，第一個開頭之前的文字會標記。`part_by` 為 `space` 或 `gap` 時依空格或字距分段，`part` 是第幾段（從 1 起算）；同一直欄設定了幾個這類欄，就預期有幾段，段數不符時內容全放第一段並標記。都沒設定時，整格內容原樣輸出。
 
 `key_position` 為 `middle` 時，以相鄰兩個項次之間最大的空白切列，新一頁開頭的內容依 `row_required` 判斷歸屬，無法判斷時會標記。為 `top` 時，頁首在第一個項次之前的內容會併到上一頁最後一列，並標記給人確認。
 
