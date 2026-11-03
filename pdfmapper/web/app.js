@@ -47,6 +47,8 @@ const state = {
   selected: null,      // {type: field|table|anchor, id}
   template: blankTemplate(),
   undo: [],
+  savedTemplate: null, // 上次儲存時的內容，用來判斷有沒有未儲存的修改
+  savedId: null,
   tests: [],           // 範例測試結果
   testing: false,
   read: null,          // 選取欄位的即時預覽
@@ -651,10 +653,38 @@ function renderLeftTrain() {
       state.templates.map((t) => h("option", { value: t.id }, t.name))),
     thumbs());
 }
+// 影像圖塊是測試時自動補上的，不算使用者的修改
+// 後端回傳的鍵順序可能不同，所以比對前先排序
+const comparable = (template) => JSON.stringify(template, (key, value) => {
+  if (key === "patch" || key === "text_center") return undefined;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : 1)));
+  }
+  return value;
+});
+function markSaved() {
+  state.savedTemplate = comparable(T());
+  state.savedId = T().template_id;
+}
+const templateIsEmpty = () => !hasDefinitions() && !T().name && !T().validations.length;
+const hasUnsavedTemplate = () => !templateIsEmpty() && comparable(T()) !== state.savedTemplate;
+const resetTemplate = guard(async () => {
+  if (hasUnsavedTemplate() && !window.confirm("這個範本還沒儲存，開始新範本後，目前的標注會消失。要繼續嗎？")) return;
+  for (const doc of state.docs) await api(`/api/docs/${doc.id}`, { method: "DELETE" });
+  Object.assign(state, {
+    template: blankTemplate(), savedTemplate: null, savedId: null, undo: [],
+    docs: [], referenceId: null, tests: [], docId: null, page: 0, zoom: 1,
+    tool: "select", pending: null, selected: null, read: null, checkDraft: null, drawerOpen: false,
+  });
+  saveDraft();
+  renderAll();
+  toast("已重置，可以開始建立新範本");
+});
 const openTemplate = guard(async (id) => {
   if (!id) return;
   snapshot();
   state.template = { ...blankTemplate(), ...await api(`/api/templates/${encodeURIComponent(id)}`) };
+  markSaved();
   state.selected = null;
   state.tests = [];
   toast(state.docs.length ? "範本已開啟" : "範本已開啟，請加入基準範例 PDF 才能看到框線");
@@ -950,7 +980,10 @@ function actionsBar() {
       class: "btn primary wide", disabled: state.testing || !state.docs.length, onclick: testTemplate,
     }, state.testing ? "測試中" : `用 ${state.docs.length} 份範例測試`),
     h("button", { class: "btn wide", id: "saveButton", disabled: !T().template_id, onclick: saveTemplate },
-      T().template_id ? "儲存範本" : "先填範本名稱才能儲存"));
+      T().template_id ? "儲存範本" : "先填範本名稱才能儲存"),
+    h("button", {
+      class: "btn wide", id: "resetButton", disabled: templateIsEmpty() && !state.docs.length, onclick: resetTemplate,
+    }, "開始新範本"));
 }
 function renderRightActions() {
   const current = $("actions");
@@ -975,11 +1008,16 @@ const testTemplate = guard(async () => {
   }
 });
 const saveTemplate = guard(async () => {
+  const id = T().template_id;
+  if (id !== state.savedId && state.templates.some((t) => t.id === id)
+    && !window.confirm(`已經有叫做「${T().name}」的範本，要覆蓋嗎？`)) return;
   await api("/api/templates", { json: { template: T(), reference: state.referenceId } });
+  markSaved();
   await loadTemplates();
   if (!state.templateIds.includes(T().template_id)) state.templateIds.push(T().template_id);
-  toast(`範本「${T().name}」已儲存`);
+  toast(`範本「${T().name}」已儲存。要做下一個範本時，按「開始新範本」`);
   renderLeft();
+  renderRightActions();
 });
 
 /* ---------- 右欄：解析結果 ---------- */
