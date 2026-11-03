@@ -193,6 +193,15 @@ const onBox = guard(async (box) => {
     renderAll();
     return;
   }
+  if (tool === "continuation") {
+    const field = selectedItem();
+    snapshot();
+    field.continuation = { box, ref_page: state.page };
+    state.continuing = null;
+    setTool("select");
+    renderAll();
+    return;
+  }
   if (tool === "header") {
     const read = await readBox(box);
     const table = selectedItem();
@@ -248,6 +257,7 @@ function deleteSelected() {
   renderAll();
 }
 function setTool(tool) {
+  if (state.tool === "continuation" && tool !== "continuation") state.continuing = null;
   state.tool = tool;
   state.pending = null;
   renderToolbar(); renderHint(); renderOverlay();
@@ -360,6 +370,14 @@ function renderDefinitions(layer) {
     if (active) editableBox(node, () => field.value_box, (b) => { field.value_box = b; }, refreshRead);
     layer.append(node);
   }
+  for (const field of T().fields) {
+    if (field.continuation?.ref_page !== page) continue;
+    const active = selected?.type === "field" && selected.id === field.id;
+    const node = markBox(field.continuation.box, active ? "selected" : "", `(${numberOf(field.id)}) ${field.name} 接續`,
+      () => { if (state.tool === "select" && !active) selectItem("field", field.id); });
+    if (active) editableBox(node, () => field.continuation.box, (b) => { field.continuation.box = b; });
+    layer.append(node);
+  }
   for (const anchor of T().anchors) {
     if (anchor.ref_page !== page) continue;
     const active = selected?.type === "anchor" && selected.id === anchor.id;
@@ -447,13 +465,15 @@ function allValues(result) {
 function renderResultBoxes(layer, result) {
   for (const entry of allValues(result)) {
     const { value, ref } = entry;
-    if (!value.box || value.page !== state.page + 1) continue;
-    if (value.status === "ok" && !value.value) continue;
+    if (!value.box || (value.status === "ok" && !value.value)) continue;
     const status = ["review", "missing"].includes(value.status) ? value.status : "ok";
-    const node = markBox(value.box, `${status}${state.focusRef === ref ? " focus" : ""}`, "",
-      () => focusValue(ref));
-    node.title = `${entry.name}：${value.value || "（空白）"}`;
-    layer.append(node);
+    const places = [{ page: value.page, box: value.box }, ...(value.extra_boxes || [])];
+    for (const place of places.filter((p) => p.page === state.page + 1)) {
+      const node = markBox(place.box, `${status}${state.focusRef === ref ? " focus" : ""}`, "",
+        () => focusValue(ref));
+      node.title = `${entry.name}：${value.value || "（空白）"}`;
+      layer.append(node);
+    }
   }
 }
 function renderOverlay() {
@@ -543,6 +563,7 @@ function renderHint() {
     else if (state.tool === "pos") text = "框住數值的範圍。這類欄位沒有標題，靠定位點找位置。";
     else if (state.tool === "table") text = "框住表格的資料區，不含標題列。";
     else if (state.tool === "region") text = `框住這一頁的資料區，第 ${state.page + 1} 頁起會用這個範圍。`;
+    else if (state.tool === "continuation") text = "框住內容在這一頁接續的範圍。按 Esc 取消。";
     else if (state.tool === "header") text = "框住表頭文字，例如第一欄的標題。要選每份都長得一樣的部分。按 Esc 取消。";
     else if (state.tool === "endmark") text = "框住表格結束後緊接著出現的文字，例如「合計」。按 Esc 取消。";
     else if (state.tool === "anchor") text = "框住每份都一樣的文字，例如表單標題。定位點越分散，對位越準。";
@@ -790,6 +811,18 @@ function typeSelect(item) {
   return h("select", { "aria-label": "資料類型", onchange: (e) => { item.type = e.target.value; saveDraft(); } },
     TYPE_OPTIONS.map(([value, label]) => h("option", { value, selected: (item.type || "text") === value }, label)));
 }
+function startContinuation(field) {
+  const doc = currentDoc();
+  if (field.ref_page + 1 >= doc.pages) {
+    toast("基準範例沒有下一頁，請換一份有跨頁的範例", true);
+    renderRight();
+    return;
+  }
+  state.continuing = field.id;
+  setPage(field.ref_page + 1);
+  setTool("continuation");
+  renderRight();
+}
 function fieldPanel(field) {
   const read = state.read;
   return [
@@ -809,7 +842,15 @@ function fieldPanel(field) {
       }), "必填，沒抓到就標記"),
       h("label", { class: "check" }, h("input", {
         type: "checkbox", checked: !!field.verify, onchange: (e) => { field.verify = e.target.checked; saveDraft(); },
-      }), "重要欄位，用影像辨識再核對一次")),
+      }), "重要欄位，用影像辨識再核對一次"),
+      h("label", { class: "check" }, h("input", {
+        type: "checkbox", checked: !!(field.continuation || state.continuing === field.id),
+        onchange: (e) => {
+          if (e.target.checked) startContinuation(field);
+          else { snapshot(); delete field.continuation; state.continuing = null; setTool("select"); renderAll(); }
+        },
+      }), "內容可能接到下一頁"),
+      field.continuation ? h("p", { class: "note" }, `接續範圍在第 ${field.continuation.ref_page + 1} 頁，接上時會標記給人確認。`) : null),
     h("details", {}, h("summary", {}, "進階設定"), h("div", { class: "form" },
       field.kind === "key_value" ? h("label", {}, "比對用的標題文字", h("input", {
         type: "text", value: field.label.text,
@@ -827,92 +868,141 @@ function fieldPanel(field) {
     h("div", { style: "margin-top:10px" }, h("button", { class: "btn danger", onclick: deleteSelected }, "刪除欄位")),
   ];
 }
-function columnRow(table, column) {
-  const keyName = `key_${table.id}`;
-  const split = table.columns.filter((c) => c.band === column.band).length > 1;
-  return h("div", {},
-    h("div", { class: "col-row" },
-      h("input", {
-        type: "text", value: column.name, "aria-label": "欄名",
-        oninput: (e) => { column.name = e.target.value; saveDraft(); renderOverlay(); },
-      }),
-      typeSelect(column),
-      split ? h("button", {
-        "aria-label": "移除這個輸出欄", title: "移除這個輸出欄",
-        onclick: () => { snapshot(); table.columns = table.columns.filter((c) => c !== column); renderAll(); },
-      }, "×") : h("span")),
-    h("div", { class: "col-row" }, h("span", { class: "key" },
-      h("label", {}, h("input", {
-        type: "radio", name: keyName, checked: table.key_column === column.id,
-        onchange: () => { table.key_column = column.id; saveDraft(); },
-      }), " 用這欄判斷新的一列"),
-      h("label", {}, "多行 ", h("select", {
-        "aria-label": "多行內容的處理方式", style: "width:auto",
-        onchange: (e) => { if (e.target.value === "newline") column.join = "newline"; else delete column.join; saveDraft(); },
-      }, [["space", "接成一行"], ["newline", "保留換行"]].map(([value, label]) =>
-        h("option", { value, selected: (column.join || "space") === value }, label)))),
-      split || column.pick_line ? h("label", {}, "第 ", h("input", {
-        type: "number", value: column.pick_line ?? "", style: "width:46px",
-        oninput: (e) => { if (e.target.value) column.pick_line = Number(e.target.value); else delete column.pick_line; saveDraft(); },
-      }), " 行") : null)));
-}
 function markerRow(label, marker, action, onPick, onRemove) {
   return h("div", { class: "row marker-row" },
     h("span", {}, marker ? `${label}：${marker.text || "已設定"}` : label),
     marker ? h("button", { class: "linkish", onclick: onRemove }, "移除")
       : h("button", { class: "linkish", onclick: onPick }, action));
 }
-function tablePanel(table) {
-  const bands = table.regions[0].dividers.length - 1;
-  const groups = Array.from({ length: bands }, (_, band) => [
-    h("p", { class: "band-title" }, `第 ${band + 1} 直欄`),
-    table.columns.filter((c) => c.band === band).map((column) => columnRow(table, column)),
-    h("button", {
-      class: "linkish", onclick: () => {
-        snapshot();
-        const siblings = table.columns.filter((c) => c.band === band);
-        if (siblings.length === 1 && !siblings[0].pick_line) siblings[0].pick_line = 1;
-        table.columns.push({ id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band, pick_line: siblings.length + 1 });
-        table.columns.sort((a, b) => a.band - b.band);
-        renderAll();
-      },
-    }, "這一格有多行，再拆一欄"),
-  ]);
+const redraw = () => { saveDraft(); renderRight(); };
+function columnDetail(table, column) {
+  const siblings = table.columns.filter((c) => c.band === column.band);
+  const split = siblings.length > 1;
+  return h("div", { class: "form column-detail" },
+    h("label", {}, "資料類型", typeSelect(column)),
+    h("label", {}, "一格有多行時", h("select", {
+      onchange: (e) => { if (e.target.value === "newline") column.join = "newline"; else delete column.join; saveDraft(); },
+    }, [["space", "接成一行"], ["newline", "保留換行"]].map(([value, label]) =>
+      h("option", { value, selected: (column.join || "space") === value }, label)))),
+    h("label", { class: "check" }, h("input", {
+      type: "checkbox", checked: !!column.row_required,
+      onchange: (e) => { if (e.target.checked) column.row_required = true; else delete column.row_required; saveDraft(); },
+    }), "每一列都一定有這欄"),
+    h("p", { class: "note" }, "用來判斷跨頁：這欄沒抓到，代表這一列還沒結束。"),
+    split || column.pick_line ? h("label", {}, "只取第幾行", h("input", {
+      type: "number", value: column.pick_line ?? "",
+      oninput: (e) => { if (e.target.value) column.pick_line = Number(e.target.value); else delete column.pick_line; saveDraft(); },
+    })) : null,
+    h("div", { class: "row" },
+      h("button", {
+        class: "linkish", style: "text-align:left", onclick: () => {
+          snapshot();
+          if (siblings.length === 1 && !siblings[0].pick_line) siblings[0].pick_line = 1;
+          table.columns.push({
+            id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band: column.band, pick_line: siblings.length + 1,
+          });
+          table.columns.sort((x, y) => x.band - y.band);
+          renderAll();
+        },
+      }, "同一格拆成多欄"),
+      split ? h("button", {
+        class: "linkish", style: "flex:0 0 auto", onclick: () => {
+          snapshot();
+          table.columns = table.columns.filter((c) => c !== column);
+          if (table.key_column === column.id) table.key_column = null;
+          state.openColumn = null;
+          renderAll();
+        },
+      }, "移除這欄") : null));
+}
+function columnsTab(table) {
+  const rows = table.columns.map((column) => {
+    const open = state.openColumn === column.id;
+    return [
+      h("div", { class: `column-row${open ? " open" : ""}` },
+        h("span", { class: "column-band", title: `第 ${column.band + 1} 直欄` }, String(column.band + 1)),
+        h("input", {
+          type: "text", value: column.name, "aria-label": `第 ${column.band + 1} 直欄的欄名`,
+          oninput: (e) => {
+            column.name = e.target.value;
+            const option = document.querySelector(`#keyColumn option[value="${column.id}"]`);
+            if (option) option.textContent = column.name; // 上方的選單同步更新，輸入框保持焦點
+            saveDraft();
+            renderOverlay();
+          },
+        }),
+        h("button", {
+          class: "column-more", "aria-expanded": String(open), "aria-label": `${column.name} 的設定`,
+          onclick: () => { state.openColumn = open ? null : column.id; renderRight(); },
+        }, open ? "收合" : "設定")),
+      open ? columnDetail(table, column) : null,
+    ];
+  });
   return [
-    h("h2", {}, `(${numberOf(table.id)}) 表格設定`),
-    h("div", { class: "form" },
-      h("label", {}, "表格名稱", h("input", {
-        id: "itemName", type: "text", value: table.name,
-        oninput: (e) => { table.name = e.target.value; saveDraft(); renderOverlay(); },
-      }))),
-    h("h2", {}, "跨頁範圍"),
-    h("ul", { class: "checks" }, table.regions.map((region, i) => h("li", { class: "row" },
-      h("button", { class: "linkish", style: "text-align:left", onclick: () => setPage(region.ref_page) }, `範圍 ${i + 1}，在第 ${region.ref_page + 1} 頁`),
-      ruleSelect(region, renderAll).querySelector("select"),
-      i ? h("button", { class: "linkish", style: "flex:0 0 auto", onclick: () => { snapshot(); table.regions.splice(i, 1); renderAll(); } }, "移除") : null))),
-    h("p", { class: "note" }, "明細會接到下一頁時，切到第 2 頁再加一個範圍。"),
-    h("button", { class: "btn", onclick: () => setTool("region") }, "在這一頁加範圍"),
-    h("h2", {}, "表頭"),
-    h("p", { class: "note" }, "表格的起始位置不固定時才需要。設定後，範圍和分隔線會跟著表頭移動。"),
-    table.regions.map((region, i) => markerRow(
-      `範圍 ${i + 1}`, region.header, "框選表頭",
+    h("label", { class: "field-label" }, "用哪一欄判斷新的一列", h("select", {
+      id: "keyColumn", "aria-label": "用哪一欄判斷新的一列",
+      onchange: (e) => { table.key_column = e.target.value || null; saveDraft(); renderRight(); },
+    }, h("option", { value: "" }, "請選擇，通常是項次"),
+    table.columns.map((c) => h("option", { value: c.id, selected: table.key_column === c.id }, c.name)))),
+    h("p", { class: "note" }, "在頁面的表格內點一下，可以切出新的直欄。"),
+    rows,
+  ];
+}
+function placementTab(table) {
+  const regions = table.regions.map((region, i) => h("div", { class: "region-card" },
+    h("div", { class: "row" },
+      h("button", { class: "linkish", style: "text-align:left", onclick: () => setPage(region.ref_page) }, `第 ${region.ref_page + 1} 頁的範圍`),
+      i ? h("button", {
+        class: "linkish", style: "flex:0 0 auto", onclick: () => { snapshot(); table.regions.splice(i, 1); renderAll(); },
+      }, "移除") : null),
+    ruleSelect(region, renderAll),
+    markerRow("表頭", region.header, "框選表頭",
       () => { state.markerRegion = i; setPage(region.ref_page); setTool("header"); },
-      () => { snapshot(); delete region.header; renderAll(); })),
-    h("h2", {}, "表格結尾"),
-    h("p", { class: "note" }, "沒有設定時，抓到範圍底部為止。表格下方緊跟著其他內容時，建議框選表尾。"),
+      () => { snapshot(); delete region.header; renderAll(); })));
+  return [
+    h("h3", {}, "每一頁的範圍"),
+    regions,
+    h("button", { class: "linkish", onclick: () => setTool("region") }, "在目前這一頁加範圍"),
+    h("p", { class: "note" }, "明細接到下一頁時，切到那一頁再加。表格起始位置不固定時，框選表頭。"),
+    h("h3", {}, "表格結尾"),
     markerRow("表尾標記", table.end_marker, "框選表尾",
       () => setTool("endmark"), () => { snapshot(); delete table.end_marker; renderAll(); }),
     h("div", { class: "form", style: "margin-top:6px" },
       bind(table, "stop_pattern", "或遇到這段文字就結束", { placeholder: "例如：以下空白" })),
-    h("h2", {}, "欄"),
-    h("p", { class: "note" }, "在表格內點一下可以切出新的直欄。"),
-    groups,
-    h("details", {}, h("summary", {}, "進階設定"), h("div", { class: "form" },
+    h("p", { class: "note" }, "都沒設定時，抓到範圍底部為止。"),
+  ];
+}
+function advancedTab(table) {
+  return [
+    h("div", { class: "form" },
       h("label", {}, "列判斷欄的位置", h("select", { onchange: (e) => { table.key_position = e.target.value; saveDraft(); } },
         [["auto", "自動判斷"], ["middle", "在列的中間，或不固定"], ["top", "在列的最上方"]].map(([value, label]) =>
           h("option", { value, selected: table.key_position === value }, label)))),
-      bind(table, "key_pattern", "新一列的格式（正規表達式）", { placeholder: "預設為純數字" }))),
-    h("div", { style: "margin-top:10px" }, h("button", { class: "btn danger", onclick: deleteSelected }, "刪除表格")),
+      bind(table, "key_pattern", "新一列的格式（正規表達式）", { placeholder: "預設為純數字" }),
+      h("label", {}, "資料來源", h("select", { onchange: (e) => { table.source = e.target.value; saveDraft(); } },
+        [["auto", "自動"], ["text", "只用文字層"], ["ocr", "只用影像辨識"]].map(([value, label]) =>
+          h("option", { value, selected: (table.source || "auto") === value }, label))))),
+    h("div", { style: "margin-top:14px" }, h("button", { class: "btn danger", onclick: deleteSelected }, "刪除表格")),
+  ];
+}
+function tablePanel(table) {
+  const tabs = [["columns", "欄"], ["place", "位置"], ["more", "進階"]];
+  const active = state.tableTab || "columns";
+  const todo = [];
+  if (table.columns.length < 2) todo.push("在表格內點一下切出直欄");
+  if (!table.key_column) todo.push("選擇判斷新一列的欄位");
+  return [
+    h("h2", {}, `(${numberOf(table.id)}) 表格設定`),
+    h("div", { class: "form" }, h("label", {}, "表格名稱", h("input", {
+      id: "itemName", type: "text", value: table.name,
+      oninput: (e) => { table.name = e.target.value; saveDraft(); renderOverlay(); },
+    }))),
+    todo.length ? h("p", { class: "todo" }, `還需要：${todo.join("，")}`) : null,
+    h("div", { class: "subtabs", role: "tablist" }, tabs.map(([id, label]) => h("button", {
+      role: "tab", "aria-selected": String(active === id),
+      onclick: () => { state.tableTab = id; renderRight(); },
+    }, label))),
+    { columns: columnsTab, place: placementTab, more: advancedTab }[active](table),
   ];
 }
 function anchorPanel(anchor) {

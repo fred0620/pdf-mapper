@@ -61,6 +61,8 @@ def validate(template: dict) -> list[str]:
         _check_rule(f.get("page_rule", "first"), where, errors)
         if f.get("kind") == "key_value":
             _check_box((f.get("label") or {}).get("box"), f"{where} 的標題", errors)
+        if f.get("continuation"):
+            _check_box(f["continuation"].get("box"), f"{where} 的接續範圍", errors)
     for t in template.get("tables", []):
         where = f"表格「{t.get('name', '?')}」"
         if t.get("id") in ids:

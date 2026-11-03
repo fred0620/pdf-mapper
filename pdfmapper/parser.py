@@ -139,7 +139,7 @@ def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
             for spec in template.get("fields", []):
                 pages = [p for p in doc.pages
                          if rule_matches(spec.get("page_rule", "first"), p.index, total)]
-                value = extract_field(spec, pages, transforms, use_ocr)
+                value = extract_field(spec, pages, transforms, use_ocr, doc.pages)
                 value.update(id=spec["id"], name=spec.get("name", spec["id"]))
                 fields[spec["id"]] = value
                 result["fields"].append(value)

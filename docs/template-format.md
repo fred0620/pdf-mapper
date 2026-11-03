@@ -47,23 +47,26 @@
 | `pick_line` | 取第幾行，1 起算，-1 是最後一行 |
 | `extract` | 正規表達式，有群組時取第一個群組 |
 | `pattern` | 格式檢查的正規表達式 |
+| `join` | `newline` 時，多行內容保留換行 |
+| `continuation` | 下一頁的接續範圍：`{box, ref_page}` |
 
 ## 表格 `tables`
 
 | 鍵 | 說明 |
 |---|---|
 | `id` / `name` | 代號與顯示名稱 |
-| `columns` | 輸出欄：`{id, name, band, type, pick_line, extract, pattern}` |
-| `regions` | 各頁範圍：`{page_rule, ref_page, box, dividers}` |
+| `columns` | 輸出欄：`{id, name, band, type, pick_line, extract, pattern, join, row_required}` |
+| `regions` | 各頁範圍：`{page_rule, ref_page, box, dividers, header}`，`header` 為選用的表頭 |
+| `end_marker` | 選用的表尾標記：`{text, box, ref_page}` |
 | `key_column` | 判斷新一列的欄，例如項次。沒設定時每行文字算一列 |
 | `key_pattern` | 新一列的格式，預設純數字 |
-| `key_position` | `middle` 在列中間或不固定；`top` 在列最上方 |
+| `key_position` | `auto` 自動判斷；`middle` 在列中間或不固定；`top` 在列最上方。舊範本沒有此設定時視為 `middle` |
 | `stop_pattern` | 遇到這段文字就結束表格 |
 | `source` | `auto`、`text`、`ocr` |
 
 `band` 指向實際的直欄，`dividers` 的相鄰兩條線圍出一個直欄。同一格有上下兩行要分開時，讓兩個輸出欄指向同一個 `band`，再用 `pick_line` 區分。
 
-`key_position` 為 `middle` 時，以相鄰兩個項次之間最大的空白切列。為 `top` 時，頁首在第一個項次之前的內容會併到上一頁最後一列，並標記給人確認。
+`key_position` 為 `middle` 時，以相鄰兩個項次之間最大的空白切列，新一頁開頭的內容依 `row_required` 判斷歸屬，無法判斷時會標記。為 `top` 時，頁首在第一個項次之前的內容會併到上一頁最後一列，並標記給人確認。
 
 ## 檢查 `validations`
 

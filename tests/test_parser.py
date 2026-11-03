@@ -215,6 +215,126 @@ def test_key_position_detection():
     assert not _key_on_first_line([key], key + [Glyph("a", 0.3, 0.25, 0.31, 0.27)])
 
 
+def _split_result(tmp_path, pages, key_position, required=False):
+    import make_samples
+
+    path = tmp_path / "split.pdf"
+    make_samples.write_split(path, pages)
+    template = make_samples.build_split_template(key_position, required)
+    with Document(path) as reference:
+        tpl.finalize(template, reference)
+    return parse_pdf(path, template)
+
+
+TOP_PAGES = [
+    [(0, 0.20, "1"), (1, 0.20, "one"), (2, 0.20, "A1"),
+     (0, 0.30, "2"), (1, 0.30, "two-a"), (1, 0.33, "two-b"), (2, 0.30, "A2")],
+    [(1, 0.16, "two-c"), (1, 0.19, "two-d"),
+     (0, 0.26, "3"), (1, 0.26, "three"), (2, 0.26, "A3")],
+]
+# 項次在中間：每列內容在項次上方一行、下方一行
+MIDDLE_ROWS = [(0, 0.23, "1"), (1, 0.20, "one-a"), (1, 0.26, "one-b"), (2, 0.20, "A1"),
+               (0, 0.33, "2"), (1, 0.30, "two-a"), (1, 0.36, "two-b"), (2, 0.30, "A2")]
+MIDDLE_NEXT = [(0, 0.23, "3"), (1, 0.20, "three-a"), (1, 0.26, "three-b"), (2, 0.20, "A3")]
+
+
+def test_row_split_with_key_on_first_line(tmp_path):
+    result = _split_result(tmp_path, TOP_PAGES, "top")
+    rows = _table_values(result)
+    assert [r["no"] for r in rows] == ["1", "2", "3"]
+    assert rows[1]["body"] == "two-a\ntwo-b\ntwo-c\ntwo-d"
+    cell = result["tables"][0]["rows"][1]["cells"]["body"]
+    assert "row_spans_pages" in cell["reasons"] and cell["extra_boxes"][0]["page"] == 2
+
+
+def test_row_split_auto_detects_key_on_first_line(tmp_path):
+    rows = _table_values(_split_result(tmp_path, TOP_PAGES, "auto"))
+    assert [r["no"] for r in rows] == ["1", "2", "3"] and rows[1]["body"].endswith("two-d")
+
+
+def test_pick_line_works_across_pages(tmp_path):
+    import make_samples
+
+    path = tmp_path / "split.pdf"
+    make_samples.write_split(path, TOP_PAGES)
+    template = make_samples.build_split_template("top")
+    template["tables"][0]["columns"][1]["pick_line"] = 3
+    with Document(path) as reference:
+        tpl.finalize(template, reference)
+    assert _table_values(parse_pdf(path, template))[1]["body"] == "two-c"
+
+
+def test_middle_key_normal_page_is_not_flagged(tmp_path):
+    result = _split_result(tmp_path, [MIDDLE_ROWS, MIDDLE_NEXT], "middle")
+    rows = _table_values(result)
+    assert rows[2]["body"] == "three-a\nthree-b"
+    assert result["status"] == "ok"
+
+
+def test_middle_key_incomplete_row_takes_the_lead(tmp_path):
+    first = [item for item in MIDDLE_ROWS if item[2] != "A2"]
+    second = [(1, 0.15, "two-c"), (2, 0.15, "A2")] + [(c, y + 0.1, t) for c, y, t in MIDDLE_NEXT]
+    result = _split_result(tmp_path, [first, second], "middle", required=True)
+    rows = _table_values(result)
+    assert rows[1]["code"] == "A2" and rows[1]["body"].endswith("two-c")
+    assert rows[2]["body"] == "three-a\nthree-b" and rows[2]["code"] == "A3"
+    assert "row_spans_pages" in result["tables"][0]["rows"][1]["cells"]["code"]["reasons"]
+
+
+def test_middle_key_complete_row_keeps_lead(tmp_path):
+    second = [(1, 0.15, "extra")] + [(c, y + 0.1, t) for c, y, t in MIDDLE_NEXT]
+    result = _split_result(tmp_path, [MIDDLE_ROWS, second], "middle", required=True)
+    assert _table_values(result)[2]["body"].startswith("extra")
+    assert "row_spans_pages" not in str(result["tables"][0]["rows"][1])
+
+
+def test_middle_key_without_rule_is_flagged_not_guessed(tmp_path):
+    second = [(1, 0.15, "extra")] + [(c, y + 0.1, t) for c, y, t in MIDDLE_NEXT]
+    result = _split_result(tmp_path, [MIDDLE_ROWS, second], "middle")
+    assert "possible_row_split" in result["tables"][0]["rows"][2]["cells"]["no"]["reasons"]
+
+
+def test_required_cell_missing_is_flagged(tmp_path):
+    first = [item for item in MIDDLE_ROWS if item[2] != "A2"]
+    result = _split_result(tmp_path, [first, MIDDLE_NEXT], "middle", required=True)
+    cell = result["tables"][0]["rows"][1]["cells"]["code"]
+    assert cell["status"] == "missing" and "row_incomplete" in cell["reasons"]
+
+
+def test_key_value_continuation(tmp_path):
+    import make_samples
+
+    path = tmp_path / "split.pdf"
+    make_samples.write_split(path, [[(1, 0.85, "first part")], [(1, 0.15, "second part")]])
+    template = make_samples.build_split_template("top")
+    template["tables"] = []
+    template["fields"] = [{"id": "note", "name": "備註", "kind": "position", "page_rule": "first", "ref_page": 0,
+                           "value_box": [0.2, 0.83, 0.9, 0.88], "required": True,
+                           "continuation": {"box": [0.2, 0.13, 0.9, 0.18], "ref_page": 1}}]
+    with Document(path) as reference:
+        tpl.finalize(template, reference)
+    field = parse_pdf(path, template)["fields"][0]
+    assert field["value"] == "first part second part"
+    assert field["status"] == "review" and "value_spans_pages" in field["reasons"]
+    assert field["extra_boxes"][0]["page"] == 2
+
+
+def test_key_value_without_continuation_text_is_unchanged(tmp_path):
+    import make_samples
+
+    path = tmp_path / "split.pdf"
+    make_samples.write_split(path, [[(1, 0.85, "only")], [(1, 0.5, "elsewhere")]])
+    template = make_samples.build_split_template("top")
+    template["tables"] = []
+    template["fields"] = [{"id": "note", "name": "備註", "kind": "position", "page_rule": "first", "ref_page": 0,
+                           "value_box": [0.2, 0.83, 0.9, 0.88], "required": True,
+                           "continuation": {"box": [0.2, 0.13, 0.9, 0.18], "ref_page": 1}}]
+    with Document(path) as reference:
+        tpl.finalize(template, reference)
+    field = parse_pdf(path, template)["fields"][0]
+    assert field["value"] == "only" and field["status"] == "ok"
+
+
 def test_garbled_detection():
     assert is_garbled("(cid:1234)")
     assert is_garbled("")

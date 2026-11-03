@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from statistics import median
 
 from . import ocr as ocr_engine
 from .align import Transform, find_marker
@@ -31,6 +32,9 @@ REASONS = {
     "sum_mismatch": "加總驗證不符",
     "row_spans_pages": "這一列可能跨頁，已合併，請確認",
     "sequence_gap": "項次不連續，可能漏列",
+    "possible_row_split": "這頁開頭的內容可能屬於上一列，請確認",
+    "row_incomplete": "這一列缺必要欄位，可能跨頁或切錯列",
+    "value_spans_pages": "內容接到下一頁，已合併，請確認",
     "column_collision": "同一行有兩段內容搶同一欄，請確認分欄",
 }
 
@@ -160,16 +164,37 @@ def locate_value_box(field_spec: dict, transform: Transform) -> tuple[Box, list[
     return (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy), reasons
 
 
+def _read_continuation(spec: dict, page_after: Page | None, transform: Transform | None,
+                       use_ocr: bool) -> tuple[Reading | None, Box | None]:
+    """讀欄位在下一頁的接續範圍。"""
+    if page_after is None or not spec.get("continuation"):
+        return None, None
+    box = transform.box(tuple(spec["continuation"]["box"]))
+    reading = read_box(page_after, box, spec.get("source", "auto"), False, use_ocr)
+    return (reading, box) if reading.text else (None, None)
+
+
 def extract_field(spec: dict, pages: list[Page], transforms: dict[int, Transform],
-                  use_ocr: bool = True) -> dict:
+                  use_ocr: bool = True, all_pages: list[Page] | None = None) -> dict:
     last = None
+    all_pages = all_pages or pages
     for page in pages:
         transform = transforms[page.index]
         box, reasons = locate_value_box(spec, transform)
         reading = read_box(page, box, spec.get("source", "auto"), bool(spec.get("verify")), use_ocr)
-        value, shape_reasons = shape_value(reading.text, reading.lines, spec)
+        following = all_pages[page.index + 1] if page.index + 1 < len(all_pages) else None
+        extra, extra_box = (None, None)
+        if reading.text and following is not None:
+            extra, extra_box = _read_continuation(spec, following, transforms[following.index], use_ocr)
+        lines = reading.lines + (extra.lines if extra else [])
+        joiner = "\n" if spec.get("join") == "newline" else " "
+        value, shape_reasons = shape_value(joiner.join(lines).strip(), lines, spec)
+        if extra:
+            reasons = reasons + extra.reasons + ["value_spans_pages"]
         result = make_value(spec, value, reading.source, reading.confidence,
                             reasons + reading.reasons + shape_reasons, page.index, box, transform)
+        if extra:
+            result["extra_boxes"] = [{"page": following.index + 1, "box": [round(v, 5) for v in extra_box]}]
         if value:
             return result
         last = result
@@ -282,6 +307,19 @@ def _place_table(spec: dict, region: dict, page: Page, transform: Transform, use
     return box, dividers, ended
 
 
+@dataclass
+class _Piece:
+    """一列在某一頁上的內容。全部收集完才組成儲存格，跨頁合併時才能照欄位設定處理。"""
+    glyphs: list
+    layout: dict
+    dividers: list
+    source: str
+    page: Page
+    transform: Transform
+    box: Box
+    reasons: list
+
+
 def _key_on_first_line(keys: list[list[Glyph]], glyphs: list[Glyph]) -> bool:
     """第一個項次上方沒有任何內容，代表項次就在每一列的第一行。"""
     top = min(g.y0 for g in keys[0])
@@ -300,7 +338,8 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
     position = spec.get("key_position", "middle")  # 舊範本沒有這個設定，維持原本的行為
     key_at_top = None if position == "auto" else position == "top"
     stop_pattern = spec.get("stop_pattern")
-    rows: list[dict] = []
+    rows: list[list[_Piece]] = []  # 每一列由一到多個片段組成，跨頁時片段來自不同頁
+    above_key: list[float] = []    # 各列在項次上方有多高，用來判斷下一頁開頭是否異常
     issues: list[dict] = []
     stopped = False
 
@@ -332,24 +371,38 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
             if keys:
                 key_at_top = _key_on_first_line(keys, glyphs)
         layout = _assign_chunks(glyphs, dividers)
+        piece = lambda top, bottom, group: _Piece(group, layout, dividers, source, page, transform,
+                                                  (box[0], top, box[2], bottom), page_reasons)
         bands = _rows_on_page(glyphs, dividers, key_index, key_pattern, box, bool(key_at_top))
-        for band_top, band_bottom, spill in bands:
-            band = [g for g in glyphs if band_top <= g.cy < band_bottom]
-            if not band:
+
+        first_row_note = []
+        if rows and not key_at_top and key_index is not None:
+            bands, first_row_note = _resolve_lead(rows, columns, glyphs, dividers, key_index, key_pattern,
+                                                  bands, above_key)
+        for number, (band_top, band_bottom, spill) in enumerate(bands):
+            group = [g for g in glyphs if band_top <= g.cy < band_bottom]
+            if not group:
                 continue
             if spill and rows:
-                _merge_spill(rows[-1], band, columns, layout)
+                rows[-1].append(piece(band_top, band_bottom, group))
                 continue
-            rows.append(_build_row(band, columns, dividers, source, page, transform,
-                                   (box[0], band_top, box[2], band_bottom), page_reasons, layout))
+            built = piece(band_top, band_bottom, group)
+            if number == 0 and first_row_note:
+                built.reasons = list(built.reasons) + first_row_note
+            rows.append([built])
+            if not key_at_top and key_index is not None:
+                keys = _key_lines(group, dividers, key_index, key_pattern)
+                if keys:
+                    above_key.append(min(g.y0 for g in keys[0]) - min(g.y0 for g in group))
 
-    if spec.get("end_marker") and rows and not stopped:
+    finished = [_finish_row(pieces, columns) for pieces in rows]
+    if spec.get("end_marker") and finished and not stopped:
         issues.append({"code": "end_not_found", "page": None,
                        "message": f"表格「{spec.get('name', spec['id'])}」找不到表尾標記，可能抓到多餘內容"})
-    issues.extend(_check_sequence(rows, key_id))
+    issues.extend(_check_sequence(finished, key_id))
     return {"id": spec["id"], "name": spec.get("name", spec["id"]),
             "columns": [{"id": c["id"], "name": c.get("name", c["id"])} for c in columns],
-            "rows": rows, "issues": issues}
+            "rows": finished, "issues": issues}
 
 
 def _key_lines(glyphs, dividers, key_index, key_pattern):
@@ -379,8 +432,7 @@ def _band(column: dict, index: int) -> int:
     return column.get("band", index)
 
 
-def _cell(column, glyphs, source, page, transform, box, crossed, extra_reasons):
-    lines = _text_lines(glyphs)
+def _cell(column, lines, glyphs, source, page, transform, box, crossed, extra_reasons):
     joined = ("\n" if column.get("join") == "newline" else " ").join(lines).strip()
     value, reasons = shape_value(joined, lines, column)
     if crossed:
@@ -388,8 +440,13 @@ def _cell(column, glyphs, source, page, transform, box, crossed, extra_reasons):
     confidence = _confidence(glyphs) if glyphs else 0.0
     if glyphs and confidence < OCR_MIN_CONFIDENCE:
         reasons.append("ocr_low_confidence")
+    spec = column
+    if column.get("row_required"):
+        spec = column | {"required": True}
+        if not value:
+            reasons.append("row_incomplete")
     actual = "ocr" if any(g.source == "ocr" for g in glyphs) else source
-    return make_value(column, value, actual, confidence, extra_reasons + reasons, page.index, box, transform)
+    return make_value(spec, value, actual, confidence, extra_reasons + reasons, page.index, box, transform)
 
 
 def _split_chunks(line: list[Glyph]) -> list[list[Glyph]]:
@@ -492,30 +549,74 @@ def _split_bands(band_glyphs, layout, count):
     return cells, flags
 
 
-def _build_row(band, columns, dividers, source, page, transform, box, reasons, layout) -> dict:
-    cells, flags = _split_bands(band, layout, len(dividers) - 1)
-    row = {"page": page.index + 1, "cells": {}}
+def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
+    """把一列的所有片段組成儲存格。多行、第幾行和格式檢查都在這裡才套用。"""
+    first = pieces[0]
+    split = [_split_bands(p.glyphs, p.layout, len(p.dividers) - 1) for p in pieces]
+    row = {"page": first.page.index + 1, "cells": {}}
     for index, column in enumerate(columns):
         i = _band(column, index)
-        cell_box = (dividers[i], box[1], dividers[i + 1], box[3])
-        row["cells"][column["id"]] = _cell(column, cells[i], source, page, transform,
-                                           cell_box, flags[i], list(reasons))
+        lines: list[str] = []
+        glyphs: list[Glyph] = []
+        flag = None
+        extra_boxes = []
+        for number, (piece, (cells, flags)) in enumerate(zip(pieces, split)):
+            if not cells[i]:
+                continue
+            lines += _text_lines(cells[i])  # 不同頁的座標不能放在一起分行
+            glyphs += cells[i]
+            flag = flag or flags[i]
+            if number:
+                extra_boxes.append({"page": piece.page.index + 1, "box": [
+                    round(v, 5) for v in (piece.dividers[i], piece.box[1], piece.dividers[i + 1], piece.box[3])]})
+        reasons = list(first.reasons) + (["row_spans_pages"] if extra_boxes else [])
+        box = (first.dividers[i], first.box[1], first.dividers[i + 1], first.box[3])
+        cell = _cell(column, lines, glyphs, first.source, first.page, first.transform, box, flag, reasons)
+        if extra_boxes:
+            cell["extra_boxes"] = extra_boxes
+        row["cells"][column["id"]] = cell
     return row
 
 
-def _merge_spill(row, band, columns, layout) -> None:
-    count = max(_band(c, i) for i, c in enumerate(columns)) + 1
-    count = max([count] + [layout[id(g)][0] + 1 for g in band])
-    cells, _ = _split_bands(band, layout, count)
-    for index, column in enumerate(columns):
-        glyphs = cells[_band(column, index)]
-        if not glyphs:
-            continue
-        cell = row["cells"][column["id"]]
-        extra = " ".join(_text_lines(glyphs))
-        cell["value"] = f"{cell['value']} {extra}".strip()
-        cell["reasons"] = list(dict.fromkeys(cell["reasons"] + ["row_spans_pages"]))
-        cell["status"] = "review"
+def _resolve_lead(rows, columns, glyphs, dividers, key_index, key_pattern, bands, above_key):
+    """項次在列中間時，判斷新一頁開頭、第一個項次上方的內容屬於誰。
+
+    這段可能是這一頁第一列的上半部，也可能是上一頁最後一列的下半部。
+    有設定「每列必有」時，看上一列完不完整；沒有就不猜，標記給人確認。
+    回傳 (調整後的列範圍, 要加在這頁第一列的疑點)。
+    """
+    keys = _key_lines(glyphs, dividers, key_index, key_pattern)
+    if not keys or not bands or bands[0][2]:
+        return bands, []
+    key_top = min(g.y0 for g in keys[0])
+    height = max(g.height for g in keys[0])
+    above = sorted((g for g in glyphs if g.cy < key_top - height * 0.3), key=lambda g: g.y0)
+    if not above:
+        return bands, []
+    lead_height = key_top - above[0].y0
+    if above_key and lead_height <= median(above_key) + height * 1.5:
+        return bands, []  # 高度和平常一樣，就是這一列自己的上半部
+
+    required = [c for c in columns if c.get("row_required")]
+    if not required:
+        return bands, ["possible_row_split"]
+    previous = _finish_row(rows[-1], columns)
+    if all(previous["cells"][c["id"]]["value"] for c in required):
+        return bands, []
+
+    # 上一列不完整：在項次上方最大的空白處切開，上半段併回上一列
+    cut, reach, best = (above[-1].y1 + key_top) / 2, above[0].y1, 0.0
+    for g in above[1:] + [_Top(key_top)]:
+        if g.y0 - reach > best:
+            best, cut = g.y0 - reach, (g.y0 + reach) / 2
+        reach = max(reach, getattr(g, "y1", reach))
+    top, bottom, _spill = bands[0]
+    return [(top, cut, True), (cut, bottom, False)] + bands[1:], []
+
+
+@dataclass
+class _Top:
+    y0: float
 
 
 def _check_sequence(rows, key_id) -> list[dict]:

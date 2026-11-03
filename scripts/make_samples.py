@@ -361,6 +361,54 @@ def build_floating_template() -> dict:
     }
 
 
+SPLIT_COLS = [0.08, 0.2, 0.6, 0.92]
+
+
+def write_split(path, pages, font_path=None):
+    """逐頁放文字的簡單表格，用來測跨頁。pages 是每頁的 [(欄, y, 文字)]，另加頁尾備註。"""
+    pdfmetrics.registerFont(UnicodeCIDFont("MSung-Light"))
+    out = canvas.Canvas(str(path), pagesize=(W, H))
+    for items in pages:
+        sheet = Sheet(font_path)
+        sheet.label("跨頁報表", 0.08, 0.04, sheet.big)
+        sheet.label("頁首", 0.8, 0.05)
+        sheet.label("頁尾", 0.08, 0.93)
+        sheet.label("備註", 0.8, 0.93)
+        buffer = io.BytesIO()
+        sheet.image.save(buffer, "JPEG", quality=85)
+        buffer.seek(0)
+        out.drawImage(ImageReader(buffer), 0, 0, W, H)
+        out.setFont(MONO, 10)
+        for column, y, text in items:
+            out.drawString((SPLIT_COLS[column] + 0.01) * W, H - y * H - 3, text)
+        out.showPage()
+    out.save()
+
+
+def build_split_template(key_position="top", required=False) -> dict:
+    columns = [{"id": "no", "name": "項次", "band": 0}, {"id": "body", "name": "內容", "band": 1, "join": "newline"},
+               {"id": "code", "name": "代碼", "band": 2}]
+    if required:
+        columns[2]["row_required"] = True
+    anchors = []
+    for page, rule in ((0, "first"), (1, "rest")):
+        anchors += [
+            {"id": f"t{page}", "text": "跨頁報表", "box": [0.08, 0.04, 0.34, 0.1], "page_rule": rule, "ref_page": page},
+            {"id": f"f{page}", "text": "頁尾", "box": [0.078, 0.928, 0.14, 0.952], "page_rule": rule, "ref_page": page},
+            {"id": f"r{page}", "text": "備註", "box": [0.798, 0.928, 0.86, 0.952], "page_rule": rule, "ref_page": page},
+        ]
+    return {
+        "schema_version": 1, "template_id": f"split_{key_position}", "name": "跨頁測試", "validations": [],
+        "fields": [], "anchors": anchors,
+        "tables": [{
+            "id": "items", "name": "明細", "columns": columns, "key_column": "no", "key_position": key_position,
+            "required": True,
+            "regions": [{"page_rule": "first", "ref_page": 0, "box": [0.08, 0.14, 0.92, 0.9], "dividers": SPLIT_COLS},
+                        {"page_rule": "rest", "ref_page": 1, "box": [0.08, 0.14, 0.92, 0.9], "dividers": SPLIT_COLS}],
+        }],
+    }
+
+
 def build_invoice_template() -> dict:
     """欄位與表格代號刻意和報單範本相同，用來確認輸出不會混欄。"""
     def field(fid, name, label_box, box, **kw):
