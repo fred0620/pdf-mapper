@@ -35,7 +35,8 @@ REASONS = {
     "possible_row_split": "這頁開頭的內容可能屬於上一列，請確認",
     "row_incomplete": "這一列缺必要欄位，可能跨頁或切錯列",
     "value_spans_pages": "內容接到下一頁，已合併，請確認",
-    "split_count_mismatch": "段數和設定不符，內容先放在第一欄，請確認",
+    "split_count_mismatch": "段數和設定不符，已留空，請看原始內容",
+    "extract_no_match": "擷取規則比對不到，已留空，請看原始內容",
     "column_collision": "同一行有兩段內容搶同一欄，請確認分欄",
 }
 
@@ -117,9 +118,9 @@ def shape_value(reading_text: str, lines: list[str], spec: dict) -> tuple[str, l
         match = re.search(extract, value)
         if match:
             value = (match.group(1) if match.groups() else match.group(0)) or ""
-        else:
-            reasons.append("format_mismatch")
-            return value.strip(), reasons
+        else:  # 擷取失敗就留空，不把整段內容塞進欄位
+            reasons.append("extract_no_match")
+            return "", reasons
     value = value.strip()
     pattern = spec.get("pattern") or TYPE_PATTERNS.get(spec.get("type", "text"))
     if value and pattern and not re.search(pattern, value):
@@ -138,7 +139,7 @@ def make_value(spec: dict, value: str, source: str, confidence: float, reasons: 
         reasons.append("required_missing")
         status = "missing"
     elif not value:
-        reasons = [r for r in reasons if r in ("ocr_unavailable", "split_count_mismatch")]
+        reasons = [r for r in reasons if r in ("ocr_unavailable", "split_count_mismatch", "extract_no_match")]
         status = "review" if reasons else "ok"
     else:
         status = "review" if reasons else "ok"
@@ -196,6 +197,8 @@ def extract_field(spec: dict, pages: list[Page], transforms: dict[int, Transform
                             reasons + reading.reasons + shape_reasons, page.index, box, transform)
         if extra:
             result["extra_boxes"] = [{"page": following.index + 1, "box": [round(v, 5) for v in extra_box]}]
+        if spec.get("extract") and reading.text:
+            result["raw"] = joiner.join(lines).strip()
         if value:
             return result
         last = result
@@ -397,6 +400,13 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
                     above_key.append(min(g.y0 for g in keys[0]) - min(g.y0 for g in group))
 
     finished = [_finish_row(pieces, columns) for pieces in rows]
+    for column in columns:  # 有內容但整份都沒抽到，多半是規則不對，要提醒
+        if not (column.get("start") or column.get("extract") or column.get("part_by")):
+            continue
+        cells = [row["cells"][column["id"]] for row in finished]
+        if any(cell.get("raw") for cell in cells) and not any(cell["value"] for cell in cells):
+            issues.append({"code": "column_all_blank", "page": None,
+                           "message": f"「{column.get('name', column['id'])}」整份都沒有抓到值，請確認取值規則"})
     if spec.get("end_marker") and finished and not stopped:
         issues.append({"code": "end_not_found", "page": None,
                        "message": f"表格「{spec.get('name', spec['id'])}」找不到表尾標記，可能抓到多餘內容"})
@@ -494,8 +504,8 @@ def _cell_value(column, joined, lines, starts, parts) -> tuple[str, list[str]]:
         if len(tokens) == len(peers) and numbers == list(range(1, len(peers) + 1)):
             token = tokens[column.get("part", 1) - 1]
             return shape_value(token, [token], _plain_spec(column))
-        # 段數不對就不猜：內容全部留在第一個分段欄，一個字都不丟
-        return (joined if column is peers[0] else ""), ["split_count_mismatch"]
+        # 段數不對就不猜：留空並標記，原始內容保留在 raw
+        return "", ["split_count_mismatch"]
     return shape_value(joined, lines, column)
 
 

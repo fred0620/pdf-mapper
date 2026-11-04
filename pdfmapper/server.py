@@ -19,6 +19,7 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 
 from . import ocr as ocr_engine
 from . import template as tpl
+from .clean import write_clean
 from .document import Document
 from .excel import write_excel
 from .extract import REASONS, read_box
@@ -45,6 +46,7 @@ app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
 _docs: dict[str, Document] = {}
 _docs_lock = threading.Lock()
 _runs: dict[str, dict] = {}
+_run_templates: dict[str, dict[str, dict]] = {}  # 含影像圖塊，不放進回傳給頁面的資料
 _clients: dict[str, float] = {}
 _clients_lock = threading.Lock()
 
@@ -262,6 +264,7 @@ def start_run():
     templates = [tpl.load(_template_path(template_id)) for template_id in body["template_ids"]]
     run_id = uuid.uuid4().hex
     _runs[run_id] = {"total": len(body["docs"]), "done": 0, "current": "", "results": [], "finished": False}
+    _run_templates[run_id] = {t["template_id"]: t for t in templates}
     threading.Thread(target=_run_job, args=(run_id, templates, body["docs"]), daemon=True).start()
     return jsonify({"run_id": run_id})
 
@@ -293,6 +296,15 @@ def edit_value(run_id):
 def export(run_id):
     stamp = time.strftime("%Y%m%d_%H%M%S")
     path = write_excel(_runs[run_id]["results"], OUTPUT / f"解析結果_{stamp}.xlsx")
+    return send_file(path, as_attachment=True, download_name=path.name)
+
+
+@app.get("/api/runs/<run_id>/clean")
+def export_clean(run_id):
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    only_confirmed = request.args.get("only_confirmed") == "1"
+    path = write_clean(_runs[run_id]["results"], _run_templates.get(run_id, {}),
+                       OUTPUT / f"乾淨資料_{stamp}.xlsx", only_confirmed)
     return send_file(path, as_attachment=True, download_name=path.name)
 
 

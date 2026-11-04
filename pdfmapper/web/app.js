@@ -234,6 +234,7 @@ const onBox = guard(async (box) => {
 
 function selectItem(type, id, focusName = false) {
   state.selected = { type, id };
+  state.outputPanel = false;
   state.read = null;
   renderAll();
   refreshRead();
@@ -729,6 +730,7 @@ const resetTemplate = guard(async () => {
     template: blankTemplate(), savedTemplate: null, savedId: null, undo: [],
     docs: [], referenceId: null, tests: [], docId: null, page: 0, zoom: 1,
     tool: "select", pending: null, selected: null, read: null, checkDraft: null, drawerOpen: false,
+    outputPanel: false, columnPreview: null,
   });
   saveDraft();
   renderAll();
@@ -1168,10 +1170,62 @@ function checksPanel() {
     h("details", {}, h("summary", {}, "新增檢查"), form),
   ];
 }
+/* 輸出設定：沒列在設定裡的欄位預設輸出，新增的欄位不會漏掉 */
+function outputList(saved, available) {
+  const names = new Map(available);
+  const list = (saved || []).filter((entry) => names.has(entry.id));
+  for (const [id] of available) if (!list.some((entry) => entry.id === id)) list.push({ id, include: true, name: "" });
+  return list;
+}
+function outputGroup(title, available, read, write) {
+  const names = new Map(available);
+  const list = outputList(read(), available);
+  const commit = () => { write(list); saveDraft(); };
+  const move = (index, step) => {
+    const target = index + step;
+    if (target < 0 || target >= list.length) return;
+    snapshot();
+    [list[index], list[target]] = [list[target], list[index]];
+    commit();
+    renderRight();
+  };
+  return [
+    h("h3", {}, title),
+    list.map((entry, index) => h("div", { class: "output-row" },
+      h("input", {
+        type: "checkbox", checked: entry.include !== false, "aria-label": `輸出 ${names.get(entry.id)}`,
+        onchange: (e) => { entry.include = e.target.checked; commit(); },
+      }),
+      h("input", {
+        type: "text", value: entry.name || "", placeholder: names.get(entry.id), "aria-label": `${names.get(entry.id)} 的輸出欄名`,
+        oninput: (e) => { entry.name = e.target.value; commit(); },
+      }),
+      h("button", { "aria-label": `${names.get(entry.id)} 上移`, disabled: index === 0, onclick: () => move(index, -1) }, "↑"),
+      h("button", { "aria-label": `${names.get(entry.id)} 下移`, disabled: index === list.length - 1, onclick: () => move(index, 1) }, "↓"))),
+  ];
+}
+function outputPanel() {
+  const output = () => (T().output = T().output || {});
+  const fields = T().fields.map((f) => [f.id, f.name]);
+  return [
+    h("button", { class: "linkish", style: "margin-bottom:8px", onclick: () => { state.outputPanel = false; renderRight(); } }, "回到欄位清單"),
+    h("h2", {}, "輸出欄位"),
+    h("p", { class: "note" }, "只影響「乾淨資料」，檢查用 Excel 維持完整內容。欄名留空就用原本的名稱。"),
+    fields.length ? outputGroup("欄位", fields, () => T().output?.fields, (list) => { output().fields = list; }) : null,
+    T().tables.map((table) => outputGroup(table.name, table.columns.map((c) => [c.id, c.name]),
+      () => T().output?.tables?.[table.id], (list) => {
+        output().tables = output().tables || {};
+        output().tables[table.id] = list;
+      })),
+    !fields.length && !T().tables.length ? h("p", { class: "note" }, "還沒有欄位。") : null,
+  ];
+}
 function renderRightTrain() {
   const item = selectedItem();
   let body;
-  if (item) {
+  if (state.outputPanel) {
+    body = outputPanel();
+  } else if (item) {
     const panel = { field: fieldPanel, table: tablePanel, anchor: anchorPanel }[state.selected.type](item);
     body = [h("button", { class: "linkish", onclick: () => { state.selected = null; renderAll(); } }, "回到欄位清單"), panel];
     body[0].style.marginBottom = "8px";
@@ -1191,6 +1245,9 @@ function renderRightTrain() {
       h("h2", {}, "數字檢查"),
       h("p", { class: "note" }, "對不上時，結果會標記給人確認。"),
       checksPanel(),
+      h("h2", {}, "輸出"),
+      h("p", { class: "note" }, "選擇乾淨資料要輸出哪些欄，以及欄名和順序。沒設定時全部輸出。"),
+      h("button", { class: "btn", onclick: () => { state.outputPanel = true; renderRight(); } }, "設定輸出欄位"),
       state.tests.length ? testSummary() : null,
     ];
   }
@@ -1299,6 +1356,8 @@ function renderRightRun() {
     return h("article", { class: `review-item ${entry.value.status}` },
       h("button", { class: "locate", onclick: () => focusValue(entry.ref) },
         h("h3", {}, entry.name), h("span", { class: "why" }, reasonLine(entry.value))),
+      entry.value.raw && entry.value.raw !== entry.value.value
+        ? h("p", { class: "raw-text" }, "原始內容：", entry.value.raw) : null,
       h("div", { class: "row" }, input,
         h("button", { class: "btn", onclick: () => editValue(entry.ref, input.value === entry.value.value && entry.value.value ? "confirm" : "correct", input.value) }, "確認")));
   });
@@ -1315,7 +1374,16 @@ function renderRightRun() {
         class: "btn primary wide", style: "text-align:center;text-decoration:none", download: "",
         href: done ? `/api/runs/${state.run.id}/excel` : undefined,
         onclick: () => { state.run.exported = true; },
-      }, "匯出 Excel")));
+      }, "匯出檢查用 Excel"),
+      h("a", {
+        class: "btn wide", style: "text-align:center;text-decoration:none", download: "",
+        href: done ? `/api/runs/${state.run.id}/clean?only_confirmed=${state.onlyConfirmed ? 1 : 0}` : undefined,
+        onclick: () => { state.run.exported = true; },
+      }, "匯出乾淨資料"),
+      h("label", { class: "check-line" }, h("input", {
+        type: "checkbox", checked: !!state.onlyConfirmed,
+        onchange: (e) => { state.onlyConfirmed = e.target.checked; renderRight(); },
+      }), "乾淨資料只輸出已確認")));
 }
 function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); }
 

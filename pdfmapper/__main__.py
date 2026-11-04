@@ -14,6 +14,7 @@ from pathlib import Path
 
 def _command_run(args) -> int:
     from . import postprocess, template as tpl
+    from .clean import write_clean
     from .excel import write_excel
     from .parser import parse_best
 
@@ -34,6 +35,9 @@ def _command_run(args) -> int:
     results = postprocess.apply(results, args.post)
     output = write_excel(results, args.output)
     print(f"已輸出 {output}")
+    if args.clean:
+        by_id = {template["template_id"]: template for template in templates}
+        print(f"已輸出 {write_clean(results, by_id, args.clean, args.only_confirmed)}")
     if args.json:
         Path(args.json).write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     return 1 if any(r["status"] == "failed" for r in results) else 0
@@ -69,6 +73,8 @@ def main() -> int:
     run.add_argument("-t", "--template", required=True, help="範本 JSON，或放範本的資料夾（每份自動挑最符合的）")
     run.add_argument("-i", "--input", required=True, help="PDF 或資料夾")
     run.add_argument("-o", "--output", default="output/解析結果.xlsx")
+    run.add_argument("--clean", help="同時輸出乾淨資料的 Excel")
+    run.add_argument("--only-confirmed", action="store_true", help="乾淨資料排除需檢查和缺值的資料")
     run.add_argument("--json", help="同時輸出完整結果 JSON")
     run.add_argument("--post", help="第三層客製化腳本")
     run.add_argument("--no-ocr", action="store_true", help="只用文字層")

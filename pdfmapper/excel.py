@@ -30,6 +30,13 @@ SOURCE_TEXT = {"text": "文字層", "ocr": "影像辨識", "manual": "人工", "
 CROP_DPI = 110
 
 
+def keep_as_text(cell) -> None:
+    """PDF 內容不能被 Excel 當成公式執行，例如文字開頭是 = 的情況。"""
+    if cell.data_type == "f":
+        cell.data_type = "s"
+    cell.number_format = "@"
+
+
 def reason_text(value: dict) -> str:
     return "；".join(REASONS.get(code, code) for code in value.get("reasons", []))
 
@@ -44,13 +51,15 @@ def _header(sheet, titles: list[str]) -> None:
 
 def _write(cell, value: dict) -> None:
     cell.value = value.get("value", "")
-    cell.number_format = "@"  # 保持原樣，不讓 Excel 自動轉格式
+    keep_as_text(cell)  # 保持原樣，不讓 Excel 自動轉格式
     if "\n" in str(cell.value):
         cell.alignment = Alignment(wrap_text=True, vertical="top")
     fill = FILL.get(value.get("status"))
     if fill:
         cell.fill = fill
     note = reason_text(value)
+    if note and value.get("raw") and value.get("raw") != value.get("value"):
+        note = f"{note}\n原始內容：{value['raw']}"
     if value.get("status") == "corrected":
         note = f"原本抓到：{value.get('original', '')}"
     if note:
@@ -155,25 +164,28 @@ def _crop_image(doc: Document | None, value: dict) -> io.BytesIO | None:
 
 def _write_pending(sheet, result: dict, pending: list, doc: Document | None) -> None:
     for name, value in pending:
+        raw = value.get("raw", "")
         sheet.append([result["file"], result.get("template_name", ""), value.get("page"), name,
-                      value.get("value", ""), VALUE_STATUS[value["status"]], reason_text(value),
+                      value.get("value", ""), raw if raw != value.get("value", "") else "", VALUE_STATUS[value["status"]], reason_text(value),
                       SOURCE_TEXT.get(value.get("source", ""), "")])
         row = sheet.max_row
+        keep_as_text(sheet.cell(row=row, column=5))
+        keep_as_text(sheet.cell(row=row, column=6))
         sheet.cell(row=row, column=5).fill = FILL[value["status"]]
         crop = _crop_image(doc, value)
         if crop:
             picture = XLImage(crop)
-            sheet.add_image(picture, f"I{row}")
+            sheet.add_image(picture, f"J{row}")
             sheet.row_dimensions[row].height = max(18, picture.height * 0.78)
 
 
 def _review_sheet(book: Workbook, results: list[dict]) -> None:
     sheet = book.create_sheet("待檢查", 0)
-    _header(sheet, ["檔名", "使用範本", "頁", "項目", "抓到的值", "狀態", "原因", "來源", "原圖"])
+    _header(sheet, ["檔名", "使用範本", "頁", "項目", "抓到的值", "原始內容", "狀態", "原因", "來源", "原圖"])
     for result in results:
         for issue in result.get("issues", []):
             sheet.append([result["file"], result.get("template_name", ""), issue.get("page"),
-                          "整份檢查", "", "需檢查", issue["message"]])
+                          "整份檢查", "", "", "需檢查", issue["message"]])
         pending = [(name, value) for _ref, name, value in iter_values(result)
                    if value.get("status") in ("review", "missing")]
         if not pending:
@@ -188,7 +200,7 @@ def _review_sheet(book: Workbook, results: list[dict]) -> None:
             if doc:
                 doc.close()
     _widths(sheet)
-    sheet.column_dimensions["I"].width = 48
+    sheet.column_dimensions["J"].width = 48
     if sheet.max_row == 1:
         sheet.append(["沒有需要檢查的項目"])
 

@@ -68,6 +68,15 @@
 
 `key_position` 為 `middle` 時，以相鄰兩個項次之間最大的空白切列，新一頁開頭的內容依 `row_required` 判斷歸屬，無法判斷時會標記。為 `top` 時，頁首在第一個項次之前的內容會併到上一頁最後一列，並標記給人確認。
 
+## 輸出 `output`（選用）
+
+只影響乾淨資料。清單順序就是輸出順序，沒列到的欄位預設輸出。
+
+```json
+{"fields": [{"id": "f1", "name": "報單號碼", "include": true}],
+ "tables": {"t1": [{"id": "c1", "name": "項次", "include": true}]}}
+```
+
 ## 檢查 `validations`
 
 ```json

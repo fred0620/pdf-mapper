@@ -476,18 +476,36 @@ def test_split_by_space(tmp_path):
     assert (rows[0]["p1"], rows[0]["p2"]) == ("njnnn", "ji")
 
 
-def test_split_count_mismatch_loses_nothing(tmp_path):
+def test_split_count_mismatch_is_blank_and_keeps_raw(tmp_path):
     result = _band_result(tmp_path, ["one two three"], _part_columns("space"))
     cells = result["tables"][0]["rows"][0]["cells"]
-    assert cells["p1"]["value"] == "one two three" and cells["p2"]["value"] == ""
-    assert "split_count_mismatch" in cells["p1"]["reasons"] and "split_count_mismatch" in cells["p2"]["reasons"]
+    for cell in (cells["p1"], cells["p2"]):
+        assert cell["value"] == "" and cell["status"] == "review"
+        assert "split_count_mismatch" in cell["reasons"] and cell["raw"] == "one two three"
 
 
-def test_non_consecutive_parts_lose_nothing(tmp_path):
+def test_non_consecutive_parts_are_blank_and_flagged(tmp_path):
     columns = [{"id": "p1", "name": "P1", "band": 1, "part_by": "space", "part": 2},
                {"id": "p2", "name": "P2", "band": 1, "part_by": "space", "part": 3}]
-    rows = _table_values(_band_result(tmp_path, ["aa bb"], columns))
-    assert rows[0]["p1"] == "aa bb" and rows[0]["p2"] == ""
+    cells = _band_result(tmp_path, ["aa bb"], columns)["tables"][0]["rows"][0]["cells"]
+    assert cells["p1"]["value"] == "" and cells["p1"]["raw"] == "aa bb"
+    assert "split_count_mismatch" in cells["p2"]["reasons"]
+
+
+def test_field_extract_no_match_is_blank_and_keeps_raw(samples, template):
+    folder, docs = samples
+    spec = next(f for f in template["fields"] if f["id"] == "tax_id")
+    changed = {**template, "tables": [], "validations": [], "fields": [{**spec, "extract": r"NOPE(\d+)", "pattern": None}]}
+    field = parse_pdf(folder / "sample_1_standard.pdf", changed)["fields"][0]
+    assert field["value"] == "" and field["status"] == "missing"
+    assert field["raw"] == docs["sample_1_standard.pdf"]["tax_id"]
+    assert "extract_no_match" in field["reasons"]
+
+
+def test_column_with_no_values_warns_about_rule(tmp_path):
+    columns = [{"id": "a", "name": "A", "band": 1, "start": "NOPE:"}]
+    result = _band_result(tmp_path, ECCN_LINES, columns)
+    assert "column_all_blank" in {issue["code"] for issue in result["issues"]}
 
 
 def test_split_by_gap_uses_real_distance(tmp_path):
@@ -498,6 +516,96 @@ def test_split_by_gap_uses_real_distance(tmp_path):
 def test_bad_regex_is_rejected_when_saving():
     template = _band_template([{"id": "a", "name": "A", "band": 1, "extract": "("}])
     assert any("正規表達式" in error for error in tpl.validate(template))
+
+
+def test_output_columns_defaults_and_new_fields():
+    from pdfmapper.clean import output_columns
+
+    available = [("a", "A"), ("b", "B"), ("c", "C")]
+    assert output_columns(None, available) == available
+    saved = [{"id": "b", "name": "乙"}, {"id": "a", "include": False}, {"id": "gone", "name": "X"}]
+    assert output_columns(saved, available) == [("b", "乙"), ("c", "C")]
+
+
+def _sheet_rows(sheet):
+    return [list(row) for row in sheet.iter_rows(values_only=True)]
+
+
+def test_clean_export(samples, template, tmp_path):
+    from openpyxl import load_workbook
+    from pdfmapper.clean import write_clean
+
+    folder, _ = samples
+    results = [parse_pdf(folder / name, template) for name in ("sample_1_standard.pdf", "sample_5_errors.pdf")]
+    configured = {**template, "output": {"tables": {"items": [
+        {"id": "code", "name": "HS Code"}, {"id": "ref", "include": False}]}}}
+    book = load_workbook(write_clean(results, {"customs_demo": configured}, tmp_path / "clean.xlsx"))
+    assert book.sheetnames == ["欄位", "貨物明細"]
+    rows = _sheet_rows(book["貨物明細"])
+    assert rows[0][:5] == ["來源檔名", "範本", "頁碼", "列號", "HS Code"]
+    assert "參考號" not in rows[0] and rows[0][-3:] == ["檢查狀態", "檢查原因", "整份檢查"]
+    assert book["貨物明細"]["A2"].fill.fgColor.rgb == "00000000"  # 沒有顏色
+    assert book["貨物明細"].merged_cells.ranges == [] or not list(book["貨物明細"].merged_cells.ranges)
+    status = rows[0].index("檢查狀態")
+    assert {row[status] for row in rows[1:]} == {"正常", "需檢查"}
+    fields = _sheet_rows(book["欄位"])
+    assert "稅費合計" in fields[0] and len(fields) == 3
+
+
+def test_clean_export_only_confirmed(samples, template, tmp_path):
+    from openpyxl import load_workbook
+    from pdfmapper.clean import write_clean
+
+    folder, _ = samples
+    results = [parse_pdf(folder / "sample_5_errors.pdf", template)]
+    book = load_workbook(write_clean(results, {}, tmp_path / "clean.xlsx", only_confirmed=True))
+    rows = _sheet_rows(book["貨物明細"])
+    status = rows[0].index("檢查狀態")
+    assert len(rows) == 8 and {row[status] for row in rows[1:]} == {"正常"}  # 8 列資料少了 1 列待檢查
+    assert len(_sheet_rows(book["欄位"])) == 1  # 稅費合計待檢查，整列排除
+
+
+def test_clean_export_separates_templates(samples, template, invoice_template, tmp_path):
+    from openpyxl import load_workbook
+    from pdfmapper.clean import write_clean
+
+    folder, _ = samples
+    pair = [template, invoice_template]
+    results = [parse_best(folder / name, pair) for name in ("sample_1_standard.pdf", "sample_6_invoice.pdf")]
+    book = load_workbook(write_clean(results, {t["template_id"]: t for t in pair}, tmp_path / "clean.xlsx"))
+    assert "欄位_商業發票（示範）" in book.sheetnames and "商業發票（示範）_品項明細" in book.sheetnames
+    assert "報單號碼" not in _sheet_rows(book["欄位_商業發票（示範）"])[0]
+
+
+def test_clean_export_with_only_a_failed_file_still_writes(template, tmp_path):
+    from openpyxl import load_workbook
+    from pdfmapper.clean import write_clean
+
+    bad = tmp_path / "bad.pdf"
+    bad.write_bytes(b"not a pdf")
+    book = load_workbook(write_clean([parse_pdf(bad, template)], {}, tmp_path / "clean.xlsx"))
+    assert book.sheetnames == ["沒有資料"]
+
+
+def test_formula_like_text_stays_text(samples, template, tmp_path):
+    from openpyxl import load_workbook
+    from pdfmapper.clean import write_clean
+
+    folder, _ = samples
+    result = parse_pdf(folder / "sample_1_standard.pdf", template)
+    result["fields"][0]["value"] = "=1+1"
+    for path in (write_excel([result], tmp_path / "a.xlsx"),
+                 write_clean([result], {}, tmp_path / "b.xlsx")):
+        book = load_workbook(path)
+        sheet = book["欄位資料" if "欄位資料" in book.sheetnames else "欄位"]
+        cell = next(c for row in sheet.iter_rows() for c in row if c.value == "=1+1")
+        assert cell.data_type == "s"
+
+
+def test_duplicate_output_names_stay_unique():
+    from pdfmapper.clean import _unique
+
+    assert _unique(["金額", "金額", "金額"]) == ["金額", "金額_2", "金額_3"]
 
 
 def test_garbled_detection():

@@ -86,7 +86,8 @@ pdfmapper/
   template.py     範本格式、檢查、自動找定位點
   extract.py      取值、切表格、疑點標記
   parser.py       解析主流程與整份驗證
-  excel.py        Excel 輸出
+  excel.py        檢查用 Excel
+  clean.py        乾淨資料匯出
   postprocess.py  第三層接口
   server.py       本機網頁後端
   web/            前端，無外部相依
