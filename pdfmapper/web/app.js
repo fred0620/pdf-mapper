@@ -887,10 +887,10 @@ function valueMode(column) {
   return "whole";
 }
 function setValueMode(table, column, mode) {
-  for (const key of ["start", "extract", "part_by", "part", "pick_line"]) delete column[key];
+  for (const key of ["start", "end", "extract", "part_by", "part", "pick_line"]) delete column[key];
   const peers = table.columns.filter((c) => c.band === column.band && c !== column);
   if (mode === "line") column.pick_line = peers.filter((c) => c.pick_line).length + 1;
-  if (mode === "start") column.start = "";
+  if (mode === "start") { column.start = ""; column.end = "line"; }
   if (mode === "regex") column.extract = "";
   if (mode === "space" || mode === "gap") {
     column.part_by = mode;
@@ -915,14 +915,49 @@ function valueOptions(column) {
   ];
   if (mode === "line") return number("pick_line", "只取第幾行", "行數固定時使用。-1 是最後一行。");
   if (mode === "start") {
-    return text("start", "開頭文字", "例如：sub2:", "取到同一直欄的下一個開頭為止，折行會接回來。同一格的其他欄也要設定開頭文字。");
+    return [
+      text("start", "開頭文字", "例如：ECCN:", "只取開頭後面的值，不分大小寫，這格的其他內容不會帶進來。"),
+      h("label", {}, "值到哪裡結束", h("select", {
+        "aria-label": "值到哪裡結束",
+        onchange: (e) => { column.end = e.target.value; saveDraft(); },
+      }, [["line", "這一行結束"], ["word", "第一個空白"], ["next", "下一個開頭文字（可跨行）"]].map(([value, label]) =>
+        h("option", { value, selected: (column.end || "next") === value }, label)))),
+    ];
   }
   if (mode === "regex") {
-    return text("extract", "正規表達式", "例如：^(\\S+)", "有括號時取第一組。比對不到會保留整格內容並標記。");
+    return text("extract", "正規表達式", "例如：ECCN:\\s*(\\S+)", "有括號時取第一組。比對不到時留空。");
   }
   if (mode === "space") return number("part", "取第幾段", "每段不能含空格。段數不對時，內容放在第一段並標記。");
   if (mode === "gap") return number("part", "取第幾段", "依字和字的實際距離分段，適合有文字層的 PDF。段數不對時，內容放在第一段並標記。");
   return null;
+}
+const previewColumn = guard(async (table, column) => {
+  state.columnPreview = { id: column.id, loading: true };
+  renderRight();
+  try {
+    const data = await api("/api/test", {
+      json: { template: T(), reference: state.referenceId, docs: [state.referenceId] },
+    });
+    const rows = data.results[0]?.tables.find((t) => t.id === table.id)?.rows || [];
+    state.columnPreview = {
+      id: column.id,
+      rows: rows.map((row) => row.cells[column.id]).filter(Boolean).slice(0, 6),
+    };
+  } catch (error) {
+    state.columnPreview = null;
+    throw error;
+  } finally {
+    renderRight();
+  }
+});
+function previewRows(column) {
+  const preview = state.columnPreview;
+  if (preview?.id !== column.id) return null;
+  if (preview.loading) return h("p", { class: "note" }, "試抓中");
+  if (!preview.rows.length) return h("p", { class: "note" }, "沒有抓到任何列，請先確認表格範圍和判斷新一列的欄位。");
+  return h("ol", { class: "preview-list" }, preview.rows.map((cell) => h("li", {},
+    h("strong", {}, cell.value || "（空白）"),
+    h("span", {}, cell.raw ?? cell.value))));
 }
 function columnDetail(table, column) {
   const siblings = table.columns.filter((c) => c.band === column.band);
@@ -944,6 +979,8 @@ function columnDetail(table, column) {
     }, VALUE_MODES.map(([value, label]) =>
       h("option", { value, selected: valueMode(column) === value }, label)))),
     valueOptions(column),
+    isReference() ? h("button", { class: "linkish", style: "text-align:left", onclick: () => previewColumn(table, column) }, "用基準範例試抓這一欄") : null,
+    previewRows(column),
     h("div", { class: "row" },
       h("button", {
         class: "linkish", style: "text-align:left", onclick: () => {
@@ -1254,7 +1291,11 @@ function renderRightRun() {
   }
   const pending = allValues(result).filter((e) => ["review", "missing"].includes(e.value.status));
   const items = pending.map((entry) => {
-    const input = h("input", { type: "text", value: entry.value.value, "aria-label": `${entry.name} 的正確值` });
+    // 用 textarea：單行輸入框會吃掉換行，按確認時多行內容就會黏在一起
+    const lineCount = entry.value.value.split("\n").length;
+    const input = h("textarea", {
+      value: entry.value.value, rows: Math.min(Math.max(lineCount, 1), 6), "aria-label": `${entry.name} 的正確值`,
+    });
     return h("article", { class: `review-item ${entry.value.status}` },
       h("button", { class: "locate", onclick: () => focusValue(entry.ref) },
         h("h3", {}, entry.name), h("span", { class: "why" }, reasonLine(entry.value))),

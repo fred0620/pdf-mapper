@@ -36,7 +36,6 @@ REASONS = {
     "row_incomplete": "這一列缺必要欄位，可能跨頁或切錯列",
     "value_spans_pages": "內容接到下一頁，已合併，請確認",
     "split_count_mismatch": "段數和設定不符，內容先放在第一欄，請確認",
-    "unassigned_text": "有內容沒有分到任何欄，請確認開頭文字",
     "column_collision": "同一行有兩段內容搶同一欄，請確認分欄",
 }
 
@@ -117,7 +116,7 @@ def shape_value(reading_text: str, lines: list[str], spec: dict) -> tuple[str, l
     if extract and value:
         match = re.search(extract, value)
         if match:
-            value = match.group(1) if match.groups() else match.group(0)
+            value = (match.group(1) if match.groups() else match.group(0)) or ""
         else:
             reasons.append("format_mismatch")
             return value.strip(), reasons
@@ -139,7 +138,7 @@ def make_value(spec: dict, value: str, source: str, confidence: float, reasons: 
         reasons.append("required_missing")
         status = "missing"
     elif not value:
-        reasons = [r for r in reasons if r in ("ocr_unavailable", "split_count_mismatch", "unassigned_text")]
+        reasons = [r for r in reasons if r in ("ocr_unavailable", "split_count_mismatch")]
         status = "review" if reasons else "ok"
     else:
         status = "review" if reasons else "ok"
@@ -444,19 +443,31 @@ def _start_regex(start: str) -> str:
     return r"\s*".join(parts)
 
 
-def split_sections(text: str, starts: list[str]) -> tuple[dict[str, str], str]:
-    """依開頭文字把一格切成多段。回傳 ({開頭: 內容}, 第一個開頭之前多出來的文字)。
-
-    每段到下一個已知開頭為止，所以 sub5 沒設定欄時會留在 sub4 裡，不會消失。
-    """
+def split_sections(text: str, starts: list[str]) -> dict[str, str]:
+    """依開頭文字把一格切成多段，每段到下一個已設定的開頭為止。比對不分大小寫。"""
     found = sorted((match.start(), match.end(), start)
-                   for start in starts for match in [re.search(_start_regex(start), text)] if match)
-    if not found:
-        return {}, text.strip()
+                   for start in starts
+                   for match in [re.search(_start_regex(start), text, re.IGNORECASE)] if match)
     sections = {}
     for (_, end, start), following in zip(found, found[1:] + [(len(text), 0, "")]):
-        sections[start] = text[end:following[0]].strip()
-    return sections, text[:found[0][0]].strip()
+        sections[start] = text[end:following[0]]
+    return sections
+
+
+def read_after_start(lines: list[str], column: dict, starts: list[str]) -> str:
+    """取出開頭文字後面的值，開頭文字本身和這格的其他內容都不會帶進來。
+
+    end 決定值到哪裡結束：line 到這一行結束；word 到第一個空白；
+    next 到下一個已設定的開頭為止，中間的折行會接回來。
+    """
+    text = "\n".join(" ".join(line.split()) for line in lines)
+    section = split_sections(text, starts).get(column["start"], "").strip()
+    end = column.get("end", "next")
+    if end == "line":
+        return section.split("\n", 1)[0].strip()
+    if end == "word":
+        return section.split()[0] if section else ""
+    return " ".join(section.split())
 
 
 def _plain_spec(column: dict) -> dict:
@@ -467,12 +478,14 @@ def _plain_spec(column: dict) -> dict:
 def _cell_value(column, joined, lines, starts, parts) -> tuple[str, list[str]]:
     """依欄位的取值方式取出內容。沒有設定時整格保留，這也是最安全的預設。"""
     if column.get("start"):
-        sections, leftover = split_sections(" ".join(joined.split()), list(starts))
-        section = sections.get(column["start"], "")
-        if leftover and column["start"] == starts[0]:  # 沒分到的文字留在第一欄，不能消失
-            section = f"{leftover} {section}".strip()
-        value, reasons = shape_value(section, [section], _plain_spec(column))
-        return value, reasons + (["unassigned_text"] if leftover else [])
+        value = read_after_start(lines, column, list(starts))
+        return shape_value(value, [value], _plain_spec(column))
+    if column.get("extract") and not column.get("pick_line"):
+        match = re.search(column["extract"], joined)
+        if not match:  # 這格沒有這筆資料。必有的欄位請勾「每一列都一定有這欄」
+            return "", []
+        value = ((match.group(1) if match.groups() else match.group(0)) or "").strip()
+        return shape_value(value, [value], _plain_spec(column))
     if column.get("part_by"):
         tokens, peers = parts[column["part_by"]]
         if not joined:
@@ -500,7 +513,10 @@ def _cell(column, lines, glyphs, source, page, transform, box, crossed, extra_re
         if not value:
             reasons.append("row_incomplete")
     actual = "ocr" if any(g.source == "ocr" for g in glyphs) else source
-    return make_value(spec, value, actual, confidence, extra_reasons + reasons, page.index, box, transform)
+    cell = make_value(spec, value, actual, confidence, extra_reasons + reasons, page.index, box, transform)
+    if column.get("start") or column.get("extract") or column.get("part_by"):
+        cell["raw"] = joined  # 試抓時顯示原始內容，方便調整規則
+    return cell
 
 
 def _split_chunks(line: list[Glyph]) -> list[list[Glyph]]:

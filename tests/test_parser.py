@@ -339,29 +339,55 @@ def test_split_sections_with_uneven_subs():
     from pdfmapper.extract import split_sections
 
     text = "sub1:jijijij sub2: knni nininininin sub3: njnnn sub4: ji"
-    sections, leftover = split_sections(text, ["sub1:", "sub2:", "sub3:", "sub4:"])
-    assert sections == {"sub1:": "jijijij", "sub2:": "knni nininininin", "sub3:": "njnnn", "sub4:": "ji"}
-    assert leftover == ""
+    sections = split_sections(text, ["sub1:", "sub2:", "sub3:", "sub4:"])
+    assert {key: value.strip() for key, value in sections.items()} == {
+        "sub1:": "jijijij", "sub2:": "knni nininininin", "sub3:": "njnnn", "sub4:": "ji"}
 
 
-def test_split_sections_tolerates_spacing_and_full_width_colon():
+def test_split_sections_tolerates_spacing_case_and_full_width_colon():
     from pdfmapper.extract import split_sections
 
-    assert split_sections("sub 2： abc", ["sub2:"])[0] == {"sub2:": "abc"}
-
-
-def test_split_sections_keeps_unknown_sub_and_reports_leftover():
-    from pdfmapper.extract import split_sections
-
-    sections, leftover = split_sections("note sub1: a sub5: b", ["sub1:"])
-    assert sections == {"sub1:": "a sub5: b"}
-    assert leftover == "note"
+    assert split_sections("sub 2： abc", ["sub2:"])["sub2:"].strip() == "abc"
+    assert split_sections("Eccn : 5A992", ["ECCN:"])["ECCN:"].strip() == "5A992"
 
 
 def test_split_sections_any_order():
     from pdfmapper.extract import split_sections
 
-    assert split_sections("sub2: b sub1: a", ["sub1:", "sub2:"])[0] == {"sub1:": "a", "sub2:": "b"}
+    sections = split_sections("sub2: b sub1: a", ["sub1:", "sub2:"])
+    assert (sections["sub1:"].strip(), sections["sub2:"].strip()) == ("a", "b")
+
+
+ECCN_LINES = ["Laptop model X", "ECCN: 5A992.c rev 2", "Origin: TW"]
+
+
+@pytest.mark.parametrize("end, expected", [
+    ("line", "5A992.c rev 2"), ("word", "5A992.c"), ("next", "5A992.c rev 2 Origin: TW"),
+])
+def test_start_text_takes_only_the_value(end, expected):
+    from pdfmapper.extract import read_after_start
+
+    assert read_after_start(ECCN_LINES, {"start": "ECCN:", "end": end}, ["ECCN:"]) == expected
+
+
+def test_start_text_stops_at_next_key_on_the_same_line():
+    from pdfmapper.extract import read_after_start
+
+    lines = ["sub3: njnnn sub4: ji"]
+    assert read_after_start(lines, {"start": "sub3:", "end": "line"}, ["sub3:", "sub4:"]) == "njnnn"
+    assert read_after_start(lines, {"start": "sub4:", "end": "line"}, ["sub3:", "sub4:"]) == "ji"
+
+
+def test_start_text_value_on_the_next_line():
+    from pdfmapper.extract import read_after_start
+
+    assert read_after_start(["ECCN:", "5A992"], {"start": "ECCN:", "end": "line"}, ["ECCN:"]) == "5A992"
+
+
+def test_start_text_missing_gives_blank():
+    from pdfmapper.extract import read_after_start
+
+    assert read_after_start(["no key here"], {"start": "ECCN:", "end": "line"}, ["ECCN:"]) == ""
 
 
 def test_table_columns_split_by_start_text(tmp_path):
@@ -378,13 +404,20 @@ def test_table_columns_split_by_start_text(tmp_path):
     columns[1:2] = [{"id": f"s{i}", "name": f"sub{i}", "band": 1, "start": f"sub{i}:"} for i in range(1, 5)]
     with Document(path) as reference:
         tpl.finalize(template, reference)
-    result = parse_pdf(path, template)
-    rows = _table_values(result)
+    rows = _table_values(parse_pdf(path, template))
     assert (rows[0]["s1"], rows[0]["s2"], rows[0]["s3"], rows[0]["s4"]) == ("aaa", "bbb ccc", "ddd", "eee")
     assert rows[1]["s1"] == "fff" and rows[1]["s2"] == ""
-    cell = result["tables"][0]["rows"][2]["cells"]["s1"]
-    assert cell["value"] == "plain text"  # 沒有開頭的內容留在第一欄，不能消失
-    assert cell["status"] == "review" and "unassigned_text" in cell["reasons"]
+    assert rows[2]["s1"] == ""  # 沒有開頭就留空，不把其他文字塞進來
+
+
+def test_key_extraction_keeps_whole_cell_beside_it(tmp_path):
+    columns = [{"id": "whole", "name": "原文", "band": 1},
+               {"id": "eccn", "name": "ECCN", "band": 1, "start": "ECCN:", "end": "word"}]
+    result = _band_result(tmp_path, ECCN_LINES, columns)
+    rows = _table_values(result)
+    assert rows[0]["eccn"] == "5A992.c"
+    assert rows[0]["whole"].startswith("Laptop model X ECCN: 5A992.c")
+    assert result["tables"][0]["rows"][0]["cells"]["eccn"]["raw"].startswith("Laptop")
 
 
 def _band_template(columns):
@@ -412,13 +445,26 @@ def test_default_keeps_whole_cell(tmp_path):
     assert rows[0]["a"] == "sub3: x sub4: y more"
 
 
-def test_split_by_regex_and_no_match_keeps_text(tmp_path):
-    columns = [{"id": "a", "name": "A", "band": 1, "extract": r"^(\S+)"},
-               {"id": "b", "name": "B", "band": 1, "extract": r"^\S+\s+(\d+)$"}]
-    result = _band_result(tmp_path, ["njnnn ji"], columns)
+def test_split_by_regex_and_no_match_is_blank(tmp_path):
+    columns = [{"id": "a", "name": "A", "band": 1, "extract": r"ECCN:\s*(\S+)"},
+               {"id": "b", "name": "B", "band": 1, "extract": r"HTS:\s*(\S+)"}]
+    result = _band_result(tmp_path, ECCN_LINES, columns)
     cells = result["tables"][0]["rows"][0]["cells"]
-    assert cells["a"]["value"] == "njnnn" and cells["a"]["status"] == "ok"
-    assert cells["b"]["value"] == "njnnn ji" and "format_mismatch" in cells["b"]["reasons"]
+    assert cells["a"]["value"] == "5A992.c" and cells["a"]["status"] == "ok"
+    assert cells["b"]["value"] == "" and cells["b"]["status"] == "ok"
+
+
+def test_optional_regex_group_does_not_crash(tmp_path):
+    columns = [{"id": "a", "name": "A", "band": 1, "extract": r"(HTS:)?\s*Laptop"}]
+    result = _band_result(tmp_path, ECCN_LINES, columns)
+    assert "error" not in result
+    assert shape_value("abc", ["abc"], {"extract": r"(x)?abc"})[0] == ""
+
+
+def test_regex_with_required_column_flags_blank(tmp_path):
+    columns = [{"id": "b", "name": "B", "band": 1, "extract": r"HTS:\s*(\S+)", "row_required": True}]
+    cell = _band_result(tmp_path, ECCN_LINES, columns)["tables"][0]["rows"][0]["cells"]["b"]
+    assert cell["status"] == "missing" and "row_incomplete" in cell["reasons"]
 
 
 def _part_columns(mode, count=2):

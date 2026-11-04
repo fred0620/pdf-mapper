@@ -200,15 +200,15 @@ pre code { background:none; padding:0; }
 </tr>
 <tr>
 <td>開頭文字</td>
-<td>每筆有固定開頭，長度可變、會折行、同一行有兩筆</td>
-<td><code>sub2:</code></td>
-<td>開頭之前的多餘文字會標記</td>
+<td>儲存格裡有 key value，只要 value</td>
+<td><code>ECCN:</code></td>
+<td>這格沒有這個開頭就留空</td>
 </tr>
 <tr>
 <td>正規表達式</td>
-<td>格式固定，會寫公式</td>
-<td><code>^(\S+)</code></td>
-<td>保留整格內容並標記</td>
+<td>要抓有特定格式的內容</td>
+<td><code>ECCN:\s*(\S+)</code></td>
+<td>比對不到就留空</td>
 </tr>
 <tr>
 <td>依空格分段</td>
@@ -224,9 +224,39 @@ pre code { background:none; padding:0; }
 </tr>
 </tbody>
 </table>
+<p><strong>用開頭文字抓 key value：</strong> 這是從儲存格裡抽資料的方式，只會取開頭後面的值，開頭之前和這格其他內容都不會帶進來。比對不分大小寫，空白和全形冒號也不影響。「值到哪裡結束」有三種：</p>
+<table>
+<thead>
+<tr>
+<th>設定</th>
+<th>例子：<code>ECCN: 5A992.c rev 2</code> 下一行是 <code>Origin: TW</code></th>
+<th>適合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>這一行結束（預設）</td>
+<td><code>5A992.c rev 2</code></td>
+<td>每個 key 一行</td>
+</tr>
+<tr>
+<td>第一個空白</td>
+<td><code>5A992.c</code></td>
+<td>值本身不含空格</td>
+</tr>
+<tr>
+<td>下一個開頭文字</td>
+<td>接到同一格下一個已設定的開頭為止，折行會接回來</td>
+<td>sub 內容會折行</td>
+</tr>
+</tbody>
+</table>
+<p>同一行有兩個 key 時，例如 <code>sub3: njnnn sub4: ji</code>，把兩個都設成開頭文字就會分開。</p>
 <blockquote>
-<p>沒有被開頭文字設定到的筆數，例如多出來的 <code>sub5:</code>，會留在前一段裡，不會消失。依空格分段時，內容本身有空格就會段數不對或切錯，能用開頭文字時請優先使用。</p>
+<p>開頭文字和正規表達式都是抽取，<strong>沒抽到的內容不會輸出</strong>。想保留原文時，按「同一格拆成多欄」，多留一欄用「整格內容」。某欄每列一定要有值時，勾選「每一列都一定有這欄」，沒抓到才會標記。</p>
 </blockquote>
+<p>設定後按「用基準範例試抓這一欄」，可以馬上看到每一列抓到的值，和它的原始內容，不用跑完整測試。</p>
+<p>依空格分段時，內容本身有空格就會段數不對或切錯，能用開頭文字時請優先使用。</p>
 <p><strong>「位置」分頁：</strong></p>
 <ul>
 <li><strong>明細會跨頁時</strong>：切到第 2 頁，按「在目前這一頁加範圍」，框住該頁的資料區。套用頁面維持「第 2 頁起」。</li>
@@ -306,7 +336,7 @@ pre code { background:none; padding:0; }
 <li>按「開始解析」。一般 PDF 通常每頁約 1 秒內，掃描檔每頁約數秒，視電腦而定。</li>
 <li>逐份檢查右邊的「待檢查」項目：
    - 點項目，頁面會跳到該位置並框起來。
-   - 值是對的：直接按「確認」。
+   - 值是對的：直接按「確認」，內容和換行都會保留。
    - 值是錯的：改成正確的值，再按「確認」。</li>
 <li>按「匯出 Excel」。檔案會下載，同時保留一份在 <code>output</code> 資料夾。</li>
 </ol>
@@ -462,11 +492,6 @@ pre code { background:none; padding:0; }
 <td>段數和設定不符</td>
 <td>依空格或字距分段時，實際段數不同</td>
 <td>確認內容；這類資料可改用開頭文字</td>
-</tr>
-<tr>
-<td>有內容沒有分到任何欄</td>
-<td>使用開頭文字拆欄，但有文字不在任何開頭後面</td>
-<td>確認開頭文字，或檢查該格內容</td>
 </tr>
 <tr>
 <td>這一列缺必要欄位</td>
