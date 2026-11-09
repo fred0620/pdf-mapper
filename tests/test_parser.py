@@ -677,3 +677,43 @@ def test_crossing_line_only_flags_values_that_use_it():
     assert _relevant_flag({"start": "MODEL"}, "A-100", len(lines), spans) is None
     assert _relevant_flag({}, " ".join(lines), len(lines), spans) == "crosses_column"
     assert _relevant_flag({}, "", len(lines), spans) is None
+
+
+def _word(text, x, y, w=0.01):
+    """一段文字，每個字寬 w。"""
+    return [Glyph(ch, x + i * w, y, x + (i + 1) * w, y + 0.012) for i, ch in enumerate(text)]
+
+
+def _collision_flags(rows, dividers, gap_bands=frozenset()):
+    from pdfmapper.extract import _assign_chunks
+
+    glyphs = [g for row in rows for g in row]
+    layout = _assign_chunks(glyphs, dividers, set(gap_bands))
+    return {line_text(group): {layout[id(g)][1] for g in group}
+            for group in [[g for g in glyphs if g.y0 == row[0].y0 and layout[id(g)][0] == 0] for row in rows]}
+
+
+def test_spacing_inside_a_cell_is_not_a_collision():
+    # 每一列都是「單位    數字」，這是這欄的格式，不是搶欄
+    rows = [_word("USD", 0.11, 0.1 + i * 0.03) + _word("1,234.50", 0.30, 0.1 + i * 0.03) for i in range(5)]
+    flags = _collision_flags(rows, [0.1, 0.5, 0.9])
+    assert all(flag == {None} for flag in flags.values())
+
+
+def test_gap_split_column_is_not_checked():
+    rows = [_word("AB", 0.11, 0.1), _word("CD", 0.11, 0.13), _word("EF", 0.11, 0.16) + _word("GH", 0.40, 0.16)]
+    rows = [rows[0], rows[1], rows[2]] + [_word("IJ", 0.11, 0.19 + i * 0.03) for i in range(3)]
+    assert all(f == {None} for f in _collision_flags(rows, [0.1, 0.5, 0.9], {0}).values())
+
+
+def test_neighbor_text_next_to_divider_is_a_collision():
+    # 平常一行一段，只有一列在分隔線旁多出一段
+    rows = [_word("ITEM NAME", 0.11, 0.1 + i * 0.03) for i in range(6)]
+    rows.append(_word("ITEM NAME", 0.11, 0.3) + _word("99", 0.475, 0.3))
+    from pdfmapper.extract import _assign_chunks
+
+    glyphs = [g for row in rows for g in row]
+    layout = _assign_chunks(glyphs, [0.1, 0.5, 0.9])
+    stray = rows[-1][-1]
+    assert layout[id(stray)] == (0, "column_collision")
+    assert layout[id(rows[-1][0])][1] is None  # 本來的內容不標記

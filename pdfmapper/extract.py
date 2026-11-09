@@ -343,6 +343,8 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
     position = spec.get("key_position", "middle")  # 舊範本沒有這個設定，維持原本的行為
     key_at_top = None if position == "auto" else position == "top"
     stop_pattern = spec.get("stop_pattern")
+    # 用字距分段的直欄，一行本來就會有好幾段，不檢查搶欄
+    gap_bands = {_band(c, i) for i, c in enumerate(columns) if c.get("part_by") == "gap"}
     rows: list[list[_Piece]] = []  # 每一列由一到多個片段組成，跨頁時片段來自不同頁
     above_key: list[float] = []    # 各列在項次上方有多高，用來判斷下一頁開頭是否異常
     issues: list[dict] = []
@@ -375,7 +377,7 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
             keys = _key_lines(glyphs, dividers, key_index, key_pattern)
             if keys:
                 key_at_top = _key_on_first_line(keys, glyphs)
-        layout = _assign_chunks(glyphs, dividers)
+        layout = _assign_chunks(glyphs, dividers, gap_bands)
         piece = lambda top, bottom, group: _Piece(group, layout, dividers, source, page, transform,
                                                   (box[0], top, box[2], bottom), page_reasons)
         bands = _rows_on_page(glyphs, dividers, key_index, key_pattern, box, bool(key_at_top))
@@ -617,7 +619,11 @@ def _choose_band(chunk: list[Glyph], first: int, last: int, dividers: list[float
     return first + overlaps.index(max(overlaps)), True
 
 
-def _assign_chunks(glyphs: list[Glyph], dividers: list[float]) -> dict[int, tuple[int, object]]:
+COLLISION_USUAL_SHARE = 0.2  # 一欄裡有這個比例以上的行都有多段，就當作這欄本來的格式
+
+
+def _assign_chunks(glyphs: list[Glyph], dividers: list[float],
+                   gap_bands: set[int] = frozenset()) -> dict[int, tuple[int, object]]:
     """以「一段文字」為單位分欄，長內容跨到隔壁欄時才不會被切成兩半。
 
     回傳 {id(字): (直欄, 標記)}，標記不為空時代表這段需要人確認。
@@ -641,19 +647,54 @@ def _assign_chunks(glyphs: list[Glyph], dividers: list[float]) -> dict[int, tupl
         band, unsure = _choose_band(chunk, first, last, dividers, aligned)
         decided.append((chunk, band, number, "crosses_column" if unsure else None))
 
-    seen: dict[tuple[int, int], int] = {}
-    for _chunk, band, number, _flag in decided:
-        seen[(number, band)] = seen.get((number, band), 0) + 1
+    flags = _collisions(decided, dividers, aligned, gap_bands)
     layout: dict[int, tuple[int, object]] = {}
-    for chunk, band, number, flag in decided:
+    for index, (chunk, band, _number, flag) in enumerate(decided):
         crossed = any(g.clipped for g in chunk)
-        if seen[(number, band)] > 1:
-            flag = "column_collision"
-        elif crossed and not flag:
-            flag = "crosses_column"
+        flag = flags.get(index) or flag or ("crosses_column" if crossed else None)
         for g in chunk:
             layout[id(g)] = (band, flag)
     return layout
+
+
+def _collisions(decided, dividers, aligned, gap_bands) -> dict[int, str]:
+    """同一行同一欄有兩段文字時，判斷是不是吃到隔壁欄的內容。回傳 {第幾段: 標記}。
+
+    格子裡本來就常有大空白（單位和數字、撐開的字距），所以只在三個條件都成立時標記：
+    這欄不是用字距分段；這欄平常一行只有一段；多出來的那段貼著分隔線，
+    而且不是貼著這欄自己的對齊線。
+    """
+    groups: dict[tuple[int, int], list[int]] = {}
+    for index, (_chunk, band, number, _flag) in enumerate(decided):
+        groups.setdefault((number, band), []).append(index)
+    lines: dict[int, int] = {}
+    multi: dict[int, int] = {}
+    for (_number, band), members in groups.items():
+        lines[band] = lines.get(band, 0) + 1
+        multi[band] = multi.get(band, 0) + (len(members) > 1)
+
+    flags: dict[int, str] = {}
+    last_band = len(dividers) - 2
+    for (_number, band), members in groups.items():
+        if len(members) < 2 or band in gap_bands:
+            continue
+        if multi[band] / lines[band] >= COLLISION_USUAL_SHARE:
+            continue
+        ordered = sorted(members, key=lambda i: decided[i][0][0].x0)
+        own = aligned.get(band)
+        left, right = decided[ordered[0]][0], decided[ordered[-1]][0]
+        if band > 0 and _sticks_out(left[0].x0, dividers[band], left[0].width, own, "left"):
+            flags[ordered[0]] = "column_collision"
+        if band < last_band and _sticks_out(right[-1].x1, dividers[band + 1], right[-1].width, own, "right"):
+            flags[ordered[-1]] = "column_collision"
+    return flags
+
+
+def _sticks_out(edge: float, divider: float, width: float, own, side: str) -> bool:
+    """這段的外緣貼著分隔線，又不是貼著這欄自己的對齊線，就可能是隔壁欄的內容。"""
+    if abs(edge - divider) > width * 2:
+        return False
+    return not (own and own[0] == side and abs(edge - own[1]) <= width * 1.5)
 
 
 def _split_bands(band_glyphs, layout, count):
