@@ -12,6 +12,11 @@ $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONUTF8 = "1"
 
 $UvVersion = "0.13.6"
+# 官方 release 的 .sha256；升級 uv 版本時要一起更新，下載內容不符就不執行
+$UvSha256 = @{
+    "x86_64"  = "a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f"
+    "aarch64" = "c2426c0c8e28b53d8c440e47a18d96ad4db51e159866c0e81435b196d7f0081c"
+}
 $tools = Join-Path $PSScriptRoot ".tools"
 $uv = Join-Path $tools "uv\uv.exe"
 $python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
@@ -38,6 +43,8 @@ function Install-Uv {
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile (Join-Path $temp "uv.zip")
+        $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $temp "uv.zip")).Hash.ToLower()
+        if ($actual -ne $UvSha256[$arch]) { throw "下載的檔案驗證不符（SHA256 $actual），可能被竄改或下載不完整" }
         Expand-Archive -Path (Join-Path $temp "uv.zip") -DestinationPath (Join-Path $temp "uv")
     } catch {
         Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue

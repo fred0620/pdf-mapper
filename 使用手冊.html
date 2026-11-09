@@ -650,9 +650,14 @@ pre code { background:none; padding:0; }
 <td><code>workspace</code></td>
 <td>上傳到工具的 PDF 暫存複本</td>
 </tr>
+<tr>
+<td><code>workspace/logs</code></td>
+<td>操作與錯誤紀錄，只記檔案代號，不記檔名和抓到的值</td>
+</tr>
 </tbody>
 </table>
 <p>工具結束時會清除 <code>workspace</code> 裡的 PDF 暫存；如果是直接關閉黑色視窗或電腦當機，下次啟動時會清除。處理機密文件後若不打算再開工具，請手動刪除 <code>workspace</code> 資料夾。<code>output</code> 的 Excel 含截圖與資料，不會自動清除，請依公司規定保管。</p>
+<p>工具只接受本機（127.0.0.1）的連線，其他網站無法透過瀏覽器讀取或操作工具裡的資料。遇到錯誤時，畫面只顯示一般訊息，詳細原因寫在 <code>workspace/logs/pdfmapper.log</code>，回報問題時附上這個檔案即可。紀錄檔超過 1 MB 會換新檔，最多保留 5 份，超過 30 天的會刪除。</p>
 <p>不要把真實單據放進 GitHub。專案已設定忽略 <code>workspace</code>、<code>output</code> 和 <code>samples</code> 以外的 PDF。</p>
 <h2 id="11">11. 批次自動化（選用）</h2>
 <p>熟悉指令的人可以不開網頁，直接在 PowerShell 執行：</p>

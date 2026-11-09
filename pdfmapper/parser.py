@@ -1,6 +1,7 @@
 """解析主流程：PDF + 範本 → 結構化結果與檢查報告。"""
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Callable, Iterator
@@ -8,6 +9,7 @@ from typing import Callable, Iterator
 from .align import Transform, align_page
 from .document import Document
 from .extract import REASONS, extract_field, extract_table
+from .logs import log
 from .template import collect_anchors, rule_matches
 
 MIN_TEMPLATE_MATCH = 0.5
@@ -99,6 +101,15 @@ def blocking_issues(result: dict) -> list[dict]:
     return [issue for issue in result.get("issues", []) if issue.get("level") != "notice"]
 
 
+def file_ref(path: str | Path) -> str:
+    """工具上傳的檔案用 doc_id；指令列的檔案用檔名雜湊，日誌裡不出現檔名。"""
+    name = Path(path).name
+    head = name.split("__", 1)[0]
+    if re.fullmatch(r"[0-9a-f]{32}", head):
+        return head
+    return "sha1:" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:10]
+
+
 def summarize(result: dict) -> None:
     values = [value for _ref, _name, value in iter_values(result)]
     review = sum(v["status"] == "review" for v in values)
@@ -159,6 +170,8 @@ def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
                 result["tables"].append(table)
             result["issues"].extend(_run_validations(template, fields, tables, total))
     except Exception as exc:  # 單一檔案失敗不該中斷整批
+        # 日誌只記檔案代號，不記檔名（檔名常含客戶或單號）
+        log.warning("解析失敗 file=%s template=%s", file_ref(path), template.get("template_id"), exc_info=exc)
         result["error"] = f"{type(exc).__name__}: {exc}"
         result["issues"].append({"code": "failed", "page": None, "message": f"無法解析這份 PDF：{exc}"})
     summarize(result)

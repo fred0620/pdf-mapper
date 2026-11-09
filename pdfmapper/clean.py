@@ -4,12 +4,11 @@
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from openpyxl import Workbook
 
-from .excel import _group_by_template, _sheet_title, keep_as_text, reason_text
+from .excel import _group_by_template, _sheet_title, append_row, reason_text
 
 ROW_STATUS = {"missing": "缺值", "review": "需檢查", "corrected": "已修正", "confirmed": "已確認", "ok": "正常"}
 UNRESOLVED = {"缺值", "需檢查"}
@@ -54,15 +53,8 @@ def _issues(result: dict) -> str:
                     for issue in result.get("issues", []))
 
 
-def _safe(text: object) -> object:
-    """openpyxl 不接受控制字元，文字層偶爾會有。"""
-    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text) if isinstance(text, str) else text
-
-
 def _append(sheet, row: list) -> None:
-    sheet.append([_safe(value) for value in row])
-    for cell in sheet[sheet.max_row]:
-        keep_as_text(cell)  # 保持原樣，不讓 Excel 自動轉格式
+    append_row(sheet, row)  # 去控制字元、保持原樣，不讓 Excel 自動轉格式
 
 
 def _fields_sheet(book, group, output, title, only_confirmed) -> None:
@@ -74,7 +66,7 @@ def _fields_sheet(book, group, output, title, only_confirmed) -> None:
         return
     sheet = book.create_sheet(_sheet_title(book, title))
     headers = ["來源檔名", "範本"] + [name for _, name in columns] + ["檢查狀態", "檢查原因", "整份檢查"]
-    sheet.append(_unique(headers))
+    _append(sheet, _unique(headers))
     for result in group:
         if result.get("error"):
             _append(sheet, [result["file"], result.get("template_name", "")] + [""] * len(columns)
@@ -101,7 +93,7 @@ def _table_sheets(book, group, output, prefix, only_confirmed) -> None:
             continue
         sheet = book.create_sheet(_sheet_title(book, f"{prefix}{meta['name']}"))
         headers = ["來源檔名", "範本", "頁碼", "列號"] + [name for _, name in columns] + ["檢查狀態", "檢查原因", "整份檢查"]
-        sheet.append(_unique(headers))
+        _append(sheet, _unique(headers))
         for result in group:
             for table in (t for t in result["tables"] if t["id"] == table_id):
                 for number, row in enumerate(table["rows"], start=1):

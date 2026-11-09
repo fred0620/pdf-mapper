@@ -13,11 +13,12 @@ from pathlib import Path
 
 
 def _command_run(args) -> int:
-    from . import postprocess, template as tpl
+    from . import logs, postprocess, template as tpl
     from .clean import write_clean
     from .excel import write_excel
     from .parser import parse_best
 
+    logs.setup(Path(__file__).resolve().parent.parent / "workspace" / "logs")
     source = Path(args.template)
     templates = ([tpl.load(p) for p in sorted(source.glob("*.json"))] if source.is_dir() else [tpl.load(source)])
     target = Path(args.input)

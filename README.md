@@ -95,7 +95,7 @@ templates/        範本 JSON
 samples/          虛構範例
 custom/           客製化腳本
 docs/             使用手冊與範本格式
-workspace/        暫存上傳檔（不進版控）
+workspace/        暫存上傳檔與 logs/ 操作紀錄（不進版控）
 output/           匯出結果（不進版控）
 ```
 
