@@ -233,6 +233,7 @@ details .form { margin-top: 8px; }
 .preview-list strong { display: block; font-weight: 700; }
 .preview-list span { display: block; color: var(--ink-soft); white-space: pre-line; }
 .issue { padding: 6px 8px; margin-bottom: 4px; background: var(--seal-soft); font-size: 13px; }
+.issue.notice { background: none; border-left: 2px solid var(--rule); color: var(--ink-soft); }
 .progress { height: 6px; background: var(--rule); margin: 8px 0 4px; }
 .progress div { height: 100%; background: var(--green); transition: width .2s; }
 

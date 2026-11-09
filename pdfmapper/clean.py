@@ -50,7 +50,8 @@ def _summary(values: list[dict]) -> tuple[str, str]:
 
 
 def _issues(result: dict) -> str:
-    return "；".join(issue["message"] for issue in result.get("issues", []))
+    return "；".join(("提示：" if issue.get("level") == "notice" else "") + issue["message"]
+                    for issue in result.get("issues", []))
 
 
 def _safe(text: object) -> object:

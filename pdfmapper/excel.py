@@ -185,7 +185,8 @@ def _review_sheet(book: Workbook, results: list[dict]) -> None:
     for result in results:
         for issue in result.get("issues", []):
             sheet.append([result["file"], result.get("template_name", ""), issue.get("page"),
-                          "整份檢查", "", "", "需檢查", issue["message"]])
+                          "整份檢查", "", "", "提示" if issue.get("level") == "notice" else "需檢查",
+                          issue["message"]])
         pending = [(name, value) for _ref, name, value in iter_values(result)
                    if value.get("status") in ("review", "missing")]
         if not pending:

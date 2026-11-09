@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from statistics import median
 
 from . import ocr as ocr_engine
@@ -509,11 +510,47 @@ def _cell_value(column, joined, lines, starts, parts) -> tuple[str, list[str]]:
     return shape_value(joined, lines, column)
 
 
-def _cell(column, lines, glyphs, source, page, transform, box, crossed, extra_reasons, starts=(), parts=None):
+def _compact(text: str) -> str:
+    return "".join(text.split())
+
+
+def _overlaps(value: str, chunk: str, least: int = 4) -> bool:
+    """值裡有沒有用到這段文字：互相包含，或有一段夠長的共同內容（值只取到這段的一部分）。"""
+    v, c = _compact(value), _compact(chunk)
+    if not v or not c:
+        return False
+    if c in v or v in c:
+        return True
+    match = SequenceMatcher(None, v, c, autojunk=False).find_longest_match(0, len(v), 0, len(c))
+    return match.size >= least
+
+
+def _relevant_flag(column: dict, value: str, line_count: int, spans: list) -> str | None:
+    """這格的分欄疑點，只在疑點那段文字真的進到這個欄位的值時才算數。
+
+    同一格可能拆成好幾個輸出欄（第幾行、開頭文字、正規表達式），
+    某一行跨欄不代表其他行取出的值有問題。
+    """
+    if not value:
+        return None
+    picked = None
+    pick = column.get("pick_line")
+    if pick and not column.get("start") and not column.get("part_by"):
+        picked = pick - 1 if pick > 0 else line_count + pick
+    for line_index, flag, text in spans:
+        if picked is not None and line_index != picked:
+            continue
+        if _overlaps(value, text):
+            return flag
+    return None
+
+
+def _cell(column, lines, glyphs, source, page, transform, box, spans, extra_reasons, starts=(), parts=None):
     joined = ("\n" if column.get("join") == "newline" else " ").join(lines).strip()
     value, reasons = _cell_value(column, joined, lines, starts, parts or {})
+    crossed = _relevant_flag(column, value, len(lines), spans or [])
     if crossed:
-        reasons.append(crossed if isinstance(crossed, str) else "crosses_column")
+        reasons.append(crossed)
     confidence = _confidence(glyphs) if glyphs else 0.0
     if glyphs and confidence < OCR_MIN_CONFIDENCE:
         reasons.append("ocr_low_confidence")
@@ -621,12 +658,22 @@ def _assign_chunks(glyphs: list[Glyph], dividers: list[float]) -> dict[int, tupl
 
 def _split_bands(band_glyphs, layout, count):
     cells = [[] for _ in range(count)]
-    flags: list[object] = [None] * count
     for g in band_glyphs:
-        band, flag = layout[id(g)]
-        cells[band].append(g)
-        flags[band] = flags[band] or flag
-    return cells, flags
+        cells[layout[id(g)][0]].append(g)
+    return cells
+
+
+def _flag_spans(cell_glyphs, layout, first_line: int) -> list[tuple[int, str, str]]:
+    """這格每一行裡有疑點的文字：(第幾行, 疑點, 那段文字)。行號和 _text_lines 的順序一致。"""
+    spans = []
+    for number, line in enumerate(group_lines(cell_glyphs)):
+        flagged: dict[str, list[Glyph]] = {}
+        for g in line:
+            flag = layout[id(g)][1]
+            if flag:
+                flagged.setdefault(flag, []).append(g)
+        spans += [(first_line + number, flag, line_text(part)) for flag, part in flagged.items()]
+    return spans
 
 
 def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
@@ -639,15 +686,15 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
         lines: list[str] = []
         glyphs: list[Glyph] = []
         gaps: list[str] = []
-        flag = None
+        spans: list[tuple[int, str, str]] = []
         extra_boxes = []
-        for number, (piece, (cells, flags)) in enumerate(zip(pieces, split)):
+        for number, (piece, cells) in enumerate(zip(pieces, split)):
             if not cells[i]:
                 continue
+            spans += _flag_spans(cells[i], piece.layout, len(lines))
             lines += _text_lines(cells[i])  # 不同頁的座標不能放在一起分行
             glyphs += cells[i]
             gaps += [line_text(chunk) for line in group_lines(cells[i]) for chunk in _split_chunks(line)]
-            flag = flag or flags[i]
             if number:
                 extra_boxes.append({"page": piece.page.index + 1, "box": [
                     round(v, 5) for v in (piece.dividers[i], piece.box[1], piece.dividers[i + 1], piece.box[3])]})
@@ -659,7 +706,7 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
             "space": (" ".join(lines).split(), [c for c in peers if c.get("part_by") == "space"]),
             "gap": (gaps, [c for c in peers if c.get("part_by") == "gap"]),
         }
-        cell = _cell(column, lines, glyphs, first.source, first.page, first.transform, box, flag, reasons,
+        cell = _cell(column, lines, glyphs, first.source, first.page, first.transform, box, spans, reasons,
                      starts, parts)
         if extra_boxes:
             cell["extra_boxes"] = extra_boxes
@@ -708,20 +755,25 @@ class _Top:
     y0: float
 
 
+SEQUENTIAL_SHARE = 0.6  # 至少這個比例的相鄰項次是 +1，才當作連號來檢查
+
+
 def _check_sequence(rows, key_id) -> list[dict]:
+    """項次跳號只當提示，不把儲存格標成需檢查。
+
+    很多文件的項次本來就是 ID，不會照 1、2、3 排。大多數相鄰項次都是 +1 時，
+    才把少數跳號當作可能漏列提醒；否則視為不是連號，不提示。
+    """
     if not key_id:
         return []
-    issues, previous = [], None
-    for row in rows:
-        cell = row["cells"].get(key_id)
-        text = (cell or {}).get("value", "")
-        if not text.isdigit():
-            continue
-        number = int(text)
-        if previous is not None and number != previous + 1:
-            cell["reasons"] = list(dict.fromkeys(cell["reasons"] + ["sequence_gap"]))
-            cell["status"] = "review"
-            issues.append({"code": "sequence_gap", "page": row["page"],
-                           "message": f"項次從 {previous} 跳到 {number}，可能漏列"})
-        previous = number
-    return issues
+    numbered = [(row, int(text)) for row in rows
+                for text in [(row["cells"].get(key_id) or {}).get("value", "")] if text.isdigit()]
+    steps = list(zip(numbered, numbered[1:]))
+    if len(steps) < 2:
+        return []
+    consecutive = sum(after - before == 1 for (_, before), (_, after) in steps)
+    if consecutive / len(steps) < SEQUENTIAL_SHARE:
+        return []
+    return [{"code": "sequence_gap", "level": "notice", "page": row["page"],
+             "message": f"項次從 {before} 跳到 {after}，如果項次本來就不連號可忽略"}
+            for (_, before), (row, after) in steps if after != before + 1]

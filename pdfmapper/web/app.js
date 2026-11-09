@@ -685,7 +685,7 @@ function renderLeftTrain() {
     if (!doc.has_text) meta += "，無文字層";
     let cls = "";
     if (test) {
-      const pending = test.counts.review + test.counts.missing + test.issues.length;
+      const pending = test.counts.review + test.counts.missing + blocking(test.issues).length;
       meta = pending ? `${meta}，${pending} 項待檢查` : `${meta}，全部通過`;
       cls = pending ? "warn" : "good";
     }
@@ -757,7 +757,7 @@ function renderLeftRun() {
     let meta = `${doc.pages} 頁`;
     let cls = "";
     if (result) {
-      const pending = result.counts.review + result.counts.missing + result.issues.length;
+      const pending = result.counts.review + result.counts.missing + blocking(result.issues).length;
       const used = result.template_name ? `${result.template_name}，` : "";
       if (result.status === "failed") { meta = "解析失敗"; cls = "bad"; }
       else if (pending) { meta = `${used}${pending} 項待檢查`; cls = "warn"; }
@@ -1253,12 +1253,19 @@ function renderRightTrain() {
   }
   fill($("right"), body, actionsBar());
 }
+// level 為 notice 的整份疑點只是提示，不算進待檢查
+const blocking = (issues) => issues.filter((issue) => issue.level !== "notice");
+function issueRow(issue, withPage) {
+  const notice = issue.level === "notice";
+  const text = withPage && issue.page ? `第 ${issue.page} 頁：${issue.message}` : issue.message;
+  return h("div", { class: notice ? "issue notice" : "issue" }, notice ? `提示：${text}` : text);
+}
 function testSummary() {
   const result = activeResult();
   return [
     h("h2", {}, "測試結果"),
     result ? [
-      result.issues.map((issue) => h("div", { class: "issue" }, issue.message)),
+      result.issues.map((issue) => issueRow(issue, false)),
       h("p", { class: "note" }, `${result.counts.total} 個值，${result.counts.review} 個需檢查，${result.counts.missing} 個缺值。`),
       result.align.map((a) => a.quality !== "good" && a.quality !== "fixed"
         ? h("p", { class: "note" }, `第 ${a.page} 頁對位不穩，找到 ${a.found}/${a.total} 個定位點`) : null),
@@ -1366,7 +1373,7 @@ function renderRightRun() {
     h("h2", {}, `${result.file}`),
     h("p", { class: "note" }, `${result.pages} 頁，${result.counts.total} 個值。`),
     templateNote(result),
-    result.issues.map((issue) => h("div", { class: "issue" }, issue.page ? `第 ${issue.page} 頁：${issue.message}` : issue.message)),
+    result.issues.map((issue) => issueRow(issue, true)),
     h("h2", {}, `待檢查 ${pending.length} 項`),
     items.length ? items : h("p", { class: "note" }, "這份沒有需要檢查的值。"),
     h("div", { class: "actions" },

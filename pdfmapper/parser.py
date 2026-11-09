@@ -94,6 +94,11 @@ def find_value(result: dict, ref: str) -> dict | None:
     return next((value for key, _name, value in iter_values(result) if key == ref), None)
 
 
+def blocking_issues(result: dict) -> list[dict]:
+    """需要人處理的整份疑點。level 為 notice 的只是提示，不影響狀態和範本挑選。"""
+    return [issue for issue in result.get("issues", []) if issue.get("level") != "notice"]
+
+
 def summarize(result: dict) -> None:
     values = [value for _ref, _name, value in iter_values(result)]
     review = sum(v["status"] == "review" for v in values)
@@ -101,7 +106,7 @@ def summarize(result: dict) -> None:
     result["counts"] = {"total": len(values), "review": review, "missing": missing}
     if result.get("error"):
         result["status"] = "failed"
-    elif missing or review or result.get("issues"):
+    elif missing or review or blocking_issues(result):
         result["status"] = "review"
     else:
         result["status"] = "ok"
@@ -178,7 +183,7 @@ def _quality(result: dict) -> float:
     counts = result["counts"]
     if result.get("error") or not counts["total"]:
         return -1.0
-    problems = 2 * counts["missing"] + counts["review"] + 2 * len(result["issues"])
+    problems = 2 * counts["missing"] + counts["review"] + 2 * len(blocking_issues(result))
     return (result.get("match") or 0.0) - 0.5 * min(1.0, problems / counts["total"])
 
 

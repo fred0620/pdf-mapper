@@ -41,6 +41,10 @@ def test_errors_are_flagged(samples, template):
     result = parse_pdf(folder / "sample_5_errors.pdf", template)
     codes = {issue["code"] for issue in result["issues"]}
     assert {"sequence_gap", "sum_mismatch"} <= codes
+    gap = next(issue for issue in result["issues"] if issue["code"] == "sequence_gap")
+    assert gap["level"] == "notice"
+    cells = [cell for row in result["tables"][0]["rows"] for cell in row["cells"].values()]
+    assert not any("sequence_gap" in cell["reasons"] for cell in cells)
     assert result["status"] == "review"
     assert next(f for f in result["fields"] if f["id"] == "tax_total")["status"] == "review"
 
@@ -547,7 +551,8 @@ def test_clean_export(samples, template, tmp_path):
     assert book["貨物明細"]["A2"].fill.fgColor.rgb == "00000000"  # 沒有顏色
     assert book["貨物明細"].merged_cells.ranges == [] or not list(book["貨物明細"].merged_cells.ranges)
     status = rows[0].index("檢查狀態")
-    assert {row[status] for row in rows[1:]} == {"正常", "需檢查"}
+    assert {row[status] for row in rows[1:]} == {"正常"}  # 跳號只是提示，不會讓列變成需檢查
+    assert any("提示：項次從" in (row[-1] or "") for row in rows[1:])
     fields = _sheet_rows(book["欄位"])
     assert "稅費合計" in fields[0] and len(fields) == 3
 
@@ -561,7 +566,7 @@ def test_clean_export_only_confirmed(samples, template, tmp_path):
     book = load_workbook(write_clean(results, {}, tmp_path / "clean.xlsx", only_confirmed=True))
     rows = _sheet_rows(book["貨物明細"])
     status = rows[0].index("檢查狀態")
-    assert len(rows) == 8 and {row[status] for row in rows[1:]} == {"正常"}  # 8 列資料少了 1 列待檢查
+    assert len(rows) == 9 and {row[status] for row in rows[1:]} == {"正常"}  # 跳號只是提示，8 列資料都保留
     assert len(_sheet_rows(book["欄位"])) == 1  # 稅費合計待檢查，整列排除
 
 
@@ -638,3 +643,37 @@ def test_rule_matching():
     assert tpl.rule_matches("first", 0, 3) and not tpl.rule_matches("first", 1, 3)
     assert tpl.rule_matches("rest", 2, 3) and tpl.rule_matches("last", 2, 3)
     assert tpl.rule_matches("page:2", 1, 3)
+
+
+def _key_rows(keys):
+    return [{"page": 1, "cells": {"no": {"value": key, "reasons": [], "status": "ok"}}} for key in keys]
+
+
+def test_sequence_gap_is_a_notice_only_when_keys_are_mostly_consecutive():
+    from pdfmapper.extract import _check_sequence
+
+    issues = _check_sequence(_key_rows(["1", "2", "3", "5", "6"]), "no")
+    assert [(i["code"], i["level"]) for i in issues] == [("sequence_gap", "notice")]
+    assert _check_sequence(_key_rows(["1052", "1187", "1203", "1349"]), "no") == []  # 本來就是 ID
+    assert _check_sequence(_key_rows(["1", "2", "3"]), "no") == []
+
+
+def test_notice_does_not_change_status():
+    from pdfmapper.parser import summarize
+
+    result = {"fields": [], "tables": [], "issues": [{"code": "sequence_gap", "level": "notice", "message": ""}]}
+    summarize(result)
+    assert result["status"] == "ok"
+
+
+def test_crossing_line_only_flags_values_that_use_it():
+    from pdfmapper.extract import _relevant_flag
+
+    spans = [(0, "crosses_column", "VERY LONG GOODS NAME RUNS INTO NEXT")]
+    lines = ["VERY LONG GOODS NAME RUNS INTO NEXT", "MODEL A-100", "MADE IN TAIWAN"]
+    assert _relevant_flag({"pick_line": 2}, "MODEL A-100", len(lines), spans) is None
+    assert _relevant_flag({"pick_line": 1}, lines[0], len(lines), spans) == "crosses_column"
+    assert _relevant_flag({"pick_line": -3}, lines[0], len(lines), spans) == "crosses_column"
+    assert _relevant_flag({"start": "MODEL"}, "A-100", len(lines), spans) is None
+    assert _relevant_flag({}, " ".join(lines), len(lines), spans) == "crosses_column"
+    assert _relevant_flag({}, "", len(lines), spans) is None
