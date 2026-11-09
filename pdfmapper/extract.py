@@ -323,6 +323,8 @@ class _Piece:
     transform: Transform
     box: Box
     reasons: list
+    lead_limit: float | None = None  # 這頁開頭有歸屬疑慮時，這條線以上的內容要確認
+    judged: bool = False  # 併到上一列是推測的（整頁沒有項次、或依必填欄位切開），不是版面確定的
 
 
 def _key_on_first_line(keys: list[list[Glyph]], glyphs: list[Glyph]) -> bool:
@@ -382,20 +384,22 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
                                                   (box[0], top, box[2], bottom), page_reasons)
         bands = _rows_on_page(glyphs, dividers, key_index, key_pattern, box, bool(key_at_top))
 
-        first_row_note = []
+        lead_limit = None
         if rows and not key_at_top and key_index is not None:
-            bands, first_row_note = _resolve_lead(rows, columns, glyphs, dividers, key_index, key_pattern,
+            bands, lead_limit = _resolve_lead(rows, columns, glyphs, dividers, key_index, key_pattern,
                                                   bands, above_key)
         for number, (band_top, band_bottom, spill) in enumerate(bands):
             group = [g for g in glyphs if band_top <= g.cy < band_bottom]
             if not group:
                 continue
             if spill and rows:
-                rows[-1].append(piece(band_top, band_bottom, group))
+                added = piece(band_top, band_bottom, group)
+                added.judged = spill != "top"  # 項次在第一行時，第一個項次上方必定屬於上一列
+                rows[-1].append(added)
                 continue
             built = piece(band_top, band_bottom, group)
-            if number == 0 and first_row_note:
-                built.reasons = list(built.reasons) + first_row_note
+            if number == 0:
+                built.lead_limit = lead_limit
             rows.append([built])
             if not key_at_top and key_index is not None:
                 keys = _key_lines(group, dividers, key_index, key_pattern)
@@ -431,13 +435,13 @@ def _rows_on_page(glyphs, dividers, key_index, key_pattern, box, key_at_top):
                 for line in group_lines(glyphs)]
     keys = _key_lines(glyphs, dividers, key_index, key_pattern)
     if not keys:  # 整頁都是上一列的延續
-        return [(box[1], box[3] + 1e-4, True)]
+        return [(box[1], box[3] + 1e-4, "page")]
     bands = [(top, bottom, False)
              for top, bottom in _boundaries(keys, glyphs, box[1], box[3] + 1e-4, key_at_top)]
     if key_at_top:
         first_top = min(g.y0 for g in keys[0]) - 1e-4
         bands[0] = (first_top, bands[0][1], False)
-        bands.insert(0, (box[1], first_top, True))
+        bands.insert(0, (box[1], first_top, "top"))
     return bands
 
 
@@ -729,9 +733,16 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
         gaps: list[str] = []
         spans: list[tuple[int, str, str]] = []
         extra_boxes = []
+        used = 0       # 這格的內容來自幾頁
+        lead = False   # 這格有內容落在這頁開頭有疑慮的範圍
+        judged = False  # 這格有內容是推測併進來的
         for number, (piece, cells) in enumerate(zip(pieces, split)):
             if not cells[i]:
                 continue
+            used += 1
+            judged = judged or piece.judged
+            if piece.lead_limit is not None and any(g.cy < piece.lead_limit for g in cells[i]):
+                lead = True
             spans += _flag_spans(cells[i], piece.layout, len(lines))
             lines += _text_lines(cells[i])  # 不同頁的座標不能放在一起分行
             glyphs += cells[i]
@@ -739,7 +750,9 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
             if number:
                 extra_boxes.append({"page": piece.page.index + 1, "box": [
                     round(v, 5) for v in (piece.dividers[i], piece.box[1], piece.dividers[i + 1], piece.box[3])]})
-        reasons = list(first.reasons) + (["row_spans_pages"] if extra_boxes else [])
+        # 只標實際受影響的格子：內容真的由兩頁合併、是推測併進來的，或落在開頭有疑慮的範圍
+        reasons = (list(first.reasons) + (["row_spans_pages"] if used > 1 or judged else [])
+                   + (["possible_row_split"] if lead else []))
         box = (first.dividers[i], first.box[1], first.dividers[i + 1], first.box[3])
         starts = [c["start"] for n, c in enumerate(columns) if _band(c, n) == i and c.get("start")]
         peers = [c for n, c in enumerate(columns) if _band(c, n) == i]
@@ -760,26 +773,26 @@ def _resolve_lead(rows, columns, glyphs, dividers, key_index, key_pattern, bands
 
     這段可能是這一頁第一列的上半部，也可能是上一頁最後一列的下半部。
     有設定「每列必有」時，看上一列完不完整；沒有就不猜，標記給人確認。
-    回傳 (調整後的列範圍, 要加在這頁第一列的疑點)。
+    回傳 (調整後的列範圍, 疑慮範圍的下緣)。下緣以上的內容要確認，沒有疑慮時為 None。
     """
     keys = _key_lines(glyphs, dividers, key_index, key_pattern)
     if not keys or not bands or bands[0][2]:
-        return bands, []
+        return bands, None
     key_top = min(g.y0 for g in keys[0])
     height = max(g.height for g in keys[0])
     above = sorted((g for g in glyphs if g.cy < key_top - height * 0.3), key=lambda g: g.y0)
     if not above:
-        return bands, []
+        return bands, None
     lead_height = key_top - above[0].y0
     if above_key and lead_height <= median(above_key) + height * 1.5:
-        return bands, []  # 高度和平常一樣，就是這一列自己的上半部
+        return bands, None  # 高度和平常一樣，就是這一列自己的上半部
 
     required = [c for c in columns if c.get("row_required")]
     if not required:
-        return bands, ["possible_row_split"]
+        return bands, key_top - height * 0.3
     previous = _finish_row(rows[-1], columns)
     if all(previous["cells"][c["id"]]["value"] for c in required):
-        return bands, []
+        return bands, None
 
     # 上一列不完整：在項次上方最大的空白處切開，上半段併回上一列
     cut, reach, best = (above[-1].y1 + key_top) / 2, above[0].y1, 0.0
@@ -788,7 +801,7 @@ def _resolve_lead(rows, columns, glyphs, dividers, key_index, key_pattern, bands
             best, cut = g.y0 - reach, (g.y0 + reach) / 2
         reach = max(reach, getattr(g, "y1", reach))
     top, bottom, _spill = bands[0]
-    return [(top, cut, True), (cut, bottom, False)] + bands[1:], []
+    return [(top, cut, "lead"), (cut, bottom, False)] + bands[1:], None
 
 
 @dataclass

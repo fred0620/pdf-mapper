@@ -251,6 +251,22 @@ def test_row_split_with_key_on_first_line(tmp_path):
     assert "row_spans_pages" in cell["reasons"] and cell["extra_boxes"][0]["page"] == 2
 
 
+def test_only_cells_merged_across_pages_are_flagged(tmp_path):
+    result = _split_result(tmp_path, TOP_PAGES, "top")
+    rows = result["tables"][0]["rows"]
+    assert "row_spans_pages" not in rows[1]["cells"]["no"]["reasons"] + rows[1]["cells"]["code"]["reasons"]
+    assert not any("row_spans_pages" in cell["reasons"] for row in (rows[0], rows[2]) for cell in row["cells"].values())
+
+
+def test_single_line_continuation_above_first_key_is_not_flagged(tmp_path):
+    # 第二列的代碼整格都在下一頁第一個項次上方，只有一行，沒有跟上一頁合併
+    pages = [[item for item in TOP_PAGES[0] if item[2] != "A2"], [(2, 0.16, "A2")] + TOP_PAGES[1]]
+    result = _split_result(tmp_path, pages, "top")
+    assert _table_values(result)[1]["code"] == "A2"
+    cell = result["tables"][0]["rows"][1]["cells"]["code"]
+    assert "row_spans_pages" not in cell["reasons"] and cell["extra_boxes"][0]["page"] == 2
+
+
 def test_row_split_auto_detects_key_on_first_line(tmp_path):
     rows = _table_values(_split_result(tmp_path, TOP_PAGES, "auto"))
     assert [r["no"] for r in rows] == ["1", "2", "3"] and rows[1]["body"].endswith("two-d")
@@ -295,7 +311,10 @@ def test_middle_key_complete_row_keeps_lead(tmp_path):
 def test_middle_key_without_rule_is_flagged_not_guessed(tmp_path):
     second = [(1, 0.15, "extra")] + [(c, y + 0.1, t) for c, y, t in MIDDLE_NEXT]
     result = _split_result(tmp_path, [MIDDLE_ROWS, second], "middle")
-    assert "possible_row_split" in result["tables"][0]["rows"][2]["cells"]["no"]["reasons"]
+    cells = result["tables"][0]["rows"][2]["cells"]
+    # 項次 3 上方的 extra、three-a、A3 都可能屬於上一列；項次本身在下面，不標記
+    assert "possible_row_split" in cells["body"]["reasons"] and "possible_row_split" in cells["code"]["reasons"]
+    assert "possible_row_split" not in cells["no"]["reasons"]
 
 
 def test_required_cell_missing_is_flagged(tmp_path):
