@@ -572,7 +572,39 @@ def _overlaps(value: str, chunk: str, least: int = 4) -> bool:
     if c in v or v in c:
         return True
     match = SequenceMatcher(None, v, c, autojunk=False).find_longest_match(0, len(v), 0, len(c))
-    return match.size >= least
+    if match.size >= least:
+        return True
+    # 值的開頭接在這段的結尾（開頭文字後面的值），或值的結尾接在這段的開頭（值折到下一段）
+    reach = min(len(v), len(c))
+    return any(v.startswith(c[-n:]) or v.endswith(c[:n]) for n in range(2, reach + 1))
+
+
+def _picked_line(column: dict, line_count: int) -> int | None:
+    pick = column.get("pick_line")
+    if pick and not column.get("start") and not column.get("part_by"):
+        return pick - 1 if pick > 0 else line_count + pick
+    return None
+
+
+def _used_lines(column: dict, value: str, lines: list[str]) -> list[int]:
+    """值取自這格的哪幾行。用第幾行取值時就是那一行，其他方式看值用到哪些行的文字。"""
+    if not value:
+        return []
+    picked = _picked_line(column, len(lines))
+    if picked is not None:
+        return [picked] if 0 <= picked < len(lines) else []
+    return [n for n, line in enumerate(lines) if _overlaps(value, line)]
+
+
+def _page_flags(column: dict, value: str, lines: list[str], line_info: list[dict]) -> list[str]:
+    """跨頁的疑點也只看值實際用到的行：用到兩頁的內容、推測併進來的內容，或開頭有疑慮的範圍。"""
+    used = [line_info[n] for n in _used_lines(column, value, lines)]
+    flags = []
+    if len({info["piece"] for info in used}) > 1 or any(info["judged"] for info in used):
+        flags.append("row_spans_pages")
+    if any(info["lead"] for info in used):
+        flags.append("possible_row_split")
+    return flags
 
 
 def _relevant_flag(column: dict, value: str, line_count: int, spans: list) -> str | None:
@@ -583,10 +615,7 @@ def _relevant_flag(column: dict, value: str, line_count: int, spans: list) -> st
     """
     if not value:
         return None
-    picked = None
-    pick = column.get("pick_line")
-    if pick and not column.get("start") and not column.get("part_by"):
-        picked = pick - 1 if pick > 0 else line_count + pick
+    picked = _picked_line(column, line_count)
     for line_index, flag, text in spans:
         if picked is not None and line_index != picked:
             continue
@@ -595,9 +624,12 @@ def _relevant_flag(column: dict, value: str, line_count: int, spans: list) -> st
     return None
 
 
-def _cell(column, lines, glyphs, source, page, transform, box, spans, extra_reasons, starts=(), parts=None):
+def _cell(column, lines, glyphs, source, page, transform, box, spans, extra_reasons, starts=(), parts=None,
+          line_info=None):
     joined = ("\n" if column.get("join") == "newline" else " ").join(lines).strip()
     value, reasons = _cell_value(column, joined, lines, starts, parts or {})
+    if line_info:
+        reasons += _page_flags(column, value, lines, line_info)
     crossed = _relevant_flag(column, value, len(lines), spans or [])
     if crossed:
         reasons.append(crossed)
@@ -777,16 +809,13 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
         gaps: list[str] = []
         spans: list[tuple[int, str, str]] = []
         extra_boxes = []
-        used = 0       # 這格的內容來自幾頁
-        lead = False   # 這格有內容落在這頁開頭有疑慮的範圍
-        judged = False  # 這格有內容是推測併進來的
+        line_info: list[dict] = []  # 每一行來自哪個片段、是不是推測併進來的、是否在開頭有疑慮的範圍
         for number, (piece, cells) in enumerate(zip(pieces, split)):
             if not cells[i]:
                 continue
-            used += 1
-            judged = judged or piece.judged
-            if piece.lead_limit is not None and any(g.cy < piece.lead_limit for g in cells[i]):
-                lead = True
+            for line in group_lines(cells[i]):
+                line_info.append({"piece": number, "judged": piece.judged,
+                                  "lead": piece.lead_limit is not None and any(g.cy < piece.lead_limit for g in line)})
             spans += _flag_spans(cells[i], piece.layout, len(lines))
             lines += _text_lines(cells[i])  # 不同頁的座標不能放在一起分行
             glyphs += cells[i]
@@ -794,9 +823,7 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
             if number:
                 extra_boxes.append({"page": piece.page.index + 1, "box": [
                     round(v, 5) for v in (piece.dividers[i], piece.box[1], piece.dividers[i + 1], piece.box[3])]})
-        # 只標實際受影響的格子：內容真的由兩頁合併、是推測併進來的，或落在開頭有疑慮的範圍
-        reasons = (list(first.reasons) + (["row_spans_pages"] if used > 1 or judged else [])
-                   + (["possible_row_split"] if lead else []))
+        reasons = list(first.reasons)
         box = (first.dividers[i], first.box[1], first.dividers[i + 1], first.box[3])
         starts = [c["start"] for n, c in enumerate(columns) if _band(c, n) == i and c.get("start")]
         peers = [c for n, c in enumerate(columns) if _band(c, n) == i]
@@ -805,7 +832,7 @@ def _finish_row(pieces: list[_Piece], columns: list[dict]) -> dict:
             "gap": (gaps, [c for c in peers if c.get("part_by") == "gap"]),
         }
         cell = _cell(column, lines, glyphs, first.source, first.page, first.transform, box, spans, reasons,
-                     starts, parts)
+                     starts, parts, line_info)
         if extra_boxes:
             cell["extra_boxes"] = extra_boxes
         row["cells"][column["id"]] = cell

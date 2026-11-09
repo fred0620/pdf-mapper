@@ -761,3 +761,30 @@ def test_shorter_start_inside_longer_one_is_ignored():
 
     sections = split_sections("Net Weight: 5 Weight: 9", ["Net Weight", "Weight"])
     assert sections["Net Weight"].strip() == "5"
+
+
+def test_page_flag_only_on_columns_whose_value_spans_pages(tmp_path):
+    import make_samples
+
+    path = tmp_path / "split.pdf"
+    make_samples.write_split(path, TOP_PAGES)
+    template = make_samples.build_split_template("top")
+    body = template["tables"][0]["columns"][1]
+    template["tables"][0]["columns"].append({**body, "id": "body_first", "name": "第一行", "pick_line": 1,
+                                             "band": 1})
+    with Document(path) as reference:
+        tpl.finalize(template, reference)
+    cells = parse_pdf(path, template)["tables"][0]["rows"][1]["cells"]
+    assert cells["body_first"]["value"] == "two-a"
+    assert "row_spans_pages" not in cells["body_first"]["reasons"]  # 第一行只在上一頁
+    assert "row_spans_pages" in cells["body"]["reasons"]            # 整格接到下一頁
+
+
+def test_start_value_on_one_page_is_not_flagged():
+    from pdfmapper.extract import _page_flags
+
+    lines = ["ECCN: 5A992", "Origin: TW"]
+    info = [{"piece": 0, "judged": False, "lead": False}, {"piece": 1, "judged": False, "lead": False}]
+    assert _page_flags({"start": "ECCN", "end": "line"}, "5A992", lines, info) == []
+    assert _page_flags({}, "ECCN: 5A992 Origin: TW", lines, info) == ["row_spans_pages"]
+    assert _page_flags({"start": "ECCN", "end": "next"}, "5A992 Origin: TW", lines, info) == ["row_spans_pages"]
