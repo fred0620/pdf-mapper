@@ -736,3 +736,28 @@ def test_neighbor_text_next_to_divider_is_a_collision():
     stray = rows[-1][-1]
     assert layout[id(stray)] == (0, "column_collision")
     assert layout[id(rows[-1][0])][1] is None  # 本來的內容不標記
+
+
+@pytest.mark.parametrize("start,line,expected", [
+    ("ECCN:", "ECCN 5A992", "5A992"),          # 設定有冒號，PDF 沒有
+    ("ECCN", "ECCN: 5A992", "5A992"),          # 設定沒冒號，冒號不帶進值
+    ("Invoice No.", "Invoice No 123", "123"),
+    ("Invoice No", "Invoice No.: 123", "123"),
+    ("ECCN:", "ＥＣＣＮ：5A992", "5A992"),       # 全形
+    ("ECCN:", "E C C N : 5A992", "5A992"),     # 空白多寡不同
+    ("淨重：", "淨重 12 KG", "12"),
+    ("Value", "Value: -5.00", "-5.00"),        # 負號不是分隔符號
+    ("No", "Note: x No. 7", "7"),              # 不比對到 Note 的中間
+    ("ECCN", "ECCN5A992", "5A992"),            # 沒有分隔也抓得到
+])
+def test_start_text_tolerates_punctuation_and_width(start, line, expected):
+    from pdfmapper.extract import read_after_start
+
+    assert read_after_start([line], {"start": start, "end": "word"}, [start]) == expected
+
+
+def test_shorter_start_inside_longer_one_is_ignored():
+    from pdfmapper.extract import split_sections
+
+    sections = split_sections("Net Weight: 5 Weight: 9", ["Net Weight", "Weight"])
+    assert sections["Net Weight"].strip() == "5"

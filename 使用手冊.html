@@ -224,7 +224,7 @@ pre code { background:none; padding:0; }
 </tr>
 </tbody>
 </table>
-<p><strong>用開頭文字抓 key value：</strong> 這是從儲存格裡抽資料的方式，只會取開頭後面的值，開頭之前和這格其他內容都不會帶進來。比對不分大小寫，空白和全形冒號也不影響。「值到哪裡結束」有三種：</p>
+<p><strong>用開頭文字抓 key value：</strong> 這是從儲存格裡抽資料的方式，只會取開頭後面的值，開頭之前和這格其他內容都不會帶進來。比對不分大小寫，空白多寡、全形半形、開頭裡的標點有沒有都不影響：設 <code>ECCN:</code> 時，<code>ECCN 5A992</code>、<code>ＥＣＣＮ：5A992</code> 都抓得到；設 <code>Invoice No</code> 時，<code>Invoice No.: 123</code> 只會取 <code>123</code>，開頭後面的冒號、句點、等號不會帶進值裡。「值到哪裡結束」有三種：</p>
 <table>
 <thead>
 <tr>

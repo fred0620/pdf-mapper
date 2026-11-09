@@ -450,21 +450,65 @@ def _band(column: dict, index: int) -> int:
     return column.get("band", index)
 
 
-def _start_regex(start: str) -> str:
-    """開頭文字容許空白多寡不同，以及全形、半形冒號的差異。"""
+KEY_SEPARATORS = ":：.．=＝"  # 開頭和值之間常見的分隔符號，有沒有、全形半形都可以
+
+
+def _char_class(char: str) -> str:
+    """一個字和它的全形（或半形）寫法。"""
+    variants = {char}
+    if "!" <= char <= "~":
+        variants.add(chr(ord(char) + 0xFEE0))
+    elif "！" <= char <= "～":
+        variants.add(chr(ord(char) - 0xFEE0))
+    return "[" + "".join(re.escape(v) for v in sorted(variants)) + "]"
+
+
+def _start_regex(start: str, strict: bool = False) -> str:
+    """開頭文字的比對規則。實務上 PDF 的空白、標點和全形半形常跟設定的不一樣，所以：
+
+    空白多寡不拘；開頭文字裡的標點可有可無；全形半形視為相同；
+    開頭後面接的冒號、句點、等號會一起略過，不會帶進值裡。
+    英數開頭時，前面不能緊接英數。strict 時後面也不能緊接英文字母，避免 No 比對到 Note；
+    找不到才放寬，讓 ECCN5A992 這種沒有分隔的寫法也抓得到。
+    """
+    core = start.strip().rstrip(KEY_SEPARATORS + " \t")
     parts = []
-    for char in start.strip():
+    for char in core:
         if char.isspace():
             continue
-        parts.append("[:：]" if char in ":：" else re.escape(char))
-    return r"\s*".join(parts)
+        piece = _char_class(char)
+        parts.append(piece if char.isalnum() else piece + "?")
+    if not parts:
+        return ""
+    lead = core.lstrip()[0]
+    guard = r"(?<![A-Za-z0-9Ａ-Ｚａ-ｚ０-９])" if lead.isascii() and lead.isalnum() else ""
+    separators = "".join(_char_class(c)[1:-1] for c in KEY_SEPARATORS)
+    tail = r"(?![A-Za-zＡ-Ｚａ-ｚ])" if strict and core[-1].isascii() and core[-1].isalpha() else ""
+    return guard + r"\s*".join(parts) + tail + rf"(?:\s*[{separators}])*"
+
+
+def _find_start(start: str, text: str, taken: list[tuple[int, int]]):
+    """找開頭文字第一次出現、且不在其他（較長）開頭裡面的位置。"""
+    for strict in (True, False):
+        pattern = _start_regex(start, strict)
+        for match in re.finditer(pattern, text, re.IGNORECASE) if pattern else []:
+            if not any(lo <= match.start() and match.end() <= hi for lo, hi in taken):
+                return match
+    return None
 
 
 def split_sections(text: str, starts: list[str]) -> dict[str, str]:
-    """依開頭文字把一格切成多段，每段到下一個已設定的開頭為止。比對不分大小寫。"""
-    found = sorted((match.start(), match.end(), start)
-                   for start in starts
-                   for match in [re.search(_start_regex(start), text, re.IGNORECASE)] if match)
+    """依開頭文字把一格切成多段，每段到下一個已設定的開頭為止。比對不分大小寫。
+
+    長的開頭先找，短的開頭落在長的裡面（Weight 在 Net Weight 裡）時改找下一個位置。
+    """
+    found, taken = [], []
+    for start in sorted(starts, key=lambda item: -len("".join(item.split()))):
+        match = _find_start(start, text, taken)
+        if match:
+            found.append((match.start(), match.end(), start))
+            taken.append((match.start(), match.end()))
+    found.sort()
     sections = {}
     for (_, end, start), following in zip(found, found[1:] + [(len(text), 0, "")]):
         sections[start] = text[end:following[0]]
