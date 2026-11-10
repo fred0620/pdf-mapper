@@ -1,4 +1,4 @@
-"""打包發布用的 ZIP，並產生 latest.json 給啟動程式檢查更新。
+"""打包發布用的 ZIP。
 
     uv run --project app python scripts/build_release.py                  只打包程式（測試用）
     uv run --project app python scripts/build_release.py --wheels         附上 Windows 離線套件（正式發布）
@@ -7,7 +7,6 @@
     pdf-mapper-<版本>.zip   解壓後是 run.bat、run.sh 和 app/，不含 workspace 與 runtime。
                             使用者把它放進工具資料夾，雙擊 run.bat 就會安裝
     SHA256SUMS.txt
-    latest.json             選用的自動檢查才需要：版本、檔名、SHA256、更新說明
 
 只打包明確列出的檔案，測試、腳本、開發文件和任何資料都不會進到發布包。
 版本號只寫在 app/pyproject.toml；CHANGELOG.md 一定要有這個版本的段落，否則不給發布。
@@ -16,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
 import re
 import shutil
@@ -46,16 +44,14 @@ def read_version() -> str:
     return match.group(1)
 
 
-def release_notes(version: str) -> str:
-    """取 CHANGELOG.md 裡這個版本的條列，合成一行，顯示在更新提示上。"""
+def check_changelog(version: str) -> None:
+    """CHANGELOG.md 一定要有這個版本的條列，同事才知道這版改了什麼。"""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     match = re.search(rf"^## \[?{re.escape(version)}\]?.*?$(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
     if not match:
         sys.exit(f"CHANGELOG.md 沒有 {version} 的段落，請先寫好這版改了什麼")
-    items = [line.strip()[2:].strip() for line in match.group(1).splitlines() if line.strip().startswith("- ")]
-    if not items:
+    if not any(line.strip().startswith("- ") for line in match.group(1).splitlines()):
         sys.exit(f"CHANGELOG.md 的 {version} 段落沒有任何條列")
-    return "；".join(items)
 
 
 def check_tag(version: str) -> None:
@@ -128,10 +124,10 @@ def write_zip(stage: Path, archive: Path) -> None:
             bundle.writestr(info, path.read_bytes())
 
 
-def build(out: Path, wheels: bool, update_source: str | None, min_version: str | None) -> Path:
+def build(out: Path, wheels: bool) -> Path:
     version = read_version()
     check_tag(version)
-    notes = release_notes(version)
+    check_changelog(version)
     stage = out / f"{NAME}-{version}"
     shutil.rmtree(out, ignore_errors=True)
     (stage / "app").mkdir(parents=True)
@@ -142,9 +138,6 @@ def build(out: Path, wheels: bool, update_source: str | None, min_version: str |
         shutil.copy2(APP / name, stage / "app" / name)
     for name in APP_DIRS:
         copy_tree(APP / name, stage / "app" / name)
-    if update_source:
-        (stage / "app" / "update-source.txt").write_text(
-            "# 啟動時從這裡檢查新版（latest.json 的網址或共用資料夾路徑）\n" + update_source + "\n", encoding="utf-8")
     for path in stage.rglob("*"):
         if path.is_file() and path.suffix in WINDOWS_TEXT | {".sh"}:
             normalize_newlines(path)
@@ -155,11 +148,6 @@ def build(out: Path, wheels: bool, update_source: str | None, min_version: str |
     archive = out / f"{stage.name}.zip"
     write_zip(stage, archive)
     digest = sha256(archive)
-    latest = {"version": version, "file": archive.name, "sha256": digest, "notes": notes,
-              "released": time.strftime("%Y-%m-%d")}
-    if min_version:
-        latest["min_version"] = min_version
-    (out / "latest.json").write_text(json.dumps(latest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (out / "SHA256SUMS.txt").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
     shutil.rmtree(stage)
     size = archive.stat().st_size / 1024 / 1024
@@ -171,12 +159,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", default=str(ROOT / "dist"))
     parser.add_argument("--wheels", action="store_true", help="附上 Windows 離線套件，使用者不需要連到 PyPI")
-    parser.add_argument("--update-source", default=os.environ.get("PDFMAPPER_UPDATE_SOURCE"),
-                        help="使用者檢查更新的位置：latest.json 的網址或共用資料夾路徑")
-    parser.add_argument("--min-version", default=os.environ.get("PDFMAPPER_MIN_VERSION"),
-                        help="低於這個版本的使用者必須更新（有安全修正時設定）")
     args = parser.parse_args()
-    build(Path(args.out), args.wheels, args.update_source, args.min_version)
+    build(Path(args.out), args.wheels)
 
 
 if __name__ == "__main__":

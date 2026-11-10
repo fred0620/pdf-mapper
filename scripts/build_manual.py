@@ -41,8 +41,10 @@ pre code { background:none; padding:0; }
 
 
 def inline_image(match: re.Match) -> str:
-    data = base64.b64encode((DOCS / match.group(1)).read_bytes()).decode()
-    return f'src="data:image/png;base64,{data}"'
+    path = DOCS / match.group(1)
+    mime = "image/svg+xml" if path.suffix == ".svg" else "image/png"
+    data = base64.b64encode(path.read_bytes()).decode()
+    return f'src="data:{mime};base64,{data}"'
 
 
 def main() -> None:

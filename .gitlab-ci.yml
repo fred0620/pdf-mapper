@@ -9,7 +9,6 @@
 # 選用的 CI/CD 變數（Settings > CI/CD > Variables），不設也能正常發布：
 #   UV_IMAGE                 公司要用內部映像檔時改這裡
 #   UV_DEFAULT_INDEX         公司有 PyPI 鏡像時
-#   PDFMAPPER_UPDATE_SOURCE  有同事都讀得到的 latest.json 位置時，run.bat 會自動檢查新版
 
 workflow:
   rules:

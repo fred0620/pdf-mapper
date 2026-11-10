@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 260" width="760" height="260">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="40" y="30" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">更新前</text>
+  <text x="420" y="30" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">更新後</text>
+  <rect x="24" y="44" width="320" height="196" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <rect x="404" y="44" width="332" height="196" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <path d="M44,68 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="70" y="78" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">app</text>
+  <text x="106" y="78" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="start">0.2.0</text>
+  <path d="M44,102 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="70" y="112" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">runtime</text>
+  <path d="M44,136 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="70" y="146" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">workspace</text>
+  <path d="M46,166 h9 l5,5 v13 h-14 z M55,166 v5 h5" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="70" y="180" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">run.bat</text>
+  <path d="M46,200 h9 l5,5 v13 h-14 z M55,200 v5 h5" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="53" y="215" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="6" font-weight="700" fill="#666666" text-anchor="middle">ZIP</text>
+  <text x="70" y="214" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">pdf-mapper-0.2.1.zip</text>
+  <path d="M424,68 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="450" y="78" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">app</text>
+  <text x="486" y="78" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#2C5F34" text-anchor="start">0.2.1 新版</text>
+  <path d="M424,102 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="450" y="112" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">app.old</text>
+  <text x="518" y="112" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="start">0.2.0 上一版，退回時使用</text>
+  <path d="M424,136 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="450" y="146" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">runtime</text>
+  <text x="518" y="146" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="start">不變</text>
+  <path d="M424,170 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="450" y="180" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">workspace</text>
+  <text x="534" y="180" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#2C5F34" text-anchor="start">不變，範本都還在</text>
+  <path d="M426,200 h9 l5,5 v13 h-14 z M435,200 v5 h5" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="450" y="214" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">run.bat</text>
+  <text x="518" y="214" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="start">換新</text>
+  <line x1="352" y1="142" x2="394" y2="142" stroke="#999999" stroke-width="1.5"/>
+  <path d="M388,137 L396,142 L388,147" fill="none" stroke="#999999" stroke-width="1.5"/>
+  <text x="374" y="258" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="middle">ZIP 在安裝完成後自動刪除</text>
+</svg>

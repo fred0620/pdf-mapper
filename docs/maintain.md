@@ -28,6 +28,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 | 只跑一個檔案 | `uv run --project app pytest tests/test_server.py` |
 | 用使用者的方式啟動 | `bash run.sh` 或 `run.bat` |
 | 重建範例 PDF 與示範範本 | `uv run --project app python scripts/build_demo.py` |
+| 改了使用手冊的示意圖 | 改 `scripts/make_manual_figures.py` 後執行它 |
 | 改了使用手冊後重建 HTML | `uv run --project app python scripts/build_manual.py` |
 | 新增套件 | `uv add --project app 套件名稱` |
 | 試打包（不含離線套件） | `uv run --project app python scripts/build_release.py` |
@@ -62,7 +63,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
    ```
 
 5. GitLab 會自動跑測試、弱點檢查、打包，並在 **Deploy > Releases** 建立 Release。任何一步失敗都不會發布。
-6. 通知同事：到 Releases 頁下載新版 ZIP，放進工具資料夾，雙擊 `run.bat`。可以直接把 CHANGELOG 這一段貼給大家。
+6. 通知同事：到 Releases 頁下載新版 ZIP，放進工具資料夾，雙擊 `run.bat`。可以直接把 CHANGELOG 這一段貼給大家，並附上使用手冊「更新工具」一節。
 
 ### 第一次設定（只做一次）
 
@@ -70,15 +71,6 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 2. **每月排程**（Build > Pipeline schedules）：每月一次，跑在 main。排程時弱點檢查失敗會亮紅燈。
 3. **同事的權限**：同事要能看到專案的 Releases 頁才能下載，通常給 Reporter 權限即可。
 4. 公司要用內部映像檔或 PyPI 鏡像時，在 Settings > CI/CD > Variables 設定 `UV_IMAGE`、`UV_DEFAULT_INDEX`。
-
-### 選用：自動檢查新版
-
-預設由同事自己下載 ZIP。如果有一個同事都讀得到、不需要登入的位置（網路磁碟或內部網站），可以讓 `run.bat` 開啟前自動檢查：
-
-1. 在 CI/CD 變數設定 `PDFMAPPER_UPDATE_SOURCE`，例如 `\\fileserver\tools\pdf-mapper\latest.json`。之後打包的版本都會讀這個位置。
-2. 每次發布後，把 Release 的 ZIP 和 `dist/latest.json`（在 package job 的 artifacts 裡）放到那個位置。**先放 ZIP，最後才放 `latest.json`**，同事才不會看到新版卻下載不到。
-
-有了自動檢查，才能用下一節的「必要更新」和「全部停用」。
 
 ## 4. 例行維護
 
@@ -129,11 +121,6 @@ uvx pip-audit --disable-pip --no-deps -r /tmp/req.txt # 本機先檢查一次弱
 2. 修正後照第 3 節發布，通知大家更新。
 3. 要回到上一版的行為時，把有問題的修改 revert，用新的版本號（例如 0.2.2）發布。安裝程式只會往新版更新。
 
-### 有設定自動檢查時
-
-- **要求所有人更新**：發布前把 CI/CD 變數 `PDFMAPPER_MIN_VERSION` 設成這個新版本，低於它的人必須更新才能使用。發布後記得清掉。
-- **讓所有人停用**：編輯共用位置的 `latest.json`，加上 `"retired": true` 和 `"notes": "停用原因與替代做法"`。所有人下次開啟時會看到說明，工具不會啟動。發布新版覆蓋 `latest.json` 後就會解除。
-
 ## 7. 資料夾與檔案一覽
 
 | 位置 | 用途 | 進版控 | 進發布包 |
@@ -141,7 +128,6 @@ uvx pip-audit --disable-pip --no-deps -r /tmp/req.txt # 本機先檢查一次弱
 | `run.bat`、`run.sh` | 使用者入口 | 是 | 是 |
 | `app/` | 程式、啟動程式、示範範本、範例 PDF、使用手冊 | 是 | 是（逐一列在 `scripts/build_release.py`） |
 | `app/wheels/` | Windows 離線套件 | 否 | 是（CI 打包時下載） |
-| `app/update-source.txt` | 選用的自動檢查位置 | 否 | 有設定 `PDFMAPPER_UPDATE_SOURCE` 時 |
 | `workspace/` | 使用者資料，第一次啟動時建立 | 否 | 否 |
 | `runtime/` | uv、Python、套件 | 否 | 否 |
 | `app.old/` | 使用者電腦上的上一版 | 否 | 否 |

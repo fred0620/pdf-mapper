@@ -5,12 +5,12 @@
 #   run.bat run -t workspace\templates\x.json -i 資料夾
 #   run.bat doctor              檢查環境
 #   run.bat version             顯示版本
-#   run.bat update              立即檢查更新
+#   run.bat update              安裝資料夾裡的新版 ZIP
 #
-# 更新方式：從 GitLab Release 下載 pdf-mapper-版本.zip，放進這個資料夾，雙擊 run.bat
-# 就會詢問要不要安裝。選用：app\update-source.txt 設定 latest.json 的位置時，會自動檢查。
+# 更新方式：從 GitLab Release 下載 pdf-mapper-版本.zip，不用解壓，放進這個資料夾，
+# 雙擊 run.bat 就會詢問要不要安裝。程式不會連網檢查新版。
 #   run.bat rollback            退回上一版（再執行一次就回到新版）
-#   加上 --no-update 可以跳過開啟前的更新檢查
+#   加上 --no-update 可以跳過開啟前的新版檢查
 #
 # 資料夾分工：app\ 是程式，更新時整包換掉；workspace\ 是使用者資料，更新不會動；
 # runtime\ 放 uv、Python 和套件，壞掉時可以整個刪掉，下次啟動會重建。
@@ -72,25 +72,6 @@ function ConvertTo-Version([string]$text) {
     try { return [version]($text.Trim().TrimStart("v")) } catch { return $null }
 }
 
-function Get-UpdateSource {
-    if ($env:PDFMAPPER_UPDATE_SOURCE) { return $env:PDFMAPPER_UPDATE_SOURCE }
-    $file = Join-Path $AppDir "update-source.txt"
-    if (-not (Test-Path $file)) { return $null }
-    foreach ($line in Get-Content -Encoding UTF8 $file) {
-        $value = $line.Trim()
-        if ($value -and -not $value.StartsWith("#")) { return $value }
-    }
-    return $null
-}
-
-function Test-Web([string]$location) { return $location -match '^https?://' }
-
-function Join-Location([string]$base, [string]$name) {
-    if ((Test-Web $name) -or [IO.Path]::IsPathRooted($name)) { return $name }
-    if (Test-Web $base) { return ($base.Substring(0, $base.LastIndexOf("/") + 1) + $name) }
-    return (Join-Path (Split-Path $base -Parent) $name)
-}
-
 function Rename-WithRetry([string]$path, [string]$newName) {
     # 防毒軟體或檔案總管偶爾會短暫鎖住資料夾，稍等再試
     for ($i = 1; $i -le 5; $i++) {
@@ -99,29 +80,18 @@ function Rename-WithRetry([string]$path, [string]$newName) {
     }
 }
 
-# 把新版安裝到 app\。$from 是 ZIP 的網址或路徑；$sha256 有值時先驗證，不符就不安裝
-function Install-Update([string]$version, [string]$from, [string]$sha256) {
+# 把資料夾裡的新版 ZIP 安裝到 app\
+function Install-Update([string]$version, [string]$zipPath) {
     $updates = Join-Path $Root "updates"
     Remove-Item -Recurse -Force $updates -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $updates | Out-Null
-    $package = Join-Path $updates "package.zip"
-    if (Test-Web $from) {
-        Write-Host "正在下載新版..."
-        Invoke-WebRequest -UseBasicParsing -UseDefaultCredentials -TimeoutSec 300 -Uri $from -OutFile $package
-    } else {
-        Copy-Item -LiteralPath $from -Destination $package
-    }
-    if ($sha256) {
-        $actual = (Get-FileHash -Algorithm SHA256 $package).Hash.ToLower()
-        if ($actual -ne $sha256.ToLower()) { throw "檔案驗證不符（SHA256 $actual），可能被竄改或下載不完整" }
-    }
     $extract = Join-Path $updates "extract"
-    Expand-Archive -Path $package -DestinationPath $extract | Out-Null
+    Expand-Archive -Path $zipPath -DestinationPath $extract | Out-Null
     $newApp = Get-ChildItem -Path $extract -Directory -Recurse -Depth 2 |
         Where-Object { $_.Name -eq "app" -and (Test-Path (Join-Path $_.FullName "launcher.ps1")) } |
         Select-Object -First 1
-    if (-not $newApp) { throw "檔案內容不完整，找不到 app 資料夾" }
-    if ((Get-AppVersion $newApp.FullName) -ne $version) { throw "檔案裡的版本和檔名不符" }
+    if (-not $newApp) { throw "ZIP 內容不完整，找不到 app 資料夾" }
+    if ((Get-AppVersion $newApp.FullName) -ne $version) { throw "ZIP 裡的版本和檔名不符" }
 
     # 先把舊版改名保留，新版到位後才算完成；中途失敗就換回原狀
     $old = Join-Path $Root "app.old"
@@ -141,76 +111,43 @@ function Install-Update([string]$version, [string]$from, [string]$sha256) {
     Write-Host "已更新到 $version。上一版保留在 app.old，有問題時執行 run.bat rollback。" -ForegroundColor Green
 }
 
-# 找出可以安裝的新版：工具資料夾裡的 ZIP（從 GitLab Release 下載後放進來），或選用的自動檢查來源
+# 找出資料夾裡比目前版本新的 ZIP（從 GitLab Release 下載後放進來的）
 function Find-Update([bool]$report) {
     $mine = ConvertTo-Version (Get-AppVersion $AppDir)
     $best = $null
     foreach ($zip in Get-ChildItem -LiteralPath $Root -Filter "pdf-mapper-*.zip" -File) {
         if ($zip.Name -notmatch '^pdf-mapper-(\d+\.\d+\.\d+)\.zip$') { continue }
         $version = ConvertTo-Version $Matches[1]
-        if ($version -le $mine) {
+        if ($mine -and $version -le $mine) {
             Write-Host "資料夾裡的 $($zip.Name) 不比目前版本新，可以刪掉。" -ForegroundColor DarkGray
             continue
         }
         if (-not $best -or $version -gt (ConvertTo-Version $best.version)) {
-            $best = @{ version = $Matches[1]; from = $zip.FullName; sha256 = $null; notes = $null; local = $zip.FullName }
+            $best = @{ version = $Matches[1]; path = $zip.FullName }
         }
     }
-    if ($best) { return $best }
-
-    $source = Get-UpdateSource
-    if (-not $source) {
-        if ($report) { Write-Host "沒有找到新版。把 GitLab Release 下載的 pdf-mapper-版本.zip 放進這個資料夾，再執行一次。" }
-        return $null
+    if (-not $best -and $report) {
+        Write-Host "沒有找到新版。把 GitLab Release 下載的 pdf-mapper-版本.zip 放進這個資料夾，再執行一次。"
     }
-    try {
-        if (Test-Web $source) {
-            $info = Invoke-RestMethod -UseBasicParsing -UseDefaultCredentials -TimeoutSec 5 -Uri $source
-            if ($info -is [string]) { $info = $info.TrimStart([char]0xFEFF) | ConvertFrom-Json }  # 伺服器沒標成 JSON 時
-        } else {
-            if (-not (Test-Path -LiteralPath $source)) { throw "找不到 $source" }
-            $info = Get-Content -Raw -Encoding UTF8 -LiteralPath $source | ConvertFrom-Json
-        }
-    } catch {
-        Write-Host "暫時無法檢查更新，先用目前版本開啟。" -ForegroundColor DarkGray
-        return $null
-    }
-    if ($info.retired) {
-        # 負責人在 latest.json 設定 retired，用來在發現嚴重問題時停止使用
-        Stop-WithMessage "這個工具目前停止使用：$($info.notes)"
-    }
-    $latest = ConvertTo-Version ([string]$info.version)
-    if (-not $latest -or -not $mine -or $latest -le $mine) {
-        if ($report) { Write-Host "目前版本已是最新。" }
-        return $null
-    }
-    $minimum = if ($info.min_version) { ConvertTo-Version ([string]$info.min_version) } else { $null }
-    return @{ version = [string]$info.version; from = (Join-Location $source ([string]$info.file));
-              sha256 = [string]$info.sha256; notes = $info.notes; required = ($minimum -and $mine -lt $minimum) }
+    return $best
 }
 
 # 回傳 $true 代表已經換成新版，要改由新版的啟動程式繼續
 function Update-App([bool]$report) {
     $update = Find-Update $report
     if (-not $update) { return $false }
-    $current = Get-AppVersion $AppDir
     Write-Host ""
-    Write-Host "有新版本 $($update.version)（目前 $current）" -ForegroundColor Cyan
-    if ($update.notes) { Write-Host "  $($update.notes)" }
-    if ($update.required) { Write-Host "  這次更新包含必要修正，更新後才能繼續使用。" -ForegroundColor Yellow }
+    Write-Host "找到新版本 $($update.version)（目前 $(Get-AppVersion $AppDir)）" -ForegroundColor Cyan
     $answer = Read-Host "要現在更新嗎？範本和匯出資料不會受影響 [Y/n]"
-    if ($answer -match '^(n|no|否)$') {
-        if ($update.required) { Stop-WithMessage "沒有更新，工具不會開啟。" }
-        return $false
-    }
+    if ($answer -match '^(n|no|否)$') { return $false }
     try {
-        Install-Update $update.version $update.from $update.sha256 | Out-Null  # 有些指令會輸出物件，不能混進回傳值
-        if ($update.local) { Remove-Item -LiteralPath $update.local -ErrorAction SilentlyContinue }
+        Install-Update $update.version $update.path | Out-Null  # 有些指令會輸出物件，不能混進回傳值
+        Remove-Item -LiteralPath $update.path -ErrorAction SilentlyContinue
         return $true
     } catch {
         Remove-Item -Recurse -Force (Join-Path $Root "updates") -ErrorAction SilentlyContinue
-        if ($update.required) { Stop-WithMessage "更新失敗：$($_.Exception.Message)" }
         Write-Host "更新失敗，繼續使用目前版本：$($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "可以照使用手冊「手動更新」的步驟處理。" -ForegroundColor Yellow
         return $false
     }
 }
