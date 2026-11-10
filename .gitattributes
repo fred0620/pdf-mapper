@@ -11,3 +11,4 @@
 *.pdf   binary
 *.png   binary
 *.whl   binary
+*.otf   binary

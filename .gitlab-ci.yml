@@ -1,7 +1,9 @@
 # PDF 解析器的 CI/CD
 #
-# 平常 push：跑測試，並檢查套件有沒有已知弱點（只提醒，不擋）
+# 平常 push：跑測試
 # 打標籤（例如 v0.2.1）：測試通過才打包並建立 Release
+# 套件弱點檢查（pip-audit）要連 pypi.org 的弱點資料庫，公司鏡像沒有，所以不放在 CI，
+# 發版前在自己的電腦執行，見 docs/maintain.md。
 #
 # 同事從 Releases 頁下載 ZIP 和 SHA256SUMS.txt，放進工具資料夾後雙擊 run.bat，核對相符就會安裝。
 # 發布步驟見 docs/maintain.md。
@@ -13,7 +15,6 @@
 #   PIP_MIRROR       公司內部 PyPI 鏡像網址（runner 連不到 pypi.org 時必填，向 IT 要）
 #   CA_BUNDLE        公司憑證，類型選 File（鏡像或 GitLab 用公司自己的憑證時才需要）
 #   UV_IMAGE         公司要用內部映像檔時改這裡
-#   AUDIT_REQUIRED   設成 1 時，打標籤與排程的弱點檢查失敗就不發布（runner 要能連到 pypi.org）
 
 workflow:
   rules:
@@ -43,24 +44,15 @@ stages: [test, build, release]
 test:
   stage: test
   script:
-    - uv lock --project app --check          # pyproject.toml 改了卻忘了更新 uv.lock（不用連網）
+    # pyproject.toml 改了卻忘了更新 uv.lock。不用連網；暫時拿掉鏡像設定，
+    # 否則 uv 會因為鏡像網址和 lock 裡記的 pypi.org 不同，誤判 lock 需要更新
+    - env -u UV_DEFAULT_INDEX uv lock --project app --check --offline
     # 不用 uv sync：它會照 uv.lock 記的 pypi.org 網址下載，鏡像設定無效。
     # 改成匯出含 SHA256 的清單，再從設定的來源安裝，檔案仍要和 uv.lock 完全相同。
     - uv export --project app --frozen --no-emit-project --quiet --output-file /tmp/requirements-ci.txt
     - uv venv /tmp/venv --python 3.12
     - uv pip install --python /tmp/venv/bin/python --require-hashes -r /tmp/requirements-ci.txt
     - /tmp/venv/bin/python -m pytest -q tests
-
-audit:
-  stage: test
-  script:
-    - uv export --project app --frozen --no-dev --no-hashes --no-emit-project --quiet --output-file requirements.txt
-    # 弱點資料庫在 pypi.org，鏡像通常沒有；連不到時這一步會失敗，請在能連外的電腦執行同一行
-    - uvx pip-audit==2.10.1 --disable-pip --no-deps --progress-spinner off -r requirements.txt
-  rules:
-    - if: $AUDIT_REQUIRED == "1" && ($CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "schedule")
-      allow_failure: false
-    - allow_failure: true
 
 package:
   stage: build

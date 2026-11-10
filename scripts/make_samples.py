@@ -1,7 +1,7 @@
 """產生仿進口報單的合成 PDF，所有資料皆為虛構，供測試與教學使用。
 
 欄位標題與框線是底圖（影像），數值是文字層，和真實報單的兩層結構相同。
-需要開發用套件（uv sync），並有繁中字型（可用 --font 指定）。
+需要開發用套件（uv sync）。字型用專案內附的 tests/fonts，也可用 --font 指定。
 """
 from __future__ import annotations
 
@@ -29,9 +29,14 @@ HEADERS = ["項次", "貨物名稱", "稅則號別", "單價條件", "淨重數�
 PRODUCTS = ["木製辦公桌", "金屬座椅", "折疊收納櫃", "電動升降桌", "餐桌組", "鋁合金層架", "沙發椅", "書櫃"]
 
 
+# 專案內附的字型子集（Noto Sans CJK TC，OFL 授權），只含範例與測試用到的字。
+# 放在專案裡，CI 和每台電腦畫出來的範例都一樣，不依賴系統有沒有中文字型。
+BUNDLED_FONT = Path(__file__).resolve().parent.parent / "tests" / "fonts" / "NotoSansTC-subset.otf"
+
+
 def load_font(path: str | None, size: int):
     candidates = [path] if path else []
-    candidates += ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    candidates += [str(BUNDLED_FONT), "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
                    "C:/Windows/Fonts/msjh.ttc", "/System/Library/Fonts/PingFang.ttc"]
     for item in candidates:
         try:

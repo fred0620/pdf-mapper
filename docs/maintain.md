@@ -54,7 +54,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 
 1. 改 `app/pyproject.toml` 的 `version`，然後執行 `uv lock --project app` 讓 `uv.lock` 跟著更新。
 2. 在 `CHANGELOG.md` 最上面加一段 `## 版本號 - 日期`，用使用者看得懂的話條列改了什麼。
-3. 跑測試，並依 [發版檢查清單](security-checklist.md) 勾選。
+3. 跑測試和弱點檢查（`python3 scripts/audit.py`，要能連到 pypi.org），並依 [發版檢查清單](security-checklist.md) 勾選。
 4. 合併到 main 後打標籤：
 
    ```bash
@@ -62,15 +62,14 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
    git push origin v0.2.1
    ```
 
-5. GitLab 會自動跑測試、打包，並在 **Deploy > Releases** 建立 Release。測試或打包失敗都不會發布。弱點檢查預設只提醒，見下方「CI 在公司網路跑不起來」。
+5. GitLab 會自動跑測試、打包，並在 **Deploy > Releases** 建立 Release。測試或打包失敗都不會發布。
 6. 通知同事：到 Releases 頁下載新版 ZIP 和 `SHA256SUMS.txt`，放進工具資料夾，雙擊 `run.bat`。沒有 `SHA256SUMS.txt` 或對不上時，工具不會安裝。可以直接把 CHANGELOG 這一段貼給大家，並附上 [換版說明](換版說明.md) 的連結（工具裡也能從使用手冊連過去）。
 
 ### 第一次設定（只做一次）
 
 1. **受保護的標籤**（Settings > Repository > Protected tags）：保護 `v*`，只允許 Maintainer 建立。這樣只有負責人能發布。
-2. **每月排程**（Build > Pipeline schedules）：每月一次，跑在 main，用來看弱點檢查的結果。runner 能連到 pypi.org 時，再設 `AUDIT_REQUIRED=1` 讓檢查失敗就亮紅燈、擋發布。
-3. **同事的權限**：同事要能看到專案的 Releases 頁才能下載，通常給 Reporter 權限即可。
-4. **套件來源**：runner 連不到 pypi.org 時，在 Settings > CI/CD > Variables 設定 `PIP_MIRROR`，見下一節。
+2. **同事的權限**：同事要能看到專案的 Releases 頁才能下載，通常給 Reporter 權限即可。
+3. **套件來源**：runner 連不到 pypi.org 時，在 Settings > CI/CD > Variables 設定 `PIP_MIRROR`，見下一節。
 
 ### CI 在公司網路跑不起來
 
@@ -81,11 +80,12 @@ CI 會在每個 job 開頭先試著連套件來源，連不到就停下來並顯
 | 無法連到套件來源 https://pypi.org/simple | 公司網路擋住外部 PyPI | 向 IT 要「內部 PyPI 鏡像」的網址（Nexus、Artifactory 等，通常以 `/simple` 結尾），新增變數 `PIP_MIRROR` |
 | 有設 `PIP_MIRROR`，但出現 certificate、SSL 字樣 | 鏡像用公司自己的憑證 | 向 IT 要公司根憑證（.crt 或 .pem），新增 **File** 類型的變數 `CA_BUNDLE` |
 | job 一開始就拉不到映像檔（pull image 失敗） | runner 連不到 ghcr.io | 請 IT 把 `ghcr.io/astral-sh/uv:0.13.6-python3.12-bookworm-slim` 放進公司的映像檔庫，再把變數 `UV_IMAGE` 設成內部的位置 |
-| `audit` 失敗（黃色驚嘆號） | 弱點資料庫在 pypi.org，鏡像通常沒有 | 不影響發布。發版前在能連外的電腦執行：`uv export --project app --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt` 和 `uvx pip-audit --disable-pip --no-deps -r requirements.txt` |
 
 向 IT 詢問時可以這樣說：「GitLab CI 要安裝 Python 套件，請問公司有沒有 PyPI 的內部鏡像（proxy repository）？網址和憑證是什麼？」
 
 換了來源也不會降低安全性：CI 只安裝和 `uv.lock` 雜湊完全相同的檔案，打包時也會逐一比對。
+
+弱點檢查（pip-audit）不在 CI 裡：它要查 pypi.org 的弱點資料庫，公司鏡像沒有，放在 CI 只會一直失敗。改成發版前和每月在自己的電腦執行 `python3 scripts/audit.py`。
 
 ### 在自己的電腦發布（暫時沒有鏡像時）
 
@@ -101,7 +101,7 @@ CI 會在每個 job 開頭先試著連套件來源，連不到就停下來並顯
 
 | 頻率 | 做什麼 |
 |---|---|
-| 每月 | 看排程 pipeline 的弱點檢查。有弱點就升級該套件並發布修正版 |
+| 每月 | 在能連到 pypi.org 的電腦執行 `python3 scripts/audit.py`。有弱點就升級該套件並發布修正版 |
 | 每半年 | 升級全部套件與 uv，發一個小版本；順便確認 OWNER.md 還正確、還有人在用 |
 | 交接時 | 新負責人照第 1 節做一次，並在備援人陪同下發布一次 |
 
@@ -111,8 +111,7 @@ CI 會在每個 job 開頭先試著連套件來源，連不到就停下來並顯
 uv lock --project app --upgrade-package pypdfium2     # 只升級一個（處理弱點時）
 uv lock --project app --upgrade                       # 全部升級
 uv run --project app pytest tests
-uv export --project app --frozen --no-dev --no-hashes --no-emit-project -o /tmp/req.txt
-uvx pip-audit --disable-pip --no-deps -r /tmp/req.txt # 本機先檢查一次弱點
+python3 scripts/audit.py                              # 檢查一次弱點
 ```
 
 `pypdfium2`（PDFium）和 `pdfplumber` 負責讀取不受信任的 PDF，是最需要跟上更新的套件。

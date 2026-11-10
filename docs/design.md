@@ -96,7 +96,9 @@
 - 公司 runner 常常連不到 pypi.org。`uv sync --frozen` 會照 `uv.lock` 記的 pypi.org 網址下載，設定鏡像也沒用，所以 CI 改成 `uv export`（含 SHA256）再 `uv pip install --require-hashes`，來源由 `PIP_MIRROR` 決定，檔案仍和 lock 完全相同。
 - 每個 job 開頭用 `scripts/ci_env.sh` 先連一次套件來源，連不到就用中文說明要找 IT 要什麼，不讓使用者看到難懂的錯誤。
 - 全部 job 只用一個映像檔（ghcr.io 的 uv）。上傳與建立 Release 改用 Python 標準函式庫（`scripts/publish_release.py`），不再拉 Docker Hub 的 curl 和 registry.gitlab.com 的 release-cli，要請 IT 放行或鏡像的東西只剩一個。
-- 弱點檢查的資料庫在 pypi.org，鏡像通常沒有，所以預設只提醒；能連外時設 `AUDIT_REQUIRED=1` 才擋發布。連不到時改在自己的電腦執行。
+- `uv lock --check` 不需要網路，但設了鏡像時 uv 會因為鏡像網址和 lock 記的 pypi.org 不同而誤判要更新，所以檢查時暫時拿掉鏡像設定並加 `--offline`。
+- 弱點檢查不放在 CI：資料庫在 pypi.org，公司鏡像沒有，一直失敗的 job 只會讓人習慣忽略紅燈。改成發版前與每月在自己的電腦執行 `scripts/audit.py`，列在發版檢查清單。PDF 是不受信任的輸入，pdfium、pdfminer、Pillow、OpenCV 都有過弱點，所以檢查本身不能省。
+- 測試用的範例掃描檔要畫中文，CI 映像檔沒有中文字型。專案內附 Noto Sans CJK TC 的子集（`tests/fonts`，OFL 授權，只含範例與測試用到的字，約 180 KB），每台電腦和 CI 畫出來的範例都一樣。不打包進發布包。
 - 沒有鏡像時的退路：在自己的電腦打包，手動建立 Release。
 
 ## 治理
