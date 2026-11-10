@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(ROOT), str(ROOT / "scripts")]
+sys.path[:0] = [str(ROOT / "app"), str(ROOT / "scripts")]
 
 import make_samples  # noqa: E402
 

@@ -1,5 +1,15 @@
 .venv/
 .tools/
+# 執行環境與更新暫存（自動產生）
+runtime/
+app.old/
+app.swap/
+updates/
+# 打包產物
+dist/
+app/wheels/
+app/update-source.txt
+.uv-cache/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -10,5 +20,5 @@ wheels/
 *.xlsx
 # 只保留合成範例
 *.pdf
-!samples/*.pdf
+!app/samples/*.pdf
 .DS_Store

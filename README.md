@@ -1,27 +1,26 @@
 # PDF 解析器
 
-標注一次範本，之後同格式的 PDF 就能批次轉成 Excel。文字層和影像都能讀，有疑慮的值會標記給人確認。全部在本機執行。
+標注一次範本，之後同格式的 PDF 就能批次轉成 Excel。文字層和影像都能讀，有疑慮的值會標記給人確認。全部在本機執行，資料不會離開這台電腦。
 
-**完整操作說明請看[使用手冊](docs/使用手冊.md)**。下載後也可以直接開啟 `使用手冊.html`，或在工具右上角點「使用手冊」。
+| 你是 | 請看 |
+|---|---|
+| 使用者 | [使用手冊](docs/使用手冊.md)（工具右上角也能開啟） |
+| 負責人、接手的人 | [工具卡](OWNER.md) → [維護手冊](docs/maintain.md) → [設計決策](docs/design.md) |
+| 要發布新版 | [維護手冊的發布步驟](docs/maintain.md#3-發布新版) 與 [資安檢查清單](docs/security-checklist.md) |
 
-## 開始使用
+## 使用
 
-不需要先安裝 Python。
+不需要先安裝 Python。從共用資料夾取得 `pdf-mapper-版本.zip`，解壓後雙擊 `run.bat`（macOS / Linux 執行 `bash run.sh`）。第一次會自動準備 uv 和 Python，約 1 到 3 分鐘。
 
-- **Windows**：雙擊 `start.bat`，或在 PowerShell 執行 `.\start.ps1`
-- **macOS / Linux**：執行 `bash start.sh`
+之後每次雙擊 `run.bat`，都會先檢查有沒有新版。更新只換掉 `app` 和 `run.bat`，範本與匯出資料不受影響；新版有問題時執行 `run.bat rollback` 就能退回。
 
-第一次會自動下載 [uv](https://docs.astral.sh/uv/)，再由 uv 準備 Python 3.12 和套件，約 1 到 3 分鐘，之後直接開啟瀏覽器。
-
-環境全部放在專案資料夾內的 `.tools` 和 `.venv`，不會裝進系統的 Python，也不會改動 PATH。刪掉資料夾就完全移除。OCR 模型已包含在套件內，執行時資料不會離開這台電腦。
-
-想先試用：到「解析 PDF」，勾選兩個示範範本，加入 `samples/` 裡的 PDF。範例都是虛構資料。
-
-### 公司網路擋 GitHub 或 PyPI 時
-
-1. 在可連網、作業系統和 CPU 架構相同的 Windows 電腦上，執行 `scripts\build_offline_bundle.ps1`
-2. 把整個資料夾複製過去，但不要複製 `.venv` 和 `.tools\cache`
-3. 雙擊 `start.bat`，會自動改用離線安裝
+```text
+pdf-mapper/
+  run.bat       入口
+  app/          程式，每次更新整包換掉，不要放自己的檔案
+  workspace/    範本、匯出結果、客製腳本、操作紀錄（更新不會動）
+  runtime/      uv、Python 和套件（自動建立，刪掉會重建）
+```
 
 ## 三層架構
 
@@ -29,85 +28,51 @@
 |---|---|---|---|
 | 1. 建立範本 | 範例 PDF | 範本 JSON | 網頁工具的「建立範本」 |
 | 2. 解析 | PDF + 範本 | Excel + 檢查報告 | 網頁工具的「解析 PDF」或指令列 |
-| 3. 客製處理 | 解析結果 | 使用者格式 | `custom/` 裡的腳本，本專案只提供接口 |
+| 3. 客製處理 | 解析結果 | 使用者格式 | `workspace/custom/` 的腳本，本專案只提供接口 |
 
 第 2 層只忠實取值，例如 `1,234.50` 就原樣輸出。轉數字、改欄名都放第 3 層，客戶格式改變時不必重新標注。
-
-## 建立範本
-
-1. 加入 PDF。第一份是基準範例，其他的用來測試，建議放一份標準、一份格式略有不同。
-2. 用工具列框出要抓的資料：
-   - **有標題的欄位**：先框標題，再框數值。框的時候可以大一點。
-   - **只有值的欄位**：直接框數值。
-   - **表格**：框資料區，不含標題列。在表格內點一下切出直欄，再選一欄用來判斷新的一列，例如項次。
-   - 明細會跨頁時，切到第 2 頁，選表格，按「在這一頁加範圍」。
-   - 同一格有多行時，按「這一格有多行，再拆一欄」。
-3. 每一頁至少要有 3 個定位點。欄位標題會自動算進去，也可以按「自動找這一頁的定位點」。**定位點要分散在頁面四周**，集中在一處時，離得遠的位置容易偏。
-4. 可以加數字檢查，例如幾個欄位相加要等於合計。
-5. 按「用範例測試」，檢查每份範例的結果，然後儲存。
-
-快捷鍵：V 選取、K 有標題的欄位、P 只有值的欄位、T 表格、A 定位點、Esc 取消、Delete 刪除、Ctrl/Cmd+Z 復原。
-
-## 怎麼判斷資料可不可靠
-
-每個值都記錄來源、頁碼和位置。以下情況不會直接當成正確，而會進入「待檢查」：
-
-| 標記 | 意思 |
-|---|---|
-| 影像辨識信心偏低 | OCR 信心低於 85% |
-| 文字層與影像辨識結果不同 | 欄位勾選「重要欄位」時才比對 |
-| 內容壓到框線 / 跨到隔壁欄 | 框太小或欄線不準，可能少字或分錯欄；只標在實際用到那段文字的欄位 |
-| 格式與設定不符 | 例如數字欄位讀到文字 |
-| 對位不穩 | 定位點太少，位置可能有偏差 |
-| 項次不連續（提示） | 大多數項次連號時才提示可能漏列，不算進待檢查；項次本來就不連號時不提示 |
-| 加總驗證不符 | 依你設定的數字檢查 |
-| 可能不適用此範本 | 定位點找到不到一半 |
-
-Excel 的「待檢查」工作表會列出每個項目，並附原圖截圖，不用回頭翻 PDF。橘色是需檢查，紅色是缺值，綠色是人工修正過。
-
-**重要**：OCR 高信心不等於一定正確。金額這類關鍵欄位請設定加總檢查，或勾選「重要欄位」。
-
-## 指令列
-
-```powershell
-.\start.ps1 run -t templates\customs_demo.json -i 資料夾 -o output\結果.xlsx
-.\start.ps1 run -t templates -i 資料夾                 # 多個範本時，每份自動挑最符合的
-.\start.ps1 run -t x.json -i 資料夾 --post custom\example_transform.py
-.\start.ps1 doctor                                      # 檢查環境
-```
 
 ## 專案結構
 
 ```text
-pdfmapper/
-  document.py     PDF 讀取，文字層與 OCR 統一成帶座標的字
-  ocr.py          OCR 引擎包裝，要換引擎只改這裡
-  align.py        用定位點校正位置
-  template.py     範本格式、檢查、自動找定位點
-  extract.py      取值、切表格、疑點標記
-  parser.py       解析主流程與整份驗證
-  excel.py        檢查用 Excel
-  clean.py        乾淨資料匯出
-  postprocess.py  第三層接口
-  server.py       本機網頁後端
-  web/            前端，無外部相依
-templates/        範本 JSON
-samples/          虛構範例
-custom/           客製化腳本
-docs/             使用手冊與範本格式
-workspace/        暫存上傳檔與 logs/ 操作紀錄（不進版控）
-output/           匯出結果（不進版控）
+run.bat, run.sh          使用者入口（只有一行，轉給 app/launcher）
+app/                     發布時整包給使用者的內容
+  launcher.ps1           Windows 啟動程式：環境、檢查更新、回滾
+  launcher.sh            macOS / Linux 啟動程式（開發用，不含自動更新）
+  pyproject.toml         套件與版本號（版本只寫在這裡）
+  uv.lock                鎖定的套件版本
+  pdfmapper/
+    paths.py             所有檔案位置
+    document.py          PDF 讀取，文字層與 OCR 統一成帶座標的字
+    ocr.py               OCR 引擎包裝，要換引擎只改這裡
+    align.py             用定位點校正位置
+    template.py          範本格式、檢查、自動找定位點
+    extract.py           取值、切表格、疑點標記
+    parser.py            解析主流程與整份驗證
+    excel.py             檢查用 Excel
+    clean.py             乾淨資料匯出
+    postprocess.py       第三層接口
+    logs.py              本機日誌
+    server.py            本機網頁後端
+    web/                 前端，無外部相依
+  examples/              示範範本與客製腳本範例，第一次啟動時複製到 workspace
+  samples/               虛構範例 PDF
+  使用手冊.html           由 docs/使用手冊.md 產生
+docs/                    使用手冊、範本格式、設計決策、維護手冊、資安檢查清單
+scripts/                 打包發布、重建範例與手冊
+tests/
+.gitlab-ci.yml           測試、弱點檢查、打包與 Release
+OWNER.md                 工具卡：用途、負責人、資料等級、風險分級
+CHANGELOG.md             每一版改了什麼（發布時必填）
 ```
 
 ## 開發
 
 ```bash
-uv sync                          # 含開發用套件
-uv run pytest
-uv run python scripts/build_demo.py     # 重建範例與示範範本
-uv run python scripts/build_manual.py   # 由 docs/使用手冊.md 重建使用手冊.html
+uv sync --project app                                 # 含開發用套件
+uv run --project app pytest tests
+bash run.sh                                           # 用使用者的方式啟動
+uv run --project app python scripts/build_release.py  # 打包到 dist/
 ```
 
-新增套件用 `uv add 套件名稱`，`uv.lock` 會鎖定版本，讓每台電腦裝到一樣的環境。
-
-`start.ps1` 和 `start.sh` 用 `--frozen` 安裝，不會改動 `uv.lock`。要升級 uv 時，改這兩個檔案裡的版本號。
+詳細流程、升級套件與發布步驟見 [維護手冊](docs/maintain.md)。

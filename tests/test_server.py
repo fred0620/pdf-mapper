@@ -42,7 +42,7 @@ def test_security_headers_and_ping():
     assert page.headers["X-Content-Type-Options"] == "nosniff"
     ping = client.get("/api/ping")
     assert ping.headers["Cache-Control"] == "no-store"
-    assert str(server.ROOT) not in ping.get_data(as_text=True)  # 不外洩本機路徑
+    assert str(server.paths.HOME) not in ping.get_data(as_text=True)  # 不外洩本機路徑
 
 
 def test_errors_do_not_leak_details():

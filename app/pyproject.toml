@@ -1,6 +1,6 @@
 [project]
 name = "pdf-mapper"
-version = "0.1.0"
+version = "0.2.0"
 description = "標注範本後，批次把 PDF 轉成 Excel 的本機工具"
 requires-python = ">=3.10,<3.14"
 dependencies = [

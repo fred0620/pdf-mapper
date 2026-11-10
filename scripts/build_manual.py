@@ -1,6 +1,6 @@
-"""把 docs/使用手冊.md 轉成單一 HTML（圖片內嵌），放在專案根目錄，雙擊就能看。
+"""把 docs/使用手冊.md 轉成單一 HTML（圖片內嵌），放在 app/，雙擊就能看，也會隨發布包一起出去。
 
-用 uv run python scripts/build_manual.py 執行。
+用 uv run --project app python scripts/build_manual.py 執行。
 """
 import base64
 import re
@@ -58,7 +58,7 @@ def main() -> None:
         f"<title>PDF 解析器使用手冊</title><style>{STYLE}</style></head>"
         f"<body><main>{body}</main></body></html>"
     )
-    (ROOT / "使用手冊.html").write_text(page, encoding="utf-8")
+    (ROOT / "app" / "使用手冊.html").write_text(page, encoding="utf-8")
     print("完成")
 
 
