@@ -19,29 +19,34 @@
   <rect x="32" y="60" width="192" height="166" rx="6" fill="#ffffff" stroke="#d9d9d9" stroke-width="1"/>
   <text x="44" y="84" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="start">Deploy &gt; Releases</text>
   <line x1="32" y1="96" x2="224" y2="96" stroke="#d9d9d9" stroke-width="1"/>
-  <text x="44" y="122" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#111111" text-anchor="start">PDF 解析器 0.2.1</text>
-  <text x="44" y="142" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#999999" text-anchor="start">最新版本</text>
-  <rect x="44" y="160" width="168" height="34" rx="6" fill="none" stroke="#2C5F34" stroke-width="1.5"/>
-  <path d="M54,168 h9 l5,5 v13 h-14 z M63,168 v5 h5" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
-  <text x="61" y="183" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="6" font-weight="700" fill="#2C5F34" text-anchor="middle">ZIP</text>
-  <text x="76" y="182" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#2C5F34" text-anchor="start">pdf-mapper-0.2.1.zip</text>
+  <text x="44" y="118" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#111111" text-anchor="start">PDF 解析器 0.2.1</text>
+  <text x="44" y="136" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#999999" text-anchor="start">最新版本</text>
+  <rect x="44" y="148" width="168" height="28" rx="6" fill="none" stroke="#2C5F34" stroke-width="1.5"/>
+  <path d="M54,153 h9 l5,5 v13 h-14 z M63,153 v5 h5" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="61" y="168" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="6" font-weight="700" fill="#2C5F34" text-anchor="middle">ZIP</text>
+  <text x="76" y="167" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#2C5F34" text-anchor="start">pdf-mapper-0.2.1.zip</text>
+  <rect x="44" y="184" width="168" height="28" rx="6" fill="none" stroke="#2C5F34" stroke-width="1.5"/>
+  <path d="M54,189 h9 l5,5 v13 h-14 z M63,189 v5 h5" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="76" y="203" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#2C5F34" text-anchor="start">SHA256SUMS.txt</text>
   <text x="128.0" y="262" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">在公司 GitLab 專案頁</text>
-  <text x="128.0" y="281" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">下載 ZIP，不用解壓</text>
+  <text x="128.0" y="281" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">兩個檔案都要下載，不用解壓</text>
   <rect x="284" y="60" width="192" height="166" rx="6" fill="#ffffff" stroke="#d9d9d9" stroke-width="1"/>
   <text x="296" y="82" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#666666" text-anchor="start">pdf-mapper</text>
   <line x1="284" y1="92" x2="476" y2="92" stroke="#d9d9d9" stroke-width="1"/>
-  <path d="M296,106 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
-  <text x="322" y="116" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">app</text>
-  <path d="M296,130 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
-  <text x="322" y="140" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">runtime</text>
-  <path d="M296,154 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
-  <text x="322" y="164" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">workspace</text>
-  <path d="M298,174 h9 l5,5 v13 h-14 z M307,174 v5 h5" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
-  <text x="322" y="188" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">run.bat</text>
-  <path d="M298,198 h9 l5,5 v13 h-14 z M307,198 v5 h5" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
-  <text x="305" y="213" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="6" font-weight="700" fill="#2C5F34" text-anchor="middle">ZIP</text>
-  <text x="322" y="212" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">pdf-mapper-0.2.1.zip</text>
-  <text x="380.0" y="262" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">和 run.bat 放在同一層</text>
+  <path d="M296,100 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="322" y="110" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">app</text>
+  <path d="M296,121 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="322" y="131" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">runtime</text>
+  <path d="M296,142 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="322" y="152" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">workspace</text>
+  <path d="M298,159 h9 l5,5 v13 h-14 z M307,159 v5 h5" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="322" y="173" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">run.bat</text>
+  <path d="M298,182 h9 l5,5 v13 h-14 z M307,182 v5 h5" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="305" y="197" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="6" font-weight="700" fill="#2C5F34" text-anchor="middle">ZIP</text>
+  <text x="322" y="196" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">pdf-mapper-0.2.1.zip</text>
+  <path d="M298,204 h9 l5,5 v13 h-14 z M307,204 v5 h5" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="322" y="218" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">SHA256SUMS.txt</text>
+  <text x="380.0" y="262" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">兩個檔案都和 run.bat 放在同一層</text>
   <text x="380.0" y="281" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">其他東西都不用動</text>
   <rect x="536" y="60" width="192" height="166" rx="6" fill="#ffffff" stroke="#666666" stroke-width="1"/>
   <line x1="536" y1="80" x2="728" y2="80" stroke="#d9d9d9" stroke-width="1"/>
@@ -49,12 +54,12 @@
   <circle cx="558" cy="70" r="3" fill="#d9d9d9"/>
   <circle cx="568" cy="70" r="3" fill="#d9d9d9"/>
   <text x="546" y="104" font-family="Consolas,Menlo,'Noto Sans Mono CJK TC',monospace" font-size="12" font-weight="400" fill="#111111" text-anchor="start">找到新版本 0.2.1</text>
-  <text x="546" y="124" font-family="Consolas,Menlo,'Noto Sans Mono CJK TC',monospace" font-size="12" font-weight="400" fill="#111111" text-anchor="start">（目前 0.2.0）</text>
+  <text x="546" y="124" font-family="Consolas,Menlo,'Noto Sans Mono CJK TC',monospace" font-size="12" font-weight="400" fill="#111111" text-anchor="start">檔案核對相符</text>
   <text x="546" y="144" font-family="Consolas,Menlo,'Noto Sans Mono CJK TC',monospace" font-size="12" font-weight="400" fill="#111111" text-anchor="start">要現在更新嗎？[Y/n]</text>
   <text x="546" y="164" font-family="Consolas,Menlo,'Noto Sans Mono CJK TC',monospace" font-size="12" font-weight="700" fill="#2C5F34" text-anchor="start">按 Enter</text>
   <text x="546" y="194" font-family="Consolas,Menlo,'Noto Sans Mono CJK TC',monospace" font-size="12" font-weight="400" fill="#111111" text-anchor="start">已更新到 0.2.1。</text>
   <text x="546" y="212" font-family="Consolas,Menlo,'Noto Sans Mono CJK TC',monospace" font-size="11" font-weight="400" fill="#666666" text-anchor="start">上一版保留在 app.old</text>
-  <text x="632.0" y="262" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">問要不要更新時按 Enter</text>
-  <text x="632.0" y="281" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">裝好後 ZIP 會自動刪掉</text>
+  <text x="632.0" y="262" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">核對相符才會詢問</text>
+  <text x="632.0" y="281" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">按 Enter 就會更新</text>
   <text x="380" y="318" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#2C5F34" text-anchor="middle">範本、匯出結果都在 workspace，更新完全不會碰到。</text>
 </svg>

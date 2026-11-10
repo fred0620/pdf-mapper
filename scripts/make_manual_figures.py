@@ -119,12 +119,13 @@ def update_steps() -> None:
     f.rect(x + 12, 60, width - 24, 166, fill="#ffffff", stroke=RULE)
     f.text(x + 24, 84, "Deploy > Releases", 12, fill=SOFT)
     f.line(x + 12, 96, x + width - 12, 96)
-    f.text(x + 24, 122, "PDF 解析器 0.2.1", 14, 700)
-    f.text(x + 24, 142, "最新版本", 11, fill=FAINT)
-    f.rect(x + 24, 160, width - 48, 34, stroke=GREEN, width=1.5)
-    f.file(x + 34, 168, GREEN, "ZIP")
-    f.text(x + 56, 182, "pdf-mapper-0.2.1.zip", 12, 700, GREEN)
-    f.lines(x + width / 2, 262, ["在公司 GitLab 專案頁", "下載 ZIP，不用解壓"], anchor="middle")
+    f.text(x + 24, 118, "PDF 解析器 0.2.1", 14, 700)
+    f.text(x + 24, 136, "最新版本", 11, fill=FAINT)
+    for top, label, name in ((148, "ZIP", "pdf-mapper-0.2.1.zip"), (184, "", "SHA256SUMS.txt")):
+        f.rect(x + 24, top, width - 48, 28, stroke=GREEN, width=1.5)
+        f.file(x + 34, top + 5, GREEN, label)
+        f.text(x + 56, top + 19, name, 12, 700, GREEN)
+    f.lines(x + width / 2, 262, ["在公司 GitLab 專案頁", "兩個檔案都要下載，不用解壓"], anchor="middle")
 
     # 2. 工具資料夾
     x = panels[1]
@@ -133,9 +134,10 @@ def update_steps() -> None:
     f.line(x + 12, 92, x + width - 12, 92)
     for row, (kind, name) in enumerate((("folder", "app"), ("folder", "runtime"), ("folder", "workspace"),
                                         ("file", "run.bat"))):
-        f.entry(x + 24, 116 + row * 24, kind, name)
-    f.entry(x + 24, 212, "zip", "pdf-mapper-0.2.1.zip", color=GREEN, weight=700)
-    f.lines(x + width / 2, 262, ["和 run.bat 放在同一層", "其他東西都不用動"], anchor="middle")
+        f.entry(x + 24, 110 + row * 21, kind, name)
+    f.entry(x + 24, 196, "zip", "pdf-mapper-0.2.1.zip", color=GREEN, weight=700)
+    f.entry(x + 24, 218, "file", "SHA256SUMS.txt", color=GREEN, weight=700)
+    f.lines(x + width / 2, 262, ["兩個檔案都和 run.bat 放在同一層", "其他東西都不用動"], anchor="middle")
 
     # 3. 黑色視窗
     x = panels[2]
@@ -143,13 +145,13 @@ def update_steps() -> None:
     f.line(x + 12, 80, x + width - 12, 80, RULE)
     for dot in range(3):
         f.add(f'<circle cx="{x + 24 + dot * 10}" cy="70" r="3" fill="{RULE}"/>')
-    console = ["找到新版本 0.2.1", "（目前 0.2.0）", "要現在更新嗎？[Y/n]"]
+    console = ["找到新版本 0.2.1", "檔案核對相符", "要現在更新嗎？[Y/n]"]
     for row, value in enumerate(console):
         f.text(x + 22, 104 + row * 20, value, 12, fill=INK, font=MONO)
     f.text(x + 22, 164, "按 Enter", 12, 700, GREEN, font=MONO)
     f.text(x + 22, 194, "已更新到 0.2.1。", 12, fill=INK, font=MONO)
     f.text(x + 22, 212, "上一版保留在 app.old", 11, fill=SOFT, font=MONO)
-    f.lines(x + width / 2, 262, ["問要不要更新時按 Enter", "裝好後 ZIP 會自動刪掉"], anchor="middle")
+    f.lines(x + width / 2, 262, ["核對相符才會詢問", "按 Enter 就會更新"], anchor="middle")
 
     f.text(380, 318, "範本、匯出結果都在 workspace，更新完全不會碰到。", 13, 700, GREEN, anchor="middle")
     f.save("update-02-steps.svg")

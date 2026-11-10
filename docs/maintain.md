@@ -63,7 +63,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
    ```
 
 5. GitLab 會自動跑測試、弱點檢查、打包，並在 **Deploy > Releases** 建立 Release。任何一步失敗都不會發布。
-6. 通知同事：到 Releases 頁下載新版 ZIP，放進工具資料夾，雙擊 `run.bat`。可以直接把 CHANGELOG 這一段貼給大家，並附上 [換版說明](換版說明.md) 的連結（工具裡也能從使用手冊連過去）。
+6. 通知同事：到 Releases 頁下載新版 ZIP 和 `SHA256SUMS.txt`，放進工具資料夾，雙擊 `run.bat`。沒有 `SHA256SUMS.txt` 或對不上時，工具不會安裝。可以直接把 CHANGELOG 這一段貼給大家，並附上 [換版說明](換版說明.md) 的連結（工具裡也能從使用手冊連過去）。
 
 ### 第一次設定（只做一次）
 

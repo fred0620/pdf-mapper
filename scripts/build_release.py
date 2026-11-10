@@ -9,6 +9,7 @@
     SHA256SUMS.txt
 
 只打包明確列出的檔案，測試、腳本、開發文件和任何資料都不會進到發布包。
+離線套件下載後逐一比對 uv.lock 的 SHA256，不符就停止。
 版本號只寫在 app/pyproject.toml；CHANGELOG.md 一定要有這個版本的段落，否則不給發布。
 """
 from __future__ import annotations
@@ -22,6 +23,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
+from urllib.parse import unquote, urlparse
 import zipfile
 from pathlib import Path
 
@@ -105,6 +108,33 @@ def download_wheels(target: Path) -> None:
              "--implementation", "cp", "-r", str(requirements), "-d", str(target)])
 
 
+def locked_hashes() -> dict[str, str]:
+    """uv.lock 記錄的每個套件檔的 SHA256，以檔名對照。"""
+    lock = tomllib.loads((APP / "uv.lock").read_text(encoding="utf-8"))
+    hashes: dict[str, str] = {}
+    for package in lock.get("package", []):
+        for item in [*package.get("wheels", []), *([package["sdist"]] if "sdist" in package else [])]:
+            if "url" in item and str(item.get("hash", "")).startswith("sha256:"):
+                hashes[unquote(Path(urlparse(item["url"]).path).name)] = item["hash"].split(":", 1)[1]
+    return hashes
+
+
+def verify_wheels(target: Path) -> None:
+    """下載的套件檔必須和 uv.lock 記錄的完全相同，鏡像或 PyPI 上的檔案被換掉時就不打包。"""
+    expected = locked_hashes()
+    problems = []
+    files = sorted(path for path in target.iterdir() if path.suffix in (".whl", ".gz", ".zip"))
+    for path in files:
+        digest = expected.get(path.name)
+        if digest is None:
+            problems.append(f"{path.name} 不在 uv.lock 裡")
+        elif sha256(path) != digest:
+            problems.append(f"{path.name} 的 SHA256 和 uv.lock 不符")
+    if problems:
+        sys.exit("離線套件驗證失敗，不打包：\n  " + "\n  ".join(problems))
+    print(f"離線套件 {len(files)} 個，都和 uv.lock 的 SHA256 相符")
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -145,6 +175,7 @@ def build(out: Path, wheels: bool) -> Path:
     if wheels:
         print("下載 Windows 離線套件...")
         download_wheels(stage / "app" / "wheels")
+        verify_wheels(stage / "app" / "wheels")
 
     archive = out / f"{stage.name}.zip"
     write_zip(stage, archive)

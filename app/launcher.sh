@@ -55,4 +55,5 @@ if [ -e "$VENV/bin/python" ] && ! "$VENV/bin/python" -c pass 2>/dev/null; then r
 [ -x "$VENV/bin/python" ] || echo "正在準備 Python 與套件，第一次約需 1 到 3 分鐘..."
 # app/wheels 是給 Windows 的離線套件，這裡一律依 uv.lock 安裝
 "$UV" sync --frozen --no-dev --project "$APP_DIR"
-exec "$VENV/bin/python" -m pdfmapper "$@"
+# -P：不把目前資料夾加進模組搜尋路徑
+exec "$VENV/bin/python" -P -m pdfmapper "$@"

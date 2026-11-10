@@ -524,7 +524,9 @@ def _clear_uploads() -> None:
 
 
 def _busy() -> bool:
-    return any(not run["finished"] for run in _runs.values())
+    # 上鎖讀取：同時有新增或清理解析結果時，走訪到一半會出錯，自動關閉的監看就會停掉
+    with _runs_lock:
+        return any(not run["finished"] for run in _runs.values())
 
 
 def _shutdown(reason: str) -> None:

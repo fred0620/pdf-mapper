@@ -7,8 +7,8 @@
 #   run.bat version             顯示版本
 #   run.bat update              安裝資料夾裡的新版 ZIP
 #
-# 更新方式：從 GitLab Release 下載 pdf-mapper-版本.zip，不用解壓，放進這個資料夾，
-# 雙擊 run.bat 就會詢問要不要安裝。程式不會連網檢查新版。
+# 更新方式：從 GitLab Release 下載 pdf-mapper-版本.zip 和 SHA256SUMS.txt，不用解壓，放進這個資料夾，
+# 雙擊 run.bat 就會核對檔案並詢問要不要安裝。程式不會連網檢查新版。
 #   run.bat rollback            退回上一版（再執行一次就回到新版）
 #   加上 --no-update 可以跳過開啟前的新版檢查
 #
@@ -127,9 +127,31 @@ function Find-Update([bool]$report) {
         }
     }
     if (-not $best -and $report) {
-        Write-Host "沒有找到新版。把 GitLab Release 下載的 pdf-mapper-版本.zip 放進這個資料夾，再執行一次。"
+        Write-Host "沒有找到新版。把 GitLab Release 下載的 pdf-mapper-版本.zip 和 SHA256SUMS.txt 放進這個資料夾，再執行一次。"
     }
     return $best
+}
+
+# 核對 ZIP 和 Release 頁上的 SHA256SUMS.txt。擋下載不完整、拿錯檔案，或被改名冒充的 ZIP。
+# 瀏覽器重複下載時會變成 SHA256SUMS (1).txt，所以每一份都找。
+function Test-UpdateChecksum([string]$zipPath) {
+    $name = Split-Path $zipPath -Leaf
+    $expected = @()
+    foreach ($sums in Get-ChildItem -LiteralPath $Root -Filter "SHA256SUMS*.txt" -File) {
+        foreach ($line in Get-Content -LiteralPath $sums.FullName) {
+            if ($line -match '^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$' -and $Matches[2] -eq $name) {
+                $expected += $Matches[1].ToLower()
+            }
+        }
+    }
+    if ($expected.Count -eq 0) {
+        throw "找不到 $name 的核對資料。請從同一個 Release 頁下載 SHA256SUMS.txt，和 ZIP 放在一起"
+    }
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLower()
+    if ($expected -notcontains $actual) {  # 重複下載時有多份核對檔，任一份相符即可
+        throw "$name 和 SHA256SUMS.txt 對不上，檔案可能不完整或不是正式發布的版本，請重新下載"
+    }
+    return $actual
 }
 
 # 回傳 $true 代表已經換成新版，要改由新版的啟動程式繼續
@@ -138,6 +160,13 @@ function Update-App([bool]$report) {
     if (-not $update) { return $false }
     Write-Host ""
     Write-Host "找到新版本 $($update.version)（目前 $(Get-AppVersion $AppDir)）" -ForegroundColor Cyan
+    try {
+        $digest = Test-UpdateChecksum $update.path
+    } catch {
+        Write-Host "不會安裝這個版本：$($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+    Write-Host "檔案核對相符（SHA256 $digest）" -ForegroundColor DarkGray
     $answer = Read-Host "要現在更新嗎？範本和匯出資料不會受影響 [Y/n]"
     if ($answer -match '^(n|no|否)$') { return $false }
     try {
@@ -249,7 +278,8 @@ if ($interactive -and -not $skipUpdate) {
 }
 
 Initialize-Environment
-& $python -m pdfmapper @rest
+# -P：不把目前資料夾加進模組搜尋路徑，資料夾裡的同名 .py 不會被誤載入
+& $python -P -m pdfmapper @rest
 $code = $LASTEXITCODE
 if ($code -ne 0 -and $interactive) { Read-Host "按 Enter 關閉" | Out-Null }
 exit $code
