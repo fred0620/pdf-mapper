@@ -1,14 +1,19 @@
 # PDF 解析器的 CI/CD
 #
 # 平常 push：跑測試，並檢查套件有沒有已知弱點（只提醒，不擋）
-# 每月排程：同上，但弱點檢查失敗就會亮紅燈（Build > Pipeline schedules 設定一次即可）
-# 打標籤（例如 v0.2.1）：測試與弱點檢查都要通過，才打包並建立 Release
+# 打標籤（例如 v0.2.1）：測試通過才打包並建立 Release
 #
-# 同事從 Releases 頁下載 ZIP 和 SHA256SUMS.txt，放進工具資料夾後雙擊 run.bat，核對相符就會安裝。發布步驟見 docs/maintain.md。
+# 同事從 Releases 頁下載 ZIP 和 SHA256SUMS.txt，放進工具資料夾後雙擊 run.bat，核對相符就會安裝。
+# 發布步驟見 docs/maintain.md。
 #
-# 選用的 CI/CD 變數（Settings > CI/CD > Variables），不設也能正常發布：
-#   UV_IMAGE                 公司要用內部映像檔時改這裡
-#   UV_DEFAULT_INDEX         公司有 PyPI 鏡像時
+# 全部 job 都用同一個映像檔（UV_IMAGE），不需要從 Docker Hub 或 registry.gitlab.com 拉其他映像檔。
+# 套件預設從 pypi.org 下載；公司網路擋住時，設定下面的 PIP_MIRROR 即可，不用改這個檔案。
+#
+# 選用的 CI/CD 變數（Settings > CI/CD > Variables）：
+#   PIP_MIRROR       公司內部 PyPI 鏡像網址（runner 連不到 pypi.org 時必填，向 IT 要）
+#   CA_BUNDLE        公司憑證，類型選 File（鏡像或 GitLab 用公司自己的憑證時才需要）
+#   UV_IMAGE         公司要用內部映像檔時改這裡
+#   AUDIT_REQUIRED   設成 1 時，打標籤與排程的弱點檢查失敗就不發布（runner 要能連到 pypi.org）
 
 workflow:
   rules:
@@ -22,9 +27,12 @@ variables:
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
   UV_LINK_MODE: copy
   UV_NO_PROGRESS: "1"
+  UV_PYTHON_DOWNLOADS: never     # 用映像檔裡的 Python，不另外下載
 
 default:
   image: $UV_IMAGE
+  before_script:
+    - . scripts/ci_env.sh        # 套件來源、公司憑證，並先確認連得到
   cache:
     key:
       files: [app/uv.lock]
@@ -35,17 +43,22 @@ stages: [test, build, release]
 test:
   stage: test
   script:
-    - uv lock --project app --check          # pyproject.toml 改了卻忘了更新 uv.lock
-    - uv sync --project app --frozen
-    - uv run --project app pytest -q tests
+    - uv lock --project app --check          # pyproject.toml 改了卻忘了更新 uv.lock（不用連網）
+    # 不用 uv sync：它會照 uv.lock 記的 pypi.org 網址下載，鏡像設定無效。
+    # 改成匯出含 SHA256 的清單，再從設定的來源安裝，檔案仍要和 uv.lock 完全相同。
+    - uv export --project app --frozen --no-emit-project --quiet --output-file /tmp/requirements-ci.txt
+    - uv venv /tmp/venv --python 3.12
+    - uv pip install --python /tmp/venv/bin/python --require-hashes -r /tmp/requirements-ci.txt
+    - /tmp/venv/bin/python -m pytest -q tests
 
 audit:
   stage: test
   script:
     - uv export --project app --frozen --no-dev --no-hashes --no-emit-project --quiet --output-file requirements.txt
+    # 弱點資料庫在 pypi.org，鏡像通常沒有；連不到時這一步會失敗，請在能連外的電腦執行同一行
     - uvx pip-audit==2.10.1 --disable-pip --no-deps --progress-spinner off -r requirements.txt
   rules:
-    - if: $CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "schedule"
+    - if: $AUDIT_REQUIRED == "1" && ($CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "schedule")
       allow_failure: false
     - allow_failure: true
 
@@ -54,45 +67,15 @@ package:
   rules:
     - if: $CI_COMMIT_TAG
   script:
-    - uv run --project app python scripts/build_release.py --wheels
-    - echo "VERSION=${CI_COMMIT_TAG#v}" > release.env
+    - python3 scripts/build_release.py --wheels      # 只用標準函式庫，不需要先裝專案的套件
   artifacts:
     paths: [dist/]
-    reports:
-      dotenv: release.env
     expire_in: never
 
-upload:
+release:
   stage: release
-  image: curlimages/curl:8.11.1
   needs: [package]
   rules:
     - if: $CI_COMMIT_TAG
   script:
-    - |
-      for file in dist/*; do
-        curl --fail --silent --show-error --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$file" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/$(basename "$file")"
-      done
-
-release:
-  stage: release
-  # TODO 鎖定版本：下次發布時從這個 job 的紀錄看實際的 release-cli 版本，把 latest 換成那個版本號
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
-  needs: [package, upload]
-  rules:
-    - if: $CI_COMMIT_TAG
-  script:
-    - echo "建立 Release ${CI_COMMIT_TAG}"
-  release:
-    tag_name: $CI_COMMIT_TAG
-    name: "PDF 解析器 $VERSION"
-    description: "下載 pdf-mapper-$VERSION.zip 和 SHA256SUMS.txt，不用解壓，兩個都放進工具資料夾後雙擊 run.bat，核對相符就會安裝，範本不受影響。步驟見 docs/換版說明.md，更新內容見 CHANGELOG.md。"
-    assets:
-      links:
-        - name: "pdf-mapper-$VERSION.zip"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/pdf-mapper-${VERSION}.zip"
-          link_type: package
-        - name: SHA256SUMS.txt
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/SHA256SUMS.txt"
-          link_type: other
+    - python3 scripts/publish_release.py

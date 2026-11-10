@@ -92,6 +92,13 @@
 - 0.1 版的 `templates`、`custom`、`output` 與 `.tools` 會在第一次啟動時複製或搬到新位置，只複製不刪除，由使用者確認後自行刪掉。
 - 示範範本只在第一次建立 `workspace/templates` 時放入，使用者刪掉後不會再出現。
 
+## CI 與公司網路（2026-11-10）
+- 公司 runner 常常連不到 pypi.org。`uv sync --frozen` 會照 `uv.lock` 記的 pypi.org 網址下載，設定鏡像也沒用，所以 CI 改成 `uv export`（含 SHA256）再 `uv pip install --require-hashes`，來源由 `PIP_MIRROR` 決定，檔案仍和 lock 完全相同。
+- 每個 job 開頭用 `scripts/ci_env.sh` 先連一次套件來源，連不到就用中文說明要找 IT 要什麼，不讓使用者看到難懂的錯誤。
+- 全部 job 只用一個映像檔（ghcr.io 的 uv）。上傳與建立 Release 改用 Python 標準函式庫（`scripts/publish_release.py`），不再拉 Docker Hub 的 curl 和 registry.gitlab.com 的 release-cli，要請 IT 放行或鏡像的東西只剩一個。
+- 弱點檢查的資料庫在 pypi.org，鏡像通常沒有，所以預設只提醒；能連外時設 `AUDIT_REQUIRED=1` 才擋發布。連不到時改在自己的電腦執行。
+- 沒有鏡像時的退路：在自己的電腦打包，手動建立 Release。
+
 ## 治理
 - 負責人、備援人、處理的資料與出問題時的做法記在 `OWNER.md`。
 - 刻意只留大架構：工具卡、發版檢查清單、維護手冊。不寫各公司不同的政策或登記流程，公司另有規定時以公司為準。

@@ -62,15 +62,40 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
    git push origin v0.2.1
    ```
 
-5. GitLab 會自動跑測試、弱點檢查、打包，並在 **Deploy > Releases** 建立 Release。任何一步失敗都不會發布。
+5. GitLab 會自動跑測試、打包，並在 **Deploy > Releases** 建立 Release。測試或打包失敗都不會發布。弱點檢查預設只提醒，見下方「CI 在公司網路跑不起來」。
 6. 通知同事：到 Releases 頁下載新版 ZIP 和 `SHA256SUMS.txt`，放進工具資料夾，雙擊 `run.bat`。沒有 `SHA256SUMS.txt` 或對不上時，工具不會安裝。可以直接把 CHANGELOG 這一段貼給大家，並附上 [換版說明](換版說明.md) 的連結（工具裡也能從使用手冊連過去）。
 
 ### 第一次設定（只做一次）
 
 1. **受保護的標籤**（Settings > Repository > Protected tags）：保護 `v*`，只允許 Maintainer 建立。這樣只有負責人能發布。
-2. **每月排程**（Build > Pipeline schedules）：每月一次，跑在 main。排程時弱點檢查失敗會亮紅燈。
+2. **每月排程**（Build > Pipeline schedules）：每月一次，跑在 main，用來看弱點檢查的結果。runner 能連到 pypi.org 時，再設 `AUDIT_REQUIRED=1` 讓檢查失敗就亮紅燈、擋發布。
 3. **同事的權限**：同事要能看到專案的 Releases 頁才能下載，通常給 Reporter 權限即可。
-4. 公司要用內部映像檔或 PyPI 鏡像時，在 Settings > CI/CD > Variables 設定 `UV_IMAGE`、`UV_DEFAULT_INDEX`。
+4. **套件來源**：runner 連不到 pypi.org 時，在 Settings > CI/CD > Variables 設定 `PIP_MIRROR`，見下一節。
+
+### CI 在公司網路跑不起來
+
+CI 會在每個 job 開頭先試著連套件來源，連不到就停下來並顯示原因。常見情況：
+
+| 畫面上的訊息 | 原因 | 怎麼做 |
+|---|---|---|
+| 無法連到套件來源 https://pypi.org/simple | 公司網路擋住外部 PyPI | 向 IT 要「內部 PyPI 鏡像」的網址（Nexus、Artifactory 等，通常以 `/simple` 結尾），新增變數 `PIP_MIRROR` |
+| 有設 `PIP_MIRROR`，但出現 certificate、SSL 字樣 | 鏡像用公司自己的憑證 | 向 IT 要公司根憑證（.crt 或 .pem），新增 **File** 類型的變數 `CA_BUNDLE` |
+| job 一開始就拉不到映像檔（pull image 失敗） | runner 連不到 ghcr.io | 請 IT 把 `ghcr.io/astral-sh/uv:0.13.6-python3.12-bookworm-slim` 放進公司的映像檔庫，再把變數 `UV_IMAGE` 設成內部的位置 |
+| `audit` 失敗（黃色驚嘆號） | 弱點資料庫在 pypi.org，鏡像通常沒有 | 不影響發布。發版前在能連外的電腦執行：`uv export --project app --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt` 和 `uvx pip-audit --disable-pip --no-deps -r requirements.txt` |
+
+向 IT 詢問時可以這樣說：「GitLab CI 要安裝 Python 套件，請問公司有沒有 PyPI 的內部鏡像（proxy repository）？網址和憑證是什麼？」
+
+換了來源也不會降低安全性：CI 只安裝和 `uv.lock` 雜湊完全相同的檔案，打包時也會逐一比對。
+
+### 在自己的電腦發布（暫時沒有鏡像時）
+
+在能連到 pypi.org 的電腦上：
+
+1. 照上面的步驟 1 到 3 改版本號、寫 CHANGELOG、跑測試，合併到 main。
+2. 打包：`uv run --project app python scripts/build_release.py --wheels`，會在 `dist/` 產生 ZIP 和 `SHA256SUMS.txt`。
+3. 打標籤並推上去。CI 打包失敗沒關係，標籤本身會留著。
+4. 到 **Deploy > Releases > New release**，選剛才的標籤，在 Release notes 貼上 CHANGELOG 這一版的段落。
+5. 在 **Release assets** 上傳或連結 `dist/` 裡的兩個檔案。檔名不要改，同事的工具要靠檔名找新版和核對檔。
 
 ## 4. 例行維護
 
