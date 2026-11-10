@@ -1,0 +1,13 @@
+# 其他文字檔交給 Git 判斷（放最前面，下面的規則才會覆蓋它）
+*       text=auto
+
+# Windows 腳本一律用 CRLF，不管在哪個系統 clone 或從 GitHub/GitLab 下載 ZIP。
+# 用 LF 換行的 .bat 會出現 goto、標籤錯亂之類的怪錯誤。
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+# shell 腳本一律用 LF，否則 macOS / Linux 無法執行
+*.sh    text eol=lf
+*.pdf   binary
+*.png   binary
+*.whl   binary

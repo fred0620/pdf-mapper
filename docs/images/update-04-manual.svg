@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 320" width="760" height="320">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <circle cx="27" cy="24" r="11" fill="#111111"/>
+  <text x="27" y="28.5" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+  <text x="46" y="29" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">關閉工具</text>
+  <rect x="16" y="48" width="168" height="150" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="100.0" y="226" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">關閉瀏覽器頁面</text>
+  <text x="100.0" y="245" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">和黑色視窗</text>
+  <line x1="186" y1="123" x2="200" y2="123" stroke="#999999" stroke-width="1.5"/>
+  <path d="M194,118 L202,123 L194,128" fill="none" stroke="#999999" stroke-width="1.5"/>
+  <circle cx="215" cy="24" r="11" fill="#111111"/>
+  <text x="215" y="28.5" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+  <text x="234" y="29" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">舊版改名</text>
+  <rect x="204" y="48" width="168" height="150" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="288.0" y="226" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">把 app 改名為 app.old</text>
+  <text x="288.0" y="245" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">（已經有 app.old</text>
+  <text x="288.0" y="264" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">就先刪掉）</text>
+  <line x1="374" y1="123" x2="388" y2="123" stroke="#999999" stroke-width="1.5"/>
+  <path d="M382,118 L390,123 L382,128" fill="none" stroke="#999999" stroke-width="1.5"/>
+  <circle cx="403" cy="24" r="11" fill="#111111"/>
+  <text x="403" y="28.5" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+  <text x="422" y="29" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">複製新版</text>
+  <rect x="392" y="48" width="168" height="150" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="476.0" y="226" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">解壓新版 ZIP，把裡面的</text>
+  <text x="476.0" y="245" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">app 和 run.bat 複製進來</text>
+  <text x="476.0" y="264" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">run.bat 選「取代」</text>
+  <line x1="562" y1="123" x2="576" y2="123" stroke="#999999" stroke-width="1.5"/>
+  <path d="M570,118 L578,123 L570,128" fill="none" stroke="#999999" stroke-width="1.5"/>
+  <circle cx="591" cy="24" r="11" fill="#111111"/>
+  <text x="591" y="28.5" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+  <text x="610" y="29" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">雙擊 run.bat</text>
+  <rect x="580" y="48" width="168" height="150" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="664.0" y="226" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">工具會用新版開啟</text>
+  <text x="664.0" y="245" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">範本都還在</text>
+  <rect x="38" y="72" width="104" height="62" rx="6" fill="#ffffff" stroke="#666666" stroke-width="1"/>
+  <text x="46" y="92" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#666666" text-anchor="start">瀏覽器</text>
+  <text x="132" y="91" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="16" font-weight="700" fill="#111111" text-anchor="middle">×</text>
+  <rect x="72" y="106" width="104" height="62" rx="6" fill="#ffffff" stroke="#666666" stroke-width="1"/>
+  <text x="80" y="126" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#666666" text-anchor="start">黑色視窗</text>
+  <text x="166" y="125" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="16" font-weight="700" fill="#111111" text-anchor="middle">×</text>
+  <path d="M234,102 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="260" y="112" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">app</text>
+  <line x1="234" y1="136" x2="272" y2="136" stroke="#999999" stroke-width="1.5"/>
+  <path d="M266,131 L274,136 L266,141" fill="none" stroke="#999999" stroke-width="1.5"/>
+  <path d="M282,130 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="308" y="140" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#111111" text-anchor="start">app.old</text>
+  <rect x="406" y="62" width="144" height="74" rx="6" fill="#ffffff" stroke="#d9d9d9" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="416" y="80" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#666666" text-anchor="start">pdf-mapper-0.2.1</text>
+  <path d="M416,94 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="442" y="104" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">app</text>
+  <path d="M418,114 h9 l5,5 v13 h-14 z M427,114 v5 h5" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="442" y="128" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">run.bat</text>
+  <path d="M478,142 v20" stroke="#999999" stroke-width="1.5"/>
+  <path d="M473,155 L478,163 L483,155" fill="none" stroke="#999999" stroke-width="1.5"/>
+  <path d="M438,172 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="462" y="182" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#111111" text-anchor="start">工具資料夾</text>
+  <path d="M650,86 h9 l5,5 v13 h-14 z M659,86 v5 h5" fill="#ffffff" stroke="#111111" stroke-width="1.2"/>
+  <path d="M670,100 l0,22 l6,-6 l4,9 l4,-2 l-4,-9 l8,0 z" fill="#ffffff" stroke="#111111" stroke-width="1.2"/>
+  <text x="664" y="156" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#111111" text-anchor="middle">run.bat</text>
+  <text x="664" y="176" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="middle">雙擊</text>
+  <text x="380" y="300" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#2C5F34" text-anchor="middle">不要動 workspace 和 runtime。範本和匯出結果都在 workspace。</text>
+</svg>

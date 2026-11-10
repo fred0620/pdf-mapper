@@ -1,0 +1,96 @@
+# PDF 解析器的 CI/CD
+#
+# 平常 push：跑測試，並檢查套件有沒有已知弱點（只提醒，不擋）
+# 每月排程：同上，但弱點檢查失敗就會亮紅燈（Build > Pipeline schedules 設定一次即可）
+# 打標籤（例如 v0.2.1）：測試與弱點檢查都要通過，才打包並建立 Release
+#
+# 同事從 Releases 頁下載 ZIP，放進工具資料夾後雙擊 run.bat 就會安裝。發布步驟見 docs/maintain.md。
+#
+# 選用的 CI/CD 變數（Settings > CI/CD > Variables），不設也能正常發布：
+#   UV_IMAGE                 公司要用內部映像檔時改這裡
+#   UV_DEFAULT_INDEX         公司有 PyPI 鏡像時
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+
+variables:
+  UV_IMAGE: ghcr.io/astral-sh/uv:0.13.6-python3.12-bookworm-slim
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  UV_LINK_MODE: copy
+  UV_NO_PROGRESS: "1"
+
+default:
+  image: $UV_IMAGE
+  cache:
+    key:
+      files: [app/uv.lock]
+    paths: [.uv-cache]
+
+stages: [test, build, release]
+
+test:
+  stage: test
+  script:
+    - uv lock --project app --check          # pyproject.toml 改了卻忘了更新 uv.lock
+    - uv sync --project app --frozen
+    - uv run --project app pytest -q tests
+
+audit:
+  stage: test
+  script:
+    - uv export --project app --frozen --no-dev --no-hashes --no-emit-project --quiet --output-file requirements.txt
+    - uvx pip-audit --disable-pip --no-deps --progress-spinner off -r requirements.txt
+  rules:
+    - if: $CI_COMMIT_TAG || $CI_PIPELINE_SOURCE == "schedule"
+      allow_failure: false
+    - allow_failure: true
+
+package:
+  stage: build
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - uv run --project app python scripts/build_release.py --wheels
+    - echo "VERSION=${CI_COMMIT_TAG#v}" > release.env
+  artifacts:
+    paths: [dist/]
+    reports:
+      dotenv: release.env
+    expire_in: never
+
+upload:
+  stage: release
+  image: curlimages/curl:8.11.1
+  needs: [package]
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - |
+      for file in dist/*; do
+        curl --fail --silent --show-error --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "$file" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/$(basename "$file")"
+      done
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs: [package, upload]
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "建立 Release ${CI_COMMIT_TAG}"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "PDF 解析器 $VERSION"
+    description: "下載 pdf-mapper-$VERSION.zip，不用解壓，放進工具資料夾後雙擊 run.bat 就會安裝，範本不受影響。步驟見 docs/換版說明.md，更新內容見 CHANGELOG.md。"
+    assets:
+      links:
+        - name: "pdf-mapper-$VERSION.zip"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/pdf-mapper-${VERSION}.zip"
+          link_type: package
+        - name: SHA256SUMS.txt
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/SHA256SUMS.txt"
+          link_type: other

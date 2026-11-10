@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 270" width="760" height="270">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="32" y="30" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#666666" text-anchor="start">資料夾</text>
+  <text x="250" y="30" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#666666" text-anchor="start">內容</text>
+  <text x="470" y="30" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#666666" text-anchor="start">更新時</text>
+  <line x1="24" y1="42" x2="736" y2="42" stroke="#111111" stroke-width="1.2"/>
+  <path d="M34,64 h9 l5,5 v13 h-14 z M43,64 v5 h5" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="58" y="78" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">run.bat</text>
+  <text x="250" y="78" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">入口，雙擊開啟工具</text>
+  <text x="470" y="78" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#666666" text-anchor="start">換新</text>
+  <line x1="24" y1="98" x2="736" y2="98" stroke="#d9d9d9" stroke-width="1"/>
+  <path d="M32,112 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="58" y="122" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">app</text>
+  <text x="250" y="122" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">程式本身</text>
+  <text x="470" y="122" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#666666" text-anchor="start">整包換新，不要放自己的檔案</text>
+  <line x1="24" y1="142" x2="736" y2="142" stroke="#d9d9d9" stroke-width="1"/>
+  <path d="M32,156 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#2C5F34" stroke-width="1.2"/>
+  <text x="58" y="166" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">workspace</text>
+  <text x="250" y="166" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">你的範本、匯出結果、紀錄</text>
+  <text x="470" y="166" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="700" fill="#2C5F34" text-anchor="start">不會動到</text>
+  <line x1="24" y1="186" x2="736" y2="186" stroke="#d9d9d9" stroke-width="1"/>
+  <path d="M32,200 h6 l2,2 h10 v10 h-18 z" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="58" y="210" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">runtime</text>
+  <text x="250" y="210" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#111111" text-anchor="start">Python 與套件</text>
+  <text x="470" y="210" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="14" font-weight="400" fill="#666666" text-anchor="start">不用管，壞掉可以刪掉重建</text>
+  <line x1="24" y1="230" x2="736" y2="230" stroke="#111111" stroke-width="1.2"/>
+  <text x="32" y="258" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="start">workspace 和 runtime 是第一次雙擊 run.bat 時自動建立的，下載的 ZIP 裡沒有它們。</text>
+</svg>

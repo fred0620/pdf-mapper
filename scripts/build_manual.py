@@ -1,6 +1,6 @@
-"""把 docs/使用手冊.md 轉成單一 HTML（圖片內嵌），放在專案根目錄，雙擊就能看。
+"""把使用手冊與換版說明轉成單一 HTML（圖片內嵌），放在 app/，雙擊就能看，也會隨發布包一起出去。
 
-用 uv run python scripts/build_manual.py 執行。
+用 uv run --project app python scripts/build_manual.py 執行。
 """
 import base64
 import re
@@ -41,24 +41,37 @@ pre code { background:none; padding:0; }
 
 
 def inline_image(match: re.Match) -> str:
-    data = base64.b64encode((DOCS / match.group(1)).read_bytes()).decode()
-    return f'src="data:image/png;base64,{data}"'
+    path = DOCS / match.group(1)
+    mime = "image/svg+xml" if path.suffix == ".svg" else "image/png"
+    data = base64.b64encode(path.read_bytes()).decode()
+    return f'src="data:{mime};base64,{data}"'
 
 
-def main() -> None:
+PAGES = {"使用手冊": "PDF 解析器使用手冊", "換版說明": "PDF 解析器換版說明"}
+
+
+def build(name: str, title: str) -> None:
     converter = markdown.Markdown(extensions=["tables", "fenced_code", "toc", "sane_lists"],
                                   extension_configs={"toc": {"toc_depth": "2-2"}})
-    body = converter.convert((DOCS / "使用手冊.md").read_text(encoding="utf-8"))
+    body = converter.convert((DOCS / f"{name}.md").read_text(encoding="utf-8"))
     body = re.sub(r'src="(images/[^"]+)"', inline_image, body)
+    # 文件之間的連結改指向 HTML，在工具裡和直接雙擊開啟都能用
+    for other in PAGES:
+        body = body.replace(f'href="{other}.md"', f'href="{other}.html"')
     # 目錄放在開場白之後
     body = body.replace("<h2", f"{converter.toc}<h2", 1)
     page = (
         '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>PDF 解析器使用手冊</title><style>{STYLE}</style></head>"
+        f"<title>{title}</title><style>{STYLE}</style></head>"
         f"<body><main>{body}</main></body></html>"
     )
-    (ROOT / "使用手冊.html").write_text(page, encoding="utf-8")
+    (ROOT / "app" / f"{name}.html").write_text(page, encoding="utf-8")
+
+
+def main() -> None:
+    for name, title in PAGES.items():
+        build(name, title)
     print("完成")
 
 

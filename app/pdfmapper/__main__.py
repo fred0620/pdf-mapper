@@ -3,6 +3,7 @@
     python -m pdfmapper                       開啟網頁工具
     python -m pdfmapper run -t 範本.json -i 資料夾 -o 結果.xlsx
     python -m pdfmapper doctor                檢查環境
+    python -m pdfmapper --version             顯示版本
 """
 from __future__ import annotations
 
@@ -13,12 +14,13 @@ from pathlib import Path
 
 
 def _command_run(args) -> int:
-    from . import logs, postprocess, template as tpl
+    from . import logs, paths, postprocess, template as tpl
     from .clean import write_clean
     from .excel import write_excel
     from .parser import parse_best
 
-    logs.setup(Path(__file__).resolve().parent.parent / "workspace" / "logs")
+    paths.prepare()
+    logs.setup(paths.LOGS)
     source = Path(args.template)
     templates = ([tpl.load(p) for p in sorted(source.glob("*.json"))] if source.is_dir() else [tpl.load(source)])
     target = Path(args.input)
@@ -34,7 +36,7 @@ def _command_run(args) -> int:
         print(f"[{index}/{len(files)}] {path.name}：{result['template_name']}，{result['status']}，"
               f"需檢查 {counts['review']}，缺值 {counts['missing']}")
     results = postprocess.apply(results, args.post)
-    output = write_excel(results, args.output)
+    output = write_excel(results, args.output or paths.OUTPUT / "解析結果.xlsx")
     print(f"已輸出 {output}")
     if args.clean:
         by_id = {template["template_id"]: template for template in templates}
@@ -47,7 +49,10 @@ def _command_run(args) -> int:
 def _command_doctor(_args) -> int:
     import platform
 
-    print(f"Python {platform.python_version()}")
+    from . import __version__, paths
+
+    print(f"PDF 解析器 {__version__}，Python {platform.python_version()}")
+    print(f"資料位置：{paths.WORKSPACE}")
     healthy = True
     for name in ("pdfplumber", "pypdfium2", "cv2", "numpy", "PIL", "openpyxl", "flask"):
         try:
@@ -66,14 +71,17 @@ def _command_doctor(_args) -> int:
 
 
 def main() -> int:
+    from . import __version__
+
     parser = argparse.ArgumentParser(prog="pdfmapper", description="PDF 解析器")
+    parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
     commands = parser.add_subparsers(dest="command")
     run = commands.add_parser("run", help="批次解析")
     run.add_argument("-t", "--template", required=True, help="範本 JSON，或放範本的資料夾（每份自動挑最符合的）")
     run.add_argument("-i", "--input", required=True, help="PDF 或資料夾")
-    run.add_argument("-o", "--output", default="output/解析結果.xlsx")
+    run.add_argument("-o", "--output", help="預設為 workspace/output/解析結果.xlsx")
     run.add_argument("--clean", help="同時輸出乾淨資料的 Excel")
     run.add_argument("--only-confirmed", action="store_true", help="乾淨資料排除需檢查和缺值的資料")
     run.add_argument("--json", help="同時輸出完整結果 JSON")

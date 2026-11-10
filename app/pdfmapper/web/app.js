@@ -1465,7 +1465,7 @@ async function heartbeat() {
     heartbeatFailures = 0;
   } catch (_error) {
     heartbeatFailures += 1;
-    if (heartbeatFailures === 2) toast("工具已經關閉。請重新執行 start.bat，再重新整理這個頁面。", true);
+    if (heartbeatFailures === 2) toast("工具已經關閉。請重新執行 run.bat，再重新整理這個頁面。", true);
   }
 }
 const hasUnsavedResults = () => !!state.run?.results.length && !state.run.exported;
@@ -1529,6 +1529,7 @@ async function main() {
     const status = await api("/api/status");
     state.reasons = status.reasons;
     state.ocr = status.ocr;
+    $("version").textContent = status.version ? `v${status.version}` : "";
     $("engine").textContent = status.ocr ? "只在這台電腦處理" : "影像辨識無法使用，只能讀文字層";
     $("engine").classList.toggle("bad", !status.ocr);
     await loadTemplates();

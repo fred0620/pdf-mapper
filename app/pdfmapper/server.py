@@ -16,10 +16,10 @@ import webbrowser
 from pathlib import Path
 
 import cv2
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, jsonify, redirect, request, send_file, send_from_directory
 from werkzeug.exceptions import HTTPException
 
-from . import logs
+from . import __version__, logs, paths
 from . import ocr as ocr_engine
 from . import template as tpl
 from .clean import write_clean
@@ -30,13 +30,11 @@ from .logs import clean as log_text
 from .logs import log
 from .parser import find_value, parse_best, parse_pdf, summarize
 
-ROOT = Path(__file__).resolve().parent.parent
 WEB = Path(__file__).resolve().parent / "web"
-WORKSPACE = ROOT / "workspace"
-UPLOADS = WORKSPACE / "uploads"
-TEMPLATES = ROOT / "templates"
-OUTPUT = ROOT / "output"
-LOGS = WORKSPACE / "logs"
+UPLOADS = paths.UPLOADS
+TEMPLATES = paths.TEMPLATES
+OUTPUT = paths.OUTPUT
+LOGS = paths.LOGS
 PREVIEW_DPI = 120
 MIN_DPI, MAX_DPI = 30, 220
 MAX_OPEN_DOCS = 8
@@ -58,7 +56,7 @@ UNSAFE_NAME = re.compile(r'[\x00-\x1f\x7f<>:"/\\|?*]')
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
        "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; "
        "base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
-ROOT_ID = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:16]  # 不把完整路徑（含使用者名稱）傳出去
+ROOT_ID = hashlib.sha256(str(paths.HOME).encode("utf-8")).hexdigest()[:16]  # 不把完整路徑（含使用者名稱）傳出去
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
@@ -223,7 +221,15 @@ def index():
 
 @app.get("/manual")
 def manual():
-    return send_from_directory(ROOT, "使用手冊.html")
+    return redirect(f"/docs/{paths.MANUAL.name}")
+
+
+@app.get("/docs/<name>")
+def guide(name):
+    """使用手冊與換版說明。只開放固定的檔案，文件之間用相對連結互通。"""
+    if name not in paths.GUIDES:
+        raise Missing("找不到這份說明")
+    return send_from_directory(paths.APP, name)
 
 
 @app.get("/web/<path:name>")
@@ -258,7 +264,8 @@ def bye():
 
 @app.get("/api/status")
 def status():
-    return jsonify({"ocr": ocr_engine.available(), "ocr_error": ocr_engine.status(), "reasons": REASONS})
+    return jsonify({"ocr": ocr_engine.available(), "ocr_error": ocr_engine.status(), "reasons": REASONS,
+                    "version": __version__})
 
 
 @app.post("/api/docs")
@@ -588,8 +595,10 @@ def _pick_port(start: int) -> tuple[int, bool]:
 
 
 def serve(port: int = 8765, open_browser: bool = True) -> None:
-    TEMPLATES.mkdir(exist_ok=True)
+    notices = paths.prepare()
     logs.setup(LOGS)
+    for notice in notices:
+        print(f"  {notice}", flush=True)
     for attempt in range(3):
         chosen, running = _pick_port(port)
         url = f"http://127.0.0.1:{chosen}"
@@ -600,8 +609,8 @@ def serve(port: int = 8765, open_browser: bool = True) -> None:
             return
         if attempt == 0:
             shutil.rmtree(UPLOADS, ignore_errors=True)  # 清掉上次異常結束留下的暫存
-        print(f"\n  PDF 解析器已啟動：{url}\n  使用完畢後關閉瀏覽器頁面，或關閉這個視窗。\n", flush=True)
-        log.info("啟動 port=%d", chosen)
+        print(f"\n  PDF 解析器 {__version__} 已啟動：{url}\n  使用完畢後關閉瀏覽器頁面，或關閉這個視窗。\n", flush=True)
+        log.info("啟動 version=%s port=%d", __version__, chosen)
         if open_browser:
             threading.Timer(0.8, webbrowser.open, args=(url,)).start()
             threading.Thread(target=_watch_clients, daemon=True).start()

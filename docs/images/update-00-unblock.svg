@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" width="760" height="330">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <circle cx="31" cy="24" r="11" fill="#111111"/>
+  <text x="31" y="28.5" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+  <text x="50" y="29" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">對 ZIP 按右鍵</text>
+  <rect x="20" y="48" width="216" height="190" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <line x1="244" y1="143" x2="264" y2="143" stroke="#999999" stroke-width="1.5"/>
+  <path d="M258,138 L266,143 L258,148" fill="none" stroke="#999999" stroke-width="1.5"/>
+  <circle cx="283" cy="24" r="11" fill="#111111"/>
+  <text x="283" y="28.5" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+  <text x="302" y="29" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">勾選「解除封鎖」</text>
+  <rect x="272" y="48" width="216" height="190" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <line x1="496" y1="143" x2="516" y2="143" stroke="#999999" stroke-width="1.5"/>
+  <path d="M510,138 L518,143 L510,148" fill="none" stroke="#999999" stroke-width="1.5"/>
+  <circle cx="535" cy="24" r="11" fill="#111111"/>
+  <text x="535" y="28.5" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+  <text x="554" y="29" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="15" font-weight="700" fill="#111111" text-anchor="start">按「確定」再解壓</text>
+  <rect x="524" y="48" width="216" height="190" rx="8" fill="#f4f4f4" stroke="#d9d9d9" stroke-width="1"/>
+  <path d="M46,66 h9 l5,5 v13 h-14 z M55,66 v5 h5" fill="#ffffff" stroke="#666666" stroke-width="1.2"/>
+  <text x="53" y="81" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="6" font-weight="700" fill="#666666" text-anchor="middle">ZIP</text>
+  <text x="68" y="80" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#111111" text-anchor="start">pdf-mapper-0.2.1.zip</text>
+  <rect x="64" y="94" width="156" height="128" rx="4" fill="#ffffff" stroke="#666666" stroke-width="1"/>
+  <text x="78" y="118" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#111111" text-anchor="start">開啟</text>
+  <text x="78" y="142" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#111111" text-anchor="start">解壓縮全部…</text>
+  <text x="78" y="166" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#111111" text-anchor="start">複製</text>
+  <text x="78" y="190" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#111111" text-anchor="start">重新命名</text>
+  <rect x="68" y="196" width="148" height="22" rx="3" fill="#ffffff" stroke="#2C5F34" stroke-width="1.5"/>
+  <text x="78" y="212" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#2C5F34" text-anchor="start">內容</text>
+  <text x="128.0" y="262" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">選最下面的「內容」</text>
+  <text x="128.0" y="281" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">或選取後按 Alt + Enter</text>
+  <rect x="284" y="60" width="192" height="166" rx="4" fill="#ffffff" stroke="#666666" stroke-width="1"/>
+  <text x="296" y="80" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#666666" text-anchor="start">pdf-mapper-0.2.1.zip 內容</text>
+  <line x1="284" y1="90" x2="476" y2="90" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="296" y="112" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#111111" text-anchor="start">一般</text>
+  <line x1="296" y1="124" x2="464" y2="124" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="296" y="146" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#111111" text-anchor="start">安全性：</text>
+  <text x="296" y="166" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#666666" text-anchor="start">這個檔案來自其他電腦，</text>
+  <text x="296" y="182" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#666666" text-anchor="start">可能已被封鎖以保護電腦。</text>
+  <rect x="384" y="196" width="14" height="14" rx="2" fill="#2C5F34"/>
+  <path d="M387,203 l3,3 l6,-7" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <text x="404" y="208" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#2C5F34" text-anchor="start">解除封鎖</text>
+  <text x="380.0" y="262" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">在「一般」分頁最下面</text>
+  <text x="380.0" y="281" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">沒有這一行就代表不用處理</text>
+  <rect x="536" y="60" width="192" height="166" rx="4" fill="#ffffff" stroke="#666666" stroke-width="1"/>
+  <text x="548" y="80" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="11" font-weight="400" fill="#666666" text-anchor="start">pdf-mapper-0.2.1.zip 內容</text>
+  <line x1="536" y1="90" x2="728" y2="90" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="548" y="120" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="start">解除封鎖已勾選</text>
+  <rect x="546" y="186" width="52" height="26" rx="4" fill="#ffffff" stroke="#2C5F34" stroke-width="1.5"/>
+  <text x="572" y="204" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="700" fill="#2C5F34" text-anchor="middle">確定</text>
+  <rect x="606" y="186" width="52" height="26" rx="4" fill="#ffffff" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="632" y="204" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="middle">取消</text>
+  <rect x="666" y="186" width="52" height="26" rx="4" fill="#ffffff" stroke="#d9d9d9" stroke-width="1"/>
+  <text x="692" y="204" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="12" font-weight="400" fill="#666666" text-anchor="middle">套用</text>
+  <text x="632.0" y="262" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">之後再解壓縮</text>
+  <text x="632.0" y="281" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="400" fill="#666666" text-anchor="middle">解出來的檔案就不會被擋</text>
+  <text x="380" y="318" font-family="'Noto Sans TC','Noto Sans CJK TC','Microsoft JhengHei','PingFang TC',Helvetica,sans-serif" font-size="13" font-weight="700" fill="#2C5F34" text-anchor="middle">只對從公司 GitLab 下載的檔案這樣做。</text>
+</svg>
