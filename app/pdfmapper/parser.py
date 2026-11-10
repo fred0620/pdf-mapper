@@ -9,6 +9,7 @@ from typing import Callable, Iterator
 from .align import Transform, align_page
 from .document import Document
 from .extract import REASONS, extract_field, extract_table
+from .limits import LimitExceeded, check_deadline, file_deadline
 from .logs import log
 from .template import collect_anchors, rule_matches
 
@@ -26,8 +27,11 @@ def _anchors_for(anchors: list[dict], index: int, total: int) -> list[dict]:
 def _align_all(doc: Document, template: dict, use_ocr: bool) -> dict[int, Transform]:
     anchors = collect_anchors(template)
     total = len(doc)
-    return {page.index: align_page(page, _anchors_for(anchors, page.index, total), use_ocr)
-            for page in doc.pages}
+    transforms = {}
+    for page in doc.pages:
+        check_deadline()
+        transforms[page.index] = align_page(page, _anchors_for(anchors, page.index, total), use_ocr)
+    return transforms
 
 
 def _to_number(text: str) -> float | None:
@@ -130,7 +134,7 @@ def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
                     "template_name": template.get("name") or template.get("template_id"),
                     "pages": 0, "fields": [], "tables": [], "issues": [], "align": []}
     try:
-        with Document(path) as doc:
+        with file_deadline(), Document(path) as doc:
             total = len(doc)
             result["pages"] = total
             if progress:
@@ -153,6 +157,7 @@ def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
                 progress("取值中")
             fields: dict[str, dict] = {}
             for spec in template.get("fields", []):
+                check_deadline()
                 pages = [p for p in doc.pages
                          if rule_matches(spec.get("page_rule", "first"), p.index, total)]
                 value = extract_field(spec, pages, transforms, use_ocr, doc.pages)
@@ -161,6 +166,7 @@ def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
                 result["fields"].append(value)
             tables: dict[str, dict] = {}
             for spec in template.get("tables", []):
+                check_deadline()
                 table = extract_table(spec, doc.pages, transforms, total, use_ocr)
                 if not table["rows"] and spec.get("required", True):
                     result["issues"].append({"code": "empty_table", "page": None,
@@ -171,7 +177,8 @@ def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
             result["issues"].extend(_run_validations(template, fields, tables, total))
     except Exception as exc:  # 單一檔案失敗不該中斷整批
         # 日誌只記檔案代號，不記檔名（檔名常含客戶或單號）
-        log.warning("解析失敗 file=%s template=%s", file_ref(path), template.get("template_id"), exc_info=exc)
+        log.warning("解析失敗 file=%s template=%s：%s", file_ref(path), template.get("template_id"),
+                    type(exc).__name__, exc_info=None if isinstance(exc, LimitExceeded) else exc)
         result["error"] = f"{type(exc).__name__}: {exc}"
         result["issues"].append({"code": "failed", "page": None, "message": f"無法解析這份 PDF：{exc}"})
     summarize(result)
@@ -203,6 +210,11 @@ def _quality(result: dict) -> float:
 def parse_best(path: str | Path, templates: list[dict], use_ocr: bool = True,
                progress: Callable[[str], None] | None = None) -> dict:
     """從多個範本中挑最符合這份 PDF 的，並在結果中記錄挑選依據。"""
+    with file_deadline():  # 多範本比較共用同一個期限
+        return _parse_best(path, templates, use_ocr, progress)
+
+
+def _parse_best(path, templates, use_ocr, progress) -> dict:
     if len(templates) == 1:
         return parse_pdf(path, templates[0], use_ocr, progress)
     try:

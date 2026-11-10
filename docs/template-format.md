@@ -50,6 +50,8 @@
 | `join` | `newline` 時，多行內容保留換行 |
 | `continuation` | 下一頁的接續範圍：`{box, ref_page}` |
 
+所有正規表達式（`extract`、`pattern`、`key_pattern`、`stop_pattern`）最多 500 字，而且不能在無上限的重複裡再放重複，例如 `(\d+)+` 要寫成 `\d+`。這種寫法遇到比不中的文字會讓解析卡住，範本儲存與載入時會直接擋下。
+
 ## 表格 `tables`
 
 | 鍵 | 說明 |

@@ -9,6 +9,7 @@ from statistics import median
 from . import ocr as ocr_engine
 from .align import Transform, find_marker
 from .document import Box, Glyph, Page, group_lines, inside, is_garbled, line_text, normalize_text
+from .limits import check_deadline
 
 OCR_MIN_CONFIDENCE = 0.85
 LABEL_MOVED = 0.03
@@ -182,6 +183,7 @@ def extract_field(spec: dict, pages: list[Page], transforms: dict[int, Transform
     last = None
     all_pages = all_pages or pages
     for page in pages:
+        check_deadline()
         transform = transforms[page.index]
         box, reasons = locate_value_box(spec, transform)
         reading = read_box(page, box, spec.get("source", "auto"), bool(spec.get("verify")), use_ocr)
@@ -353,6 +355,7 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
     stopped = False
 
     for page in pages:
+        check_deadline()
         if stopped:
             break
         region = next((r for r in spec["regions"]

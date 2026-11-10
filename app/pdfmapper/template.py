@@ -9,7 +9,16 @@ from . import ocr as ocr_engine
 from .align import box_center, find_text, make_patch
 from .document import Document, Page, expand, group_lines, is_garbled, line_text
 
+try:  # Python 3.11 起移到 re 底下
+    from re import _constants as _sre
+    from re import _parser as _sre_parse
+except ImportError:  # pragma: no cover
+    import sre_constants as _sre
+    import sre_parse as _sre_parse
+
 SCHEMA_VERSION = 1
+MAX_PATTERN_LENGTH = 500
+_REPEATS = {_sre.MAX_REPEAT, _sre.MIN_REPEAT}
 FIELD_KINDS = {"key_value", "position"}
 PAGE_RULES = {"first", "rest", "last", "all"}
 
@@ -43,13 +52,70 @@ def _check_rule(rule, where: str, errors: list[str]) -> None:
         errors.append(f"{where} 的頁面規則不正確：{rule}")
 
 
+def _is_repeat(op, av) -> bool:
+    return op in _REPEATS and av[1] > 1
+
+
+def _flatten(items) -> list:
+    """把群組攤平成一串元素，方便看重複裡面有什麼。"""
+    flat = []
+    for op, av in items:
+        if op is _sre.SUBPATTERN:
+            flat.extend(_flatten(av[-1]))
+        else:
+            flat.append((op, av))
+    return flat
+
+
+def _has_inner_repeat(op, av) -> bool:
+    if _is_repeat(op, av):
+        return True
+    if op is _sre.BRANCH:
+        return any(any(_has_inner_repeat(o, a) for o, a in _flatten(branch)) for branch in av[1])
+    return False
+
+
+def _nested_repeat(items) -> bool:
+    """找「無上限的重複裡面又有重複，而且沒有固定字元隔開」，例如 (a+)+、(\\w+\\s?)+。
+
+    這種寫法遇到比不中的長字串時會反覆回溯，時間呈指數增長，單一儲存格就能讓解析卡住。
+    (\\d+,)+ 這類中間有固定字元的寫法不受影響。
+    """
+    for op, av in items:
+        if op in _REPEATS:
+            body = _flatten(av[2])
+            if av[1] == _sre.MAXREPEAT and any(_has_inner_repeat(o, a) for o, a in body):
+                anchored = any(not _has_inner_repeat(o, a) and _sre_parse.SubPattern(av[2].state, [(o, a)]).getwidth()[0] > 0
+                               for o, a in body)
+                if not anchored:
+                    return True
+            if _nested_repeat(av[2]):
+                return True
+        elif op is _sre.SUBPATTERN and _nested_repeat(av[-1]):
+            return True
+        elif op is _sre.BRANCH and any(_nested_repeat(branch) for branch in av[1]):
+            return True
+        elif op in (_sre.ASSERT, _sre.ASSERT_NOT) and _nested_repeat(av[1]):
+            return True
+    return False
+
+
 def _check_regex(spec: dict, keys: tuple[str, ...], where: str, errors: list[str]) -> None:
     for key in keys:
-        if spec.get(key):
-            try:
-                re.compile(spec[key])
-            except re.error as exc:
-                errors.append(f"{where} 的正規表達式有誤：{spec[key]}（{exc}）")
+        pattern = spec.get(key)
+        if not pattern:
+            continue
+        if not isinstance(pattern, str) or len(pattern) > MAX_PATTERN_LENGTH:
+            errors.append(f"{where} 的正規表達式太長（上限 {MAX_PATTERN_LENGTH} 字）")
+            continue
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            errors.append(f"{where} 的正規表達式有誤：{pattern}（{exc}）")
+            continue
+        if _nested_repeat(_sre_parse.parse(pattern)):
+            errors.append(f"{where} 的正規表達式可能讓解析卡住：{pattern}。"
+                          "重複的內容裡又有重複（例如 (\\d+)+），請改成不巢狀的寫法（例如 \\d+）")
 
 
 def validate(template: dict) -> list[str]:

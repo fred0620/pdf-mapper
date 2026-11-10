@@ -4,8 +4,10 @@
 """
 from __future__ import annotations
 
+import math
 import threading
 import unicodedata
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import median
@@ -15,6 +17,7 @@ import pdfplumber
 import pypdfium2 as pdfium
 
 from . import ocr as ocr_engine
+from .limits import MAX_CACHED_RENDERS, MAX_RENDER_PIXELS, check_pages
 
 Box = tuple[float, float, float, float]
 
@@ -117,7 +120,6 @@ class Page:
         self.width = float(plumber_page.width)
         self.height = float(plumber_page.height)
         self._glyphs: list[Glyph] | None = None
-        self._renders: dict[int, np.ndarray] = {}
         self._ocr: dict[tuple, list[Glyph]] = {}
 
     @property
@@ -147,20 +149,30 @@ class Page:
 
     def render(self, dpi: int = 150) -> np.ndarray:
         """回傳 RGB 陣列。"""
-        cached = self._renders.get(dpi)
-        if cached is not None:
-            return cached
+        cache, key = self.document._renders, (self.index, dpi)
+        with self.document._cache_lock:
+            cached = cache.get(key)
+            if cached is not None:
+                cache.move_to_end(key)
+                return cached
+        # 頁面尺寸異常大時降低解析度，座標都是比例，不影響對位與取值
+        scale = dpi / 72
+        pixels = self.width * self.height * scale * scale
+        if pixels > MAX_RENDER_PIXELS:
+            scale *= math.sqrt(MAX_RENDER_PIXELS / pixels)
         # 頁面與點陣圖都要在鎖內明確關閉：交給垃圾回收的話，釋放動作可能在
         # 別的執行緒渲染途中發生，造成畫面損毀，OCR 就會讀出錯字。
         with _PDFIUM_LOCK:
             page = self.document._pdfium[self.index]
-            bitmap = page.render(scale=dpi / 72)
+            bitmap = page.render(scale=scale)
             array = np.array(bitmap.to_pil().convert("RGB"))
             bitmap.close()
             page.close()
-        if len(self._renders) >= 2:
-            self._renders.pop(next(iter(self._renders)))
-        self._renders[dpi] = array
+        # 整份文件共用一個上限：長的掃描檔逐頁 OCR 時，舊頁面的圖會被釋放
+        with self.document._cache_lock:
+            cache[key] = array
+            while len(cache) > MAX_CACHED_RENDERS:
+                cache.popitem(last=False)
         return array
 
     def crop(self, box: Box, dpi: int = 150) -> np.ndarray:
@@ -233,15 +245,25 @@ class Document:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self._lock = threading.RLock()
-        self._plumber = pdfplumber.open(str(self.path))
+        self._cache_lock = threading.Lock()
+        self._renders: OrderedDict[tuple[int, int], np.ndarray] = OrderedDict()
         with _PDFIUM_LOCK:
             self._pdfium = pdfium.PdfDocument(str(self.path))
+            count = len(self._pdfium)
+        try:
+            check_pages(count)  # 先檢查頁數，超過上限就不建立頁面資料
+            self._plumber = pdfplumber.open(str(self.path))
+        except Exception:
+            with _PDFIUM_LOCK:
+                self._pdfium.close()
+            raise
         self.pages = [Page(self, i) for i in range(len(self._plumber.pages))]
 
     def __len__(self) -> int:
         return len(self.pages)
 
     def close(self) -> None:
+        self._renders.clear()
         self._plumber.close()
         with _PDFIUM_LOCK:
             self._pdfium.close()

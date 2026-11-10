@@ -26,6 +26,7 @@ from .clean import write_clean
 from .document import Document
 from .excel import write_excel
 from .extract import REASONS, read_box
+from .limits import LimitExceeded
 from .logs import clean as log_text
 from .logs import log
 from .parser import find_value, parse_best, parse_pdf, summarize
@@ -286,7 +287,8 @@ def upload():
             log.info("上傳 doc=%s size=%d", doc_id, target.stat().st_size)
         except Exception as exc:
             target.unlink(missing_ok=True)
-            failed.append({"name": name, "error": "無法開啟，檔案可能損壞或有密碼保護"})
+            message = str(exc) if isinstance(exc, LimitExceeded) else "無法開啟，檔案可能損壞或有密碼保護"
+            failed.append({"name": name, "error": message})
             log.warning("上傳失敗 doc=%s：%s", doc_id, type(exc).__name__, exc_info=exc)
     return jsonify({"docs": added, "failed": failed})
 
