@@ -16,7 +16,7 @@ import webbrowser
 from pathlib import Path
 
 import cv2
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, jsonify, redirect, request, send_file, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 from . import __version__, logs, paths
@@ -221,7 +221,15 @@ def index():
 
 @app.get("/manual")
 def manual():
-    return send_from_directory(paths.MANUAL.parent, paths.MANUAL.name)
+    return redirect(f"/docs/{paths.MANUAL.name}")
+
+
+@app.get("/docs/<name>")
+def guide(name):
+    """使用手冊與換版說明。只開放固定的檔案，文件之間用相對連結互通。"""
+    if name not in paths.GUIDES:
+        raise Missing("找不到這份說明")
+    return send_from_directory(paths.APP, name)
 
 
 @app.get("/web/<path:name>")

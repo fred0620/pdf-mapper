@@ -4,7 +4,7 @@
 
 | 你是 | 請看 |
 |---|---|
-| 使用者 | [使用手冊](docs/使用手冊.md)（工具右上角也能開啟） |
+| 使用者 | [使用手冊](docs/使用手冊.md)（工具右上角也能開啟）、[換版說明](docs/換版說明.md) |
 | 負責人、接手的人 | [工具卡](OWNER.md) → [維護手冊](docs/maintain.md) → [設計決策](docs/design.md) |
 | 要發布新版 | [維護手冊的發布步驟](docs/maintain.md#3-發布新版) 與 [發版檢查清單](docs/security-checklist.md) |
 
@@ -12,7 +12,7 @@
 
 不需要先安裝 Python。從 GitLab 的 Releases 頁下載 `pdf-mapper-版本.zip`，解壓後雙擊 `run.bat`（macOS / Linux 執行 `bash run.sh`）。第一次會自動準備 uv 和 Python，約 1 到 3 分鐘。
 
-更新時，把新版 ZIP 直接放進工具資料夾，雙擊 `run.bat` 就會詢問要不要安裝。更新只換掉 `app` 和 `run.bat`，範本與匯出資料不受影響；新版有問題時執行 `run.bat rollback` 就能退回。
+更新時，把新版 ZIP 直接放進工具資料夾，雙擊 `run.bat` 就會詢問要不要安裝。更新只換掉 `app` 和 `run.bat`，範本與匯出資料不受影響；新版有問題時執行 `run.bat rollback` 就能退回。圖解步驟見 [換版說明](docs/換版說明.md)。
 
 ```text
 pdf-mapper/
@@ -58,7 +58,8 @@ app/                     發布時整包給使用者的內容
   examples/              示範範本與客製腳本範例，第一次啟動時複製到 workspace
   samples/               虛構範例 PDF
   使用手冊.html           由 docs/使用手冊.md 產生
-docs/                    使用手冊、範本格式、設計決策、維護手冊、資安檢查清單
+  換版說明.html           由 docs/換版說明.md 產生
+docs/                    使用手冊、換版說明、範本格式、設計決策、維護手冊、發版檢查清單
 scripts/                 打包發布、重建範例與手冊
 tests/
 .gitlab-ci.yml           測試、弱點檢查、打包與 Release

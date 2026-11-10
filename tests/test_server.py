@@ -83,3 +83,16 @@ def test_excel_neutralizes_formulas_and_control_chars(samples, template, tmp_pat
     cells = [c for sheet in book.worksheets for row in sheet.iter_rows() for c in row]
     assert all(c.data_type != "f" for c in cells)
     assert any(c.value == "=1+1" for c in cells)
+
+
+def test_guides_are_served_and_others_are_not():
+    from urllib.parse import quote
+
+    client = server.app.test_client()
+    assert client.get("/manual").status_code == 302
+    for name in ("使用手冊.html", "換版說明.html"):
+        response = client.get(f"/docs/{quote(name)}")
+        assert response.status_code == 200, name
+        assert b"<html" in response.data
+    assert client.get("/docs/pyproject.toml").status_code == 404
+    assert client.get("/docs/..%2Fpyproject.toml").status_code == 404

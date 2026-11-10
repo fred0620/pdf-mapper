@@ -30,6 +30,7 @@ UPLOADS = WORKSPACE / "uploads"
 EXAMPLES = APP / "examples"
 SAMPLES = APP / "samples"
 MANUAL = APP / "使用手冊.html"
+GUIDES = {"使用手冊.html", "換版說明.html"}  # 工具裡可以開啟的說明文件
 
 
 def prepare() -> list[str]:

@@ -233,8 +233,64 @@ def manual_update() -> None:
     f.save("update-04-manual.svg")
 
 
+def unblock() -> None:
+    """Windows 對網路下載的 ZIP 加上的封鎖，在檔案內容裡解除。畫面是示意，實際文字依 Windows 版本略有不同。"""
+    f = Figure(760, 330)
+    panels = (20, 272, 524)
+    width = 216
+    titles = ("對 ZIP 按右鍵", "勾選「解除封鎖」", "按「確定」再解壓")
+    for index, (x, title) in enumerate(zip(panels, titles), start=1):
+        f.badge(x + 11, 24, index)
+        f.text(x + 30, 29, title, 15, 700)
+        f.rect(x, 48, width, 190, fill=FILL, radius=8, stroke=RULE)
+        if index < 3:
+            f.arrow(x + width + 8, 143, x + width + 30)
+
+    # 1. 右鍵選單
+    x = panels[0]
+    f.file(x + 26, 66, SOFT, "ZIP")
+    f.text(x + 48, 80, "pdf-mapper-0.2.1.zip", 12, fill=INK)
+    f.rect(x + 44, 94, 156, 128, fill="#ffffff", stroke=SOFT, radius=4)
+    for row, item in enumerate(("開啟", "解壓縮全部…", "複製", "重新命名")):
+        f.text(x + 58, 118 + row * 24, item, 13, fill=INK)
+    f.rect(x + 48, 196, 148, 22, fill="#ffffff", stroke=GREEN, width=1.5, radius=3)
+    f.text(x + 58, 212, "內容", 13, 700, GREEN)
+    f.lines(x + width / 2, 262, ["選最下面的「內容」", "或選取後按 Alt + Enter"], anchor="middle")
+
+    # 2. 內容視窗下方的安全性
+    x = panels[1]
+    f.rect(x + 12, 60, width - 24, 166, fill="#ffffff", stroke=SOFT, radius=4)
+    f.text(x + 24, 80, "pdf-mapper-0.2.1.zip 內容", 11, fill=SOFT)
+    f.line(x + 12, 90, x + width - 12, 90)
+    f.text(x + 24, 112, "一般", 12, 700)
+    f.line(x + 24, 124, x + width - 24, 124)
+    f.text(x + 24, 146, "安全性：", 12, 700)
+    f.lines(x + 24, 166, ["這個檔案來自其他電腦，", "可能已被封鎖以保護電腦。"], size=11, fill=SOFT, gap=16)
+    f.add(f'<rect x="{x + 112}" y="{196}" width="14" height="14" rx="2" fill="{GREEN}"/>')
+    f.add(f'<path d="M{x + 115},{203} l3,3 l6,-7" fill="none" stroke="#ffffff" stroke-width="2"/>')
+    f.text(x + 132, 208, "解除封鎖", 12, 700, GREEN)
+    f.lines(x + width / 2, 262, ["在「一般」分頁最下面", "沒有這一行就代表不用處理"], anchor="middle")
+
+    # 3. 確定
+    x = panels[2]
+    f.rect(x + 12, 60, width - 24, 166, fill="#ffffff", stroke=SOFT, radius=4)
+    f.text(x + 24, 80, "pdf-mapper-0.2.1.zip 內容", 11, fill=SOFT)
+    f.line(x + 12, 90, x + width - 12, 90)
+    f.text(x + 24, 120, "解除封鎖已勾選", 12, fill=SOFT)
+    buttons = (("確定", True), ("取消", False), ("套用", False))
+    for index, (label, primary) in enumerate(buttons):
+        bx = x + 22 + index * 60
+        f.rect(bx, 186, 52, 26, fill="#ffffff", stroke=GREEN if primary else RULE, width=1.5 if primary else 1, radius=4)
+        f.text(bx + 26, 204, label, 12, 700 if primary else 400, GREEN if primary else SOFT, anchor="middle")
+    f.lines(x + width / 2, 262, ["之後再解壓縮", "解出來的檔案就不會被擋"], anchor="middle")
+
+    f.text(380, 318, "只對從公司 GitLab 下載的檔案這樣做。", 13, 700, GREEN, anchor="middle")
+    f.save("update-00-unblock.svg")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    unblock()
     folder_layout()
     update_steps()
     update_result()

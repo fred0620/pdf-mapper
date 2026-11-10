@@ -85,7 +85,7 @@ release:
   release:
     tag_name: $CI_COMMIT_TAG
     name: "PDF 解析器 $VERSION"
-    description: "下載 pdf-mapper-$VERSION.zip，放進工具資料夾後雙擊 run.bat 就會安裝，範本不受影響。更新內容見 CHANGELOG.md。"
+    description: "下載 pdf-mapper-$VERSION.zip，不用解壓，放進工具資料夾後雙擊 run.bat 就會安裝，範本不受影響。步驟見 docs/換版說明.md，更新內容見 CHANGELOG.md。"
     assets:
       links:
         - name: "pdf-mapper-$VERSION.zip"

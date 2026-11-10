@@ -29,7 +29,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 | 用使用者的方式啟動 | `bash run.sh` 或 `run.bat` |
 | 重建範例 PDF 與示範範本 | `uv run --project app python scripts/build_demo.py` |
 | 改了使用手冊的示意圖 | 改 `scripts/make_manual_figures.py` 後執行它 |
-| 改了使用手冊後重建 HTML | `uv run --project app python scripts/build_manual.py` |
+| 改了使用手冊或換版說明後重建 HTML | `uv run --project app python scripts/build_manual.py` |
 | 新增套件 | `uv add --project app 套件名稱` |
 | 試打包（不含離線套件） | `uv run --project app python scripts/build_release.py` |
 
@@ -63,7 +63,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
    ```
 
 5. GitLab 會自動跑測試、弱點檢查、打包，並在 **Deploy > Releases** 建立 Release。任何一步失敗都不會發布。
-6. 通知同事：到 Releases 頁下載新版 ZIP，放進工具資料夾，雙擊 `run.bat`。可以直接把 CHANGELOG 這一段貼給大家，並附上使用手冊「更新工具」一節。
+6. 通知同事：到 Releases 頁下載新版 ZIP，放進工具資料夾，雙擊 `run.bat`。可以直接把 CHANGELOG 這一段貼給大家，並附上 [換版說明](換版說明.md) 的連結（工具裡也能從使用手冊連過去）。
 
 ### 第一次設定（只做一次）
 
