@@ -4,9 +4,10 @@
     uv run --project app python scripts/build_release.py --wheels         附上 Windows 離線套件（正式發布）
 
 輸出到 dist/：
-    pdf-mapper-<版本>.zip   解壓後是 run.bat、run.sh 和 app/，不含 workspace 與 runtime
-    latest.json             版本、檔名、SHA256、更新說明，啟動程式靠它判斷要不要更新
+    pdf-mapper-<版本>.zip   解壓後是 run.bat、run.sh 和 app/，不含 workspace 與 runtime。
+                            使用者把它放進工具資料夾，雙擊 run.bat 就會安裝
     SHA256SUMS.txt
+    latest.json             選用的自動檢查才需要：版本、檔名、SHA256、更新說明
 
 只打包明確列出的檔案，測試、腳本、開發文件和任何資料都不會進到發布包。
 版本號只寫在 app/pyproject.toml；CHANGELOG.md 一定要有這個版本的段落，否則不給發布。

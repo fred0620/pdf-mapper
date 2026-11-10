@@ -2,16 +2,14 @@
 #
 # 平常 push：跑測試，並檢查套件有沒有已知弱點（只提醒，不擋）
 # 每月排程：同上，但弱點檢查失敗就會亮紅燈（Build > Pipeline schedules 設定一次即可）
-# 打標籤（例如 v0.2.1）：測試與弱點檢查都要通過，才打包、上傳並建立 Release
+# 打標籤（例如 v0.2.1）：測試與弱點檢查都要通過，才打包並建立 Release
 #
-# CI/CD 變數（Settings > CI/CD > Variables）：
-#   PDFMAPPER_UPDATE_SOURCE  同事檢查更新的位置，例如 \\fileserver\tools\pdf-mapper\latest.json
-#   PDFMAPPER_MIN_VERSION    選用。低於這個版本必須更新，有安全修正時才設定，發完記得清掉
-#   SHARE_PATH               選用。有能寫入共用資料夾的 Windows runner（tag: windows-share）時自動發布
-#   UV_IMAGE                 選用。公司要用內部映像檔時改這裡
-#   UV_DEFAULT_INDEX         選用。公司有 PyPI 鏡像時
+# 同事從 Releases 頁下載 ZIP，放進工具資料夾後雙擊 run.bat 就會安裝。發布步驟見 docs/maintain.md。
 #
-# 發布步驟見 docs/maintain.md。
+# 選用的 CI/CD 變數（Settings > CI/CD > Variables），不設也能正常發布：
+#   UV_IMAGE                 公司要用內部映像檔時改這裡
+#   UV_DEFAULT_INDEX         公司有 PyPI 鏡像時
+#   PDFMAPPER_UPDATE_SOURCE  有同事都讀得到的 latest.json 位置時，run.bat 會自動檢查新版
 
 workflow:
   rules:
@@ -88,30 +86,12 @@ release:
   release:
     tag_name: $CI_COMMIT_TAG
     name: "PDF 解析器 $VERSION"
-    description: "更新內容見 CHANGELOG.md。發布到共用資料夾時，先放 ZIP，最後才放 latest.json。"
+    description: "下載 pdf-mapper-$VERSION.zip，放進工具資料夾後雙擊 run.bat 就會安裝，範本不受影響。更新內容見 CHANGELOG.md。"
     assets:
       links:
         - name: "pdf-mapper-$VERSION.zip"
           url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/pdf-mapper-${VERSION}.zip"
           link_type: package
-        - name: latest.json
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/latest.json"
+        - name: SHA256SUMS.txt
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/pdf-mapper/${VERSION}/SHA256SUMS.txt"
           link_type: other
-
-# 選用：runner 能寫入共用資料夾時自動發布；沒有這種 runner 就照 docs/maintain.md 手動複製
-publish-share:
-  stage: release
-  tags: [windows-share]
-  needs: [package]
-  rules:
-    - if: $CI_COMMIT_TAG && $SHARE_PATH
-  script:
-    - |
-      $ErrorActionPreference = "Stop"
-      $zip = Get-ChildItem dist\*.zip | Select-Object -First 1
-      Copy-Item $zip.FullName (Join-Path $env:SHARE_PATH $zip.Name) -Force
-      $expected = (Get-Content dist\latest.json -Raw | ConvertFrom-Json).sha256
-      $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $env:SHARE_PATH $zip.Name)).Hash.ToLower()
-      if ($actual -ne $expected) { throw "複製到共用資料夾後驗證不符" }
-      # latest.json 最後才放，同事才不會看到新版卻下載不到檔案
-      Copy-Item dist\latest.json (Join-Path $env:SHARE_PATH "latest.json") -Force

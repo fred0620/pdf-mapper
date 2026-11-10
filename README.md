@@ -6,19 +6,19 @@
 |---|---|
 | 使用者 | [使用手冊](docs/使用手冊.md)（工具右上角也能開啟） |
 | 負責人、接手的人 | [工具卡](OWNER.md) → [維護手冊](docs/maintain.md) → [設計決策](docs/design.md) |
-| 要發布新版 | [維護手冊的發布步驟](docs/maintain.md#3-發布新版) 與 [資安檢查清單](docs/security-checklist.md) |
+| 要發布新版 | [維護手冊的發布步驟](docs/maintain.md#3-發布新版) 與 [發版檢查清單](docs/security-checklist.md) |
 
 ## 使用
 
-不需要先安裝 Python。從共用資料夾取得 `pdf-mapper-版本.zip`，解壓後雙擊 `run.bat`（macOS / Linux 執行 `bash run.sh`）。第一次會自動準備 uv 和 Python，約 1 到 3 分鐘。
+不需要先安裝 Python。從 GitLab 的 Releases 頁下載 `pdf-mapper-版本.zip`，解壓後雙擊 `run.bat`（macOS / Linux 執行 `bash run.sh`）。第一次會自動準備 uv 和 Python，約 1 到 3 分鐘。
 
-之後每次雙擊 `run.bat`，都會先檢查有沒有新版。更新只換掉 `app` 和 `run.bat`，範本與匯出資料不受影響；新版有問題時執行 `run.bat rollback` 就能退回。
+更新時，把新版 ZIP 直接放進工具資料夾，雙擊 `run.bat` 就會詢問要不要安裝。更新只換掉 `app` 和 `run.bat`，範本與匯出資料不受影響；新版有問題時執行 `run.bat rollback` 就能退回。
 
 ```text
 pdf-mapper/
   run.bat       入口
   app/          程式，每次更新整包換掉，不要放自己的檔案
-  workspace/    範本、匯出結果、客製腳本、操作紀錄（更新不會動）
+  workspace/    範本、匯出結果、客製腳本、操作紀錄（第一次啟動時建立，更新不會動）
   runtime/      uv、Python 和套件（自動建立，刪掉會重建）
 ```
 
@@ -37,7 +37,7 @@ pdf-mapper/
 ```text
 run.bat, run.sh          使用者入口（只有一行，轉給 app/launcher）
 app/                     發布時整包給使用者的內容
-  launcher.ps1           Windows 啟動程式：環境、檢查更新、回滾
+  launcher.ps1           Windows 啟動程式：環境、安裝新版、回滾
   launcher.sh            macOS / Linux 啟動程式（開發用，不含自動更新）
   pyproject.toml         套件與版本號（版本只寫在這裡）
   uv.lock                鎖定的套件版本
@@ -62,7 +62,7 @@ docs/                    使用手冊、範本格式、設計決策、維護手�
 scripts/                 打包發布、重建範例與手冊
 tests/
 .gitlab-ci.yml           測試、弱點檢查、打包與 Release
-OWNER.md                 工具卡：用途、負責人、資料等級、風險分級
+OWNER.md                 工具卡：用途、負責人、資料、出問題時怎麼辦
 CHANGELOG.md             每一版改了什麼（發布時必填）
 ```
 

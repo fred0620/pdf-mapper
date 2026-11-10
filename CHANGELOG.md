@@ -6,7 +6,7 @@
 ## 0.2.0 - 2026-11-10
 
 - 資料夾改成 app、workspace、runtime 三塊，之後更新只換 app 和 run.bat，範本與匯出資料不受影響
-- 開啟前會自動檢查新版，下載後驗證 SHA256 才安裝，可用 run.bat rollback 退回上一版
+- 把新版 ZIP 放進工具資料夾、雙擊 run.bat 就會安裝，可用 run.bat rollback 退回上一版
 - 範本、匯出結果、客製腳本移到 workspace，第一次啟動會自動複製舊版資料
 - 畫面左上角顯示版本號
 - 啟動檔改名為 run.bat

@@ -17,8 +17,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 接手時請一併確認：
 
 - [ ] OWNER.md 的負責人與備援人已改成自己
-- [ ] 有 GitLab 專案的 Maintainer 權限，能建立受保護的版本標籤
-- [ ] 能寫入發布用的共用資料夾
+- [ ] 有 GitLab 專案的 Maintainer 權限，能建立版本標籤
 - [ ] 看過一次 [設計決策](design.md)，特別是「發布、更新與資料夾分工」
 
 ## 2. 日常開發
@@ -53,8 +52,8 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 ### 步驟
 
 1. 改 `app/pyproject.toml` 的 `version`，然後執行 `uv lock --project app` 讓 `uv.lock` 跟著更新。
-2. 在 `CHANGELOG.md` 最上面加一段 `## 版本號 - 日期`，用使用者看得懂的話條列改了什麼。這段會顯示在同事的更新提示上。
-3. 跑測試，並依 [資安檢查清單](security-checklist.md) 勾選。
+2. 在 `CHANGELOG.md` 最上面加一段 `## 版本號 - 日期`，用使用者看得懂的話條列改了什麼。
+3. 跑測試，並依 [發版檢查清單](security-checklist.md) 勾選。
 4. 合併到 main 後打標籤：
 
    ```bash
@@ -62,45 +61,31 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
    git push origin v0.2.1
    ```
 
-5. GitLab 會自動跑測試、弱點檢查、打包，並建立 Release。任何一步失敗都不會發布。
-6. 發布到共用資料夾（見下方）。
-7. 通知同事有新版，下次開啟工具時會自動提示。
-
-### 發布到共用資料夾
-
-有設定 `SHARE_PATH` 和能寫入共用資料夾的 runner 時，第 5 步會自動完成。沒有的話手動做：
-
-1. 到 GitLab 的 **Deploy > Releases**，下載 `pdf-mapper-版本.zip` 和 `latest.json`。
-2. **先**把 ZIP 複製到共用資料夾。
-3. 在 PowerShell 確認雜湊和 `latest.json` 裡的 `sha256` 相同：
-
-   ```powershell
-   (Get-FileHash -Algorithm SHA256 \\fileserver\tools\pdf-mapper\pdf-mapper-0.2.1.zip).Hash.ToLower()
-   ```
-
-4. **最後**才用新的 `latest.json` 覆蓋舊的。順序反過來的話，同事可能看到新版卻下載不到。
-
-舊版的 ZIP 可以保留幾版，方便查問題；同事只會依 `latest.json` 下載。
+5. GitLab 會自動跑測試、弱點檢查、打包，並在 **Deploy > Releases** 建立 Release。任何一步失敗都不會發布。
+6. 通知同事：到 Releases 頁下載新版 ZIP，放進工具資料夾，雙擊 `run.bat`。可以直接把 CHANGELOG 這一段貼給大家。
 
 ### 第一次設定（只做一次）
 
-1. **共用資料夾**：建一個資料夾，例如 `\\fileserver\tools\pdf-mapper\`，設成同事唯讀、只有負責人與備援人可寫入。
-2. **GitLab CI/CD 變數**（Settings > CI/CD > Variables）：
-   - `PDFMAPPER_UPDATE_SOURCE`：`\\fileserver\tools\pdf-mapper\latest.json`。會寫進發布包，同事從這裡檢查更新。
-   - 公司要用內部映像檔或 PyPI 鏡像時，設定 `UV_IMAGE`、`UV_DEFAULT_INDEX`。
-3. **受保護的標籤**（Settings > Repository > Protected tags）：保護 `v*`，只允許 Maintainer 建立。這樣只有負責人能發布。
-4. **每月排程**（Build > Pipeline schedules）：每月一次，跑在 main。排程時弱點檢查失敗會亮紅燈。
-5. **第一次發給同事**：把 ZIP 放到共用資料夾，請大家從那裡複製（不要用 email 附件，Windows 會擋下執行）。
+1. **受保護的標籤**（Settings > Repository > Protected tags）：保護 `v*`，只允許 Maintainer 建立。這樣只有負責人能發布。
+2. **每月排程**（Build > Pipeline schedules）：每月一次，跑在 main。排程時弱點檢查失敗會亮紅燈。
+3. **同事的權限**：同事要能看到專案的 Releases 頁才能下載，通常給 Reporter 權限即可。
+4. 公司要用內部映像檔或 PyPI 鏡像時，在 Settings > CI/CD > Variables 設定 `UV_IMAGE`、`UV_DEFAULT_INDEX`。
 
-同事如果能直接連到 GitLab 且不需要登入，也可以把 `PDFMAPPER_UPDATE_SOURCE` 設成 Release 裡 `latest.json` 的網址，就不用共用資料夾。
+### 選用：自動檢查新版
+
+預設由同事自己下載 ZIP。如果有一個同事都讀得到、不需要登入的位置（網路磁碟或內部網站），可以讓 `run.bat` 開啟前自動檢查：
+
+1. 在 CI/CD 變數設定 `PDFMAPPER_UPDATE_SOURCE`，例如 `\\fileserver\tools\pdf-mapper\latest.json`。之後打包的版本都會讀這個位置。
+2. 每次發布後，把 Release 的 ZIP 和 `dist/latest.json`（在 package job 的 artifacts 裡）放到那個位置。**先放 ZIP，最後才放 `latest.json`**，同事才不會看到新版卻下載不到。
+
+有了自動檢查，才能用下一節的「必要更新」和「全部停用」。
 
 ## 4. 例行維護
 
 | 頻率 | 做什麼 |
 |---|---|
 | 每月 | 看排程 pipeline 的弱點檢查。有弱點就升級該套件並發布修正版 |
-| 每季 | 檢視 OWNER.md：還有人在用嗎？負責人、備援人、資料等級有沒有變？更新「最近一次檢視」 |
-| 每半年 | 升級全部套件與 uv，發一個小版本 |
+| 每半年 | 升級全部套件與 uv，發一個小版本；順便確認 OWNER.md 還正確、還有人在用 |
 | 交接時 | 新負責人照第 1 節做一次，並在備援人陪同下發布一次 |
 
 ### 升級套件
@@ -138,26 +123,16 @@ uvx pip-audit --disable-pip --no-deps -r /tmp/req.txt # 本機先檢查一次弱
 
 ## 6. 緊急處理
 
-### 安全修正，要所有人立刻更新
+### 發現嚴重錯誤
 
-1. 照第 3 節發布修正版，發布前把 CI/CD 變數 `PDFMAPPER_MIN_VERSION` 設成這個新版本。
-2. 低於這個版本的人開啟工具時，必須更新才能使用。
-3. 發布完成後清掉 `PDFMAPPER_MIN_VERSION`，之後的版本才不會都變成必要更新。
+1. 通知所有使用者先暫停使用，改回人工作業。
+2. 修正後照第 3 節發布，通知大家更新。
+3. 要回到上一版的行為時，把有問題的修改 revert，用新的版本號（例如 0.2.2）發布。安裝程式只會往新版更新。
 
-### 發現嚴重錯誤，要所有人先停用
+### 有設定自動檢查時
 
-直接編輯共用資料夾的 `latest.json`，加上兩個欄位：
-
-```json
-"retired": true,
-"notes": "發現金額欄位解析錯誤，修正前請改用人工作業"
-```
-
-所有人下次開啟時會看到這段說明，工具不會啟動。修正後發布新版，`latest.json` 會被覆蓋，停用自然解除。
-
-### 要讓所有人回到上一版
-
-啟動程式只會往新版更新。把有問題的修改 revert，用新的版本號（例如 0.2.2）發布。
+- **要求所有人更新**：發布前把 CI/CD 變數 `PDFMAPPER_MIN_VERSION` 設成這個新版本，低於它的人必須更新才能使用。發布後記得清掉。
+- **讓所有人停用**：編輯共用位置的 `latest.json`，加上 `"retired": true` 和 `"notes": "停用原因與替代做法"`。所有人下次開啟時會看到說明，工具不會啟動。發布新版覆蓋 `latest.json` 後就會解除。
 
 ## 7. 資料夾與檔案一覽
 
@@ -166,8 +141,8 @@ uvx pip-audit --disable-pip --no-deps -r /tmp/req.txt # 本機先檢查一次弱
 | `run.bat`、`run.sh` | 使用者入口 | 是 | 是 |
 | `app/` | 程式、啟動程式、示範範本、範例 PDF、使用手冊 | 是 | 是（逐一列在 `scripts/build_release.py`） |
 | `app/wheels/` | Windows 離線套件 | 否 | 是（CI 打包時下載） |
-| `app/update-source.txt` | 更新來源 | 否 | 是（CI 依變數產生） |
-| `workspace/` | 使用者資料 | 否 | 否 |
+| `app/update-source.txt` | 選用的自動檢查位置 | 否 | 有設定 `PDFMAPPER_UPDATE_SOURCE` 時 |
+| `workspace/` | 使用者資料，第一次啟動時建立 | 否 | 否 |
 | `runtime/` | uv、Python、套件 | 否 | 否 |
 | `app.old/` | 使用者電腦上的上一版 | 否 | 否 |
 | `docs/`、`scripts/`、`tests/` | 開發用 | 是 | 否 |
