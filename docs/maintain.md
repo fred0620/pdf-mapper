@@ -79,7 +79,7 @@ CI 會在每個 job 開頭先試著連套件來源，連不到就停下來並顯
 |---|---|---|
 | 無法連到套件來源 https://pypi.org/simple | 公司網路擋住外部 PyPI | 向 IT 要「內部 PyPI 鏡像」的網址（Nexus、Artifactory 等，通常以 `/simple` 結尾），新增變數 `PIP_MIRROR` |
 | 有設 `PIP_MIRROR`，但出現 certificate、SSL 字樣 | 鏡像用公司自己的憑證 | 向 IT 要公司根憑證（.crt 或 .pem），新增 **File** 類型的變數 `CA_BUNDLE` |
-| job 一開始就拉不到映像檔（pull image 失敗） | runner 連不到 ghcr.io | 請 IT 把 `ghcr.io/astral-sh/uv:0.13.6-python3.12-bookworm-slim` 放進公司的映像檔庫，再把變數 `UV_IMAGE` 設成內部的位置 |
+| job 一開始就拉不到映像檔（pull image 失敗） | runner 連不到 ghcr.io | 請 IT 把 `ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim` 放進公司的映像檔庫，再把變數 `UV_IMAGE` 設成內部的位置 |
 
 向 IT 詢問時可以這樣說：「GitLab CI 要安裝 Python 套件，請問公司有沒有 PyPI 的內部鏡像（proxy repository）？網址和憑證是什麼？」
 

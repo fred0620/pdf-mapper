@@ -1,0 +1,41 @@
+# 用 .gitlab-ci.yml 指定的映像檔跑 GitLab 的 test 與 package 步驟，確認映像檔標籤存在、指令在裡面能用。
+name: gitlab-image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gitlab-image:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.read.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: |
+          echo "image=$(sed -n 's/^  UV_IMAGE: *//p' .gitlab-ci.yml)" >> "$GITHUB_OUTPUT"
+  gitlab-steps:
+    needs: gitlab-image
+    runs-on: ubuntu-latest
+    container: ${{ needs.gitlab-image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: test（和 .gitlab-ci.yml 相同）
+        shell: bash
+        run: |
+          . scripts/ci_env.sh
+          env -u UV_DEFAULT_INDEX uv lock --project app --check --offline
+          uv export --project app --frozen --no-emit-project --quiet --output-file /tmp/requirements-ci.txt
+          uv venv /tmp/venv --python 3.12
+          uv pip install --python /tmp/venv/bin/python --require-hashes -r /tmp/requirements-ci.txt
+          /tmp/venv/bin/python -m pytest -q tests
+      - name: package（和 .gitlab-ci.yml 相同）
+        shell: bash
+        run: |
+          . scripts/ci_env.sh
+          python3 --version
+          python3 scripts/build_release.py --wheels

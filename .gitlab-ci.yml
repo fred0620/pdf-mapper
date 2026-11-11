@@ -24,7 +24,11 @@ workflow:
 
 # 打標籤的 pipeline 拿得到 CI_JOB_TOKEN，可以上傳到套件庫，用到的映像檔與工具都要鎖版本
 variables:
-  UV_IMAGE: ghcr.io/astral-sh/uv:0.13.6-python3.12-bookworm-slim
+  # uv 版本和 launcher 下載的相同；Python 3.12 和 app/.python-version 相同；trixie-slim 是目前的 Debian 精簡版。
+  # uv 已不提供 bookworm 的映像檔。Alpine 雖然更小，但裝不了預先編譯的套件，不要用。
+  # 可用的標籤：https://docs.astral.sh/uv/guides/integration/docker/#available-images
+  # GitHub 的 gitlab-image.yml 會在這個映像檔裡跑一次 test 與 package，確認標籤存在、指令能用。
+  UV_IMAGE: ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
   UV_LINK_MODE: copy
   UV_NO_PROGRESS: "1"
