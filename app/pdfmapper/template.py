@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from . import ocr as ocr_engine
-from .align import box_center, find_text, make_patch
+from .align import Transform, align_page, box_center, find_text, make_patch
 from .document import Document, Page, expand, group_lines, is_garbled, line_text
 
 try:  # Python 3.11 起移到 re 底下
@@ -202,8 +202,11 @@ def collect_anchors(template: dict) -> list[dict]:
     return anchors
 
 
-def finalize(template: dict, reference: Document) -> dict:
-    """用基準範例補齊每個定位點的影像圖塊與文字中心，之後解析就不用再開基準檔。"""
+def finalize(template: dict, reference: Document, pages: set[int] | None = None) -> dict:
+    """用基準範例補齊每個定位點的影像圖塊與文字中心，之後解析就不用再開基準檔。
+
+    pages 有指定時只補這幾頁（換基準時只補實際換算過的頁面）。
+    """
     label_items = [f["label"] | {"ref_page": f.get("ref_page", 0), "_owner": f}
                    for f in template.get("fields", []) if f.get("kind") == "key_value" and f.get("label")]
     marker_items = []
@@ -215,7 +218,9 @@ def finalize(template: dict, reference: Document) -> dict:
         if table.get("end_marker"):
             marker_items.append(table["end_marker"] | {"_owner": {"label": table["end_marker"]}})
     for item in template.get("anchors", []) + label_items + marker_items:
-        page_index = min(item.get("ref_page", 0), len(reference) - 1)
+        page_index = item.get("ref_page", 0)
+        if page_index >= len(reference) or (pages is not None and page_index not in pages):
+            continue  # 這份基準沒有這一頁：保留原本的圖塊，不拿別頁的影像頂替
         page = reference.pages[page_index]
         target = item["_owner"]["label"] if "_owner" in item else item
         box = tuple(target["box"])
@@ -272,3 +277,105 @@ def suggest_anchors(page: Page, avoid: list, rule: str, limit: int = 6) -> list[
 
 def _overlaps(a, b) -> bool:
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+# ---------- 換基準時重新對位 ----------
+# 範本的座標屬於建立時的基準範例。換一份格式略有差異的 PDF 當基準時，
+# 用解析時同一套定位點對位，把座標一次換算成新基準的座標，之後照常編輯。
+SAME_PAGE = 0.002  # 換算後移動不到這個距離就當作同一份，不改座標也不重抓圖塊
+
+
+def _items_on(template: dict, page: int) -> list[tuple[dict, str]]:
+    """這一頁上所有帶座標的東西：(所在的 dict, 座標的鍵)。"""
+    items = []
+    for f in template.get("fields", []):
+        if f.get("ref_page", 0) == page:
+            items.append((f, "value_box"))
+            if f.get("label"):
+                items.append((f["label"], "box"))
+        if f.get("continuation") and f["continuation"].get("ref_page", 0) == page:
+            items.append((f["continuation"], "box"))
+    for a in template.get("anchors", []):
+        if a.get("ref_page", 0) == page:
+            items.append((a, "box"))
+    for t in template.get("tables", []):
+        for r in t.get("regions", []):
+            if r.get("ref_page", 0) == page:
+                items.append((r, "box"))
+                if r.get("header"):
+                    items.append((r["header"], "box"))
+        if t.get("end_marker") and t["end_marker"].get("ref_page", 0) == page:
+            items.append((t["end_marker"], "box"))
+    return items
+
+
+def _pages_used(template: dict) -> set[int]:
+    pages = set()
+    for f in template.get("fields", []):
+        pages.add(f.get("ref_page", 0))
+        if f.get("continuation"):
+            pages.add(f["continuation"].get("ref_page", 0))
+    for a in template.get("anchors", []):
+        pages.add(a.get("ref_page", 0))
+    for t in template.get("tables", []):
+        pages.update(r.get("ref_page", 0) for r in t.get("regions", []))
+        if t.get("end_marker"):
+            pages.add(t["end_marker"].get("ref_page", 0))
+    return pages
+
+
+def _round_box(box) -> list[float]:
+    x0, y0, x1, y1 = (min(1.0, max(0.0, round(v, 5))) for v in box)
+    return [x0, y0, x1, y1]
+
+
+def _movement(transform: Transform, items: list[tuple[dict, str]]) -> float:
+    worst = 0.0
+    for owner, key in items:
+        for x, y in ((owner[key][0], owner[key][1]), (owner[key][2], owner[key][3])):
+            nx, ny = transform.point(x, y)
+            worst = max(worst, abs(nx - x), abs(ny - y))
+    return worst
+
+
+def _apply(transform: Transform, template: dict, page: int) -> None:
+    for owner, key in _items_on(template, page):
+        owner[key] = _round_box(transform.box(tuple(owner[key])))
+        owner.pop("patch", None)  # 圖塊和文字中心改由新基準重新擷取
+        owner.pop("text_center", None)
+    for t in template.get("tables", []):
+        for r in t.get("regions", []):
+            if r.get("ref_page", 0) == page and r.get("dividers"):
+                y = (r["box"][1] + r["box"][3]) / 2
+                inner = [round(transform.point(x, y)[0], 5) for x in r["dividers"][1:-1]]
+                r["dividers"] = [r["box"][0], *sorted(inner), r["box"][2]]
+
+
+def rebase(template: dict, reference: Document, include_weak: bool = False) -> dict:
+    """依新基準對位，回傳換算後的範本與每一頁的結果。
+
+    每頁只用定義在這一頁的定位點；這一頁沒有時，才用頁面規則適用的定位點。
+    對位好的頁面才換算；不穩的頁面要使用者同意（include_weak）；對不上的不動。
+    基準沒有的頁面一律保留原樣，等換回夠長的範例再處理。
+    """
+    template = json.loads(json.dumps(template))
+    anchors = collect_anchors(template)
+    total = len(reference)
+    used = _pages_used(template)
+    pages = []
+    for index in sorted(p for p in used if p < total):
+        own = [a for a in anchors if a.get("ref_page", 0) == index]
+        candidates = own or [a for a in anchors if rule_matches(a.get("page_rule", "first"), index, total)]
+        transform = align_page(reference.pages[index], candidates, allow_ocr=True)
+        status = transform.quality  # good / weak / none / fixed
+        if status in ("good", "weak") and _movement(transform, _items_on(template, index)) < SAME_PAGE:
+            status = "same"
+        applied = status == "good" or (status == "weak" and include_weak)
+        if applied:
+            _apply(transform, template, index)
+        pages.append({"page": index + 1, "status": status, "applied": applied,
+                      "found": transform.found, "total": transform.total})
+    # 換算過的頁面立刻從新基準重抓圖塊，下次再對位時才會以新基準為準，不會一直累積誤差
+    finalize(template, reference, {p["page"] - 1 for p in pages if p["applied"]})
+    beyond = sorted(p + 1 for p in used if p >= total)
+    return {"template": template, "pages": pages, "beyond": beyond}

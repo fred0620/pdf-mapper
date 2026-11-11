@@ -58,6 +58,7 @@ const state = {
   focusRef: null,
   showAllValues: false,
   drawerOpen: false,
+  recovery: null,      // 上次關閉時未儲存的範本，等使用者決定要不要接著做
 };
 
 /* ---------- 伺服器 ---------- */
@@ -113,14 +114,53 @@ function undo() {
   state.selected = null;
   renderAll();
 }
+// 草稿只為了意外關閉時救回未儲存的修改。已儲存或空白的範本不保留，
+// 也不自動套用：重開時先詢問，避免上一次的名稱和框線留在新範本裡。
+const DRAFT_KEY = "pdfmapper.draft";
 function saveDraft() {
-  try { localStorage.setItem("pdfmapper.draft", JSON.stringify(state.template)); } catch (_e) { /* 非必要 */ }
+  state.recovery = null;
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ template: state.template, saved: state.savedTemplate }));
+  } catch (_e) { /* 非必要 */ }
+}
+function dropDraft() {
+  state.recovery = null;
+  try { localStorage.removeItem(DRAFT_KEY); } catch (_e) { /* 非必要 */ }
 }
 function loadDraft() {
   try {
-    const raw = localStorage.getItem("pdfmapper.draft");
-    if (raw) state.template = { ...blankTemplate(), ...JSON.parse(raw) };
-  } catch (_e) { /* 非必要 */ }
+    const data = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+    if (!data) return;
+    // 0.2.1 以前直接存範本本身
+    const template = { ...blankTemplate(), ...(data.template || data) };
+    const saved = data.template ? data.saved : null;
+    const empty = !template.name && !template.fields.length && !template.tables.length
+      && !template.anchors.length && !template.validations.length;
+    if (empty || comparable(template) === saved) dropDraft();
+    else state.recovery = { template, saved };
+  } catch (_e) { dropDraft(); }
+}
+function resumeDraft() {
+  const draft = state.recovery;
+  if (!draft) { renderLeft(); return; }
+  state.template = draft.template;
+  state.savedTemplate = draft.saved;
+  state.savedId = draft.saved ? draft.template.template_id : null;
+  state.undo = [];
+  state.selected = null;
+  saveDraft();
+  renderAll();
+  toast(state.docs.length ? "已接著上次的範本" : "已接著上次的範本，請加入基準範例 PDF 才能看到框線");
+}
+function recoveryNotice() {
+  const draft = state.recovery;
+  if (!draft) return null;
+  const name = draft.template.name ? `「${draft.template.name}」` : "";
+  return h("div", { class: "recovery" },
+    h("p", {}, `上次有未儲存的範本${name}，要接著做嗎？`),
+    h("div", { class: "list-actions" },
+      h("button", { class: "linkish", onclick: resumeDraft }, "接著做"),
+      h("button", { class: "linkish", onclick: () => { dropDraft(); renderLeft(); } }, "捨棄")));
 }
 function selectedItem() {
   const sel = state.selected;
@@ -586,21 +626,64 @@ function docRow(doc, meta, metaClass, onClick, extra) {
     extra);
 }
 const hasDefinitions = () => T().fields.length + T().tables.length + T().anchors.length > 0;
-function forgetReferenceImages() {
-  // 影像圖塊來自舊基準，改基準後要重新擷取
-  const targets = [
-    ...T().anchors, ...T().fields.map((f) => f.label).filter(Boolean),
-    ...T().tables.flatMap((t) => [...t.regions.map((r) => r.header), t.end_marker]).filter(Boolean),
-  ];
-  for (const item of targets) { delete item.patch; delete item.text_center; }
+// 範本座標屬於建立時的基準範例。換基準時用定位點對位，對得好的頁面把座標一次換算過來；
+// 對不上的頁面和這份基準沒有的頁面都保留原樣，不會因為換一份範例就弄壞原本的設定。
+const pageList = (pages) => pages.map((p) => p.page).join("、");
+const alignToReference = guard(async () => {
+  if (state.view !== "train" || !state.referenceId || !hasDefinitions()) return;
+  const reference = state.referenceId;
+  const request = (includeWeak) => api("/api/rebase", {
+    json: { template: T(), reference, include_weak: includeWeak },
+  });
+  toast("正在依定位點對位");
+  let result = await request(false);
+  const weak = result.pages.filter((p) => p.status === "weak");
+  if (weak.length && window.confirm(
+    `第 ${pageList(weak)} 頁只找到部分定位點（${weak.map((p) => `${p.found}/${p.total}`).join("、")}），`
+    + "位置可能不準。要照這個結果移動框線嗎？選「取消」會維持原位，之後自己調整。")) {
+    result = await request(true);
+  }
+  if (state.referenceId !== reference) return;  // 對位期間又換了基準
+  const applied = result.pages.filter((p) => p.applied);
+  if (applied.length) {
+    snapshot();
+    state.template = result.template;
+    state.tests = [];
+    saveDraft();
+    renderAll();
+  }
+  const lost = result.pages.filter((p) => p.status === "none");
+  const bare = result.pages.filter((p) => p.status === "fixed");
+  const messages = [];
+  if (applied.length) messages.push(`已依定位點調整第 ${pageList(applied)} 頁的位置，可用 Ctrl+Z 復原`);
+  if (lost.length) messages.push(`第 ${pageList(lost)} 頁對不上，框線維持原位，這份可能不是同一種文件`);
+  if (bare.length) messages.push(`第 ${pageList(bare)} 頁沒有定位點，框線維持原位，請逐一確認`);
+  if (result.beyond.length) messages.push(`第 ${result.beyond.join("、")} 頁的設定這份範例沒有，會保留不變`);
+  if (messages.length) toast(messages.join("。"), !!(lost.length || bare.length));
+  else $("toast").hidden = true;
+});
+const onReference = (page) => {
+  const ref = state.docs.find((d) => d.id === state.referenceId);
+  return !ref || page < ref.pages;
+};
+// 範本用到、但目前基準沒有的頁（從 1 起算）
+function missingPages() {
+  const ref = state.docs.find((d) => d.id === state.referenceId);
+  if (!ref) return [];
+  const pages = new Set();
+  for (const f of T().fields) { pages.add(f.ref_page); if (f.continuation) pages.add(f.continuation.ref_page); }
+  for (const a of T().anchors) pages.add(a.ref_page);
+  for (const t of T().tables) {
+    t.regions.forEach((r) => pages.add(r.ref_page));
+    if (t.end_marker) pages.add(t.end_marker.ref_page);
+  }
+  return [...pages].filter((p) => p >= ref.pages).sort((a, b) => a - b).map((p) => p + 1);
 }
 function setReference(id) {
   if (id === state.referenceId) return;
   if (hasDefinitions() && !window.confirm(
-    "改用這份當基準範例？已標注的框線不會自動移動，請逐一確認位置。定位點會改用這份的影像比對。")) return;
-  snapshot();
+    "改用這份當基準範例？會依定位點自動對位，對不上的頁面框線維持原位。")) return;
   state.referenceId = id;
-  forgetReferenceImages();
   state.tests = [];
   state.docId = id;
   state.page = 0;
@@ -608,6 +691,7 @@ function setReference(id) {
   state.pending = null;
   saveDraft();
   renderAll();
+  alignToReference();
 }
 const removeDoc = guard(async (id) => {
   const train = state.view === "train";
@@ -616,12 +700,14 @@ const removeDoc = guard(async (id) => {
   if (train && id === state.referenceId && hasDefinitions() && others.length && !window.confirm(
     `移除基準範例後，會改用「${others[0].name}」當基準。已標注的框線不會自動移動，要繼續嗎？`)) return;
   await api(`/api/docs/${id}`, { method: "DELETE" });
+  let realign = false;
   if (train) {
     state.docs = others;
     state.tests = state.tests.filter((r) => r.doc_id !== id);
     if (id === state.referenceId) {
       state.referenceId = others[0]?.id || null;
-      if (others.length) { forgetReferenceImages(); state.tests = []; saveDraft(); }
+      if (others.length) { state.tests = []; saveDraft(); }
+      realign = others.length > 0;
       state.selected = null;
       state.pending = null;
     }
@@ -632,6 +718,7 @@ const removeDoc = guard(async (id) => {
   }
   if (state.docId === id) { state.docId = others[0]?.id || null; state.page = 0; }
   renderAll();
+  if (realign) alignToReference();
 });
 const removeAllDocs = guard(async () => {
   const train = state.view === "train";
@@ -693,10 +780,11 @@ function renderLeftTrain() {
       : h("button", { class: "doc-reference", onclick: () => setReference(doc.id) }, "設為基準範例");
     return docRow(doc, meta, cls, () => openDoc(doc.id), makeReference);
   });
-  fill($("left"), 
+  fill($("left"),
+    recoveryNotice(),
     h("h2", {}, "範本名稱"),
     h("input", {
-      type: "text", value: T().name, placeholder: "例如：進口報單", "aria-label": "範本名稱",
+      type: "text", value: T().name, autocomplete: "off", placeholder: "例如：進口報單", "aria-label": "範本名稱",
       oninput: (e) => { T().name = e.target.value; T().template_id = e.target.value.trim().replace(/[^\p{L}\p{N}_-]+/gu, "_"); saveDraft(); renderRightActions(); },
     }),
     h("h2", {}, "範例 PDF"),
@@ -706,7 +794,14 @@ function renderLeftTrain() {
     h("select", { "aria-label": "開啟已存的範本", onchange: (e) => openTemplate(e.target.value) },
       h("option", { value: "" }, "選擇範本"),
       state.templates.map((t) => h("option", { value: t.id }, t.name))),
+    missingNote(),
     thumbs());
+}
+function missingNote() {
+  const pages = missingPages();
+  if (!pages.length) return null;
+  return h("p", { class: "note" },
+    `範本在第 ${pages.join("、")} 頁還有設定，這份基準範例沒有這幾頁。設定會保留不變，要修改時請換一份頁數夠的範例當基準。`);
 }
 // 影像圖塊是測試時自動補上的，不算使用者的修改
 // 後端回傳的鍵順序可能不同，所以比對前先排序
@@ -741,10 +836,12 @@ const openTemplate = guard(async (id) => {
   snapshot();
   state.template = { ...blankTemplate(), ...await api(`/api/templates/${encodeURIComponent(id)}`) };
   markSaved();
+  saveDraft();
   state.selected = null;
   state.tests = [];
   toast(state.docs.length ? "範本已開啟" : "範本已開啟，請加入基準範例 PDF 才能看到框線");
   renderAll();
+  alignToReference();
 });
 function togglePick(id, checked) {
   state.templateIds = checked ? [...state.templateIds, id] : state.templateIds.filter((t) => t !== id);
@@ -1042,13 +1139,18 @@ function columnsTab(table) {
 function placementTab(table) {
   const regions = table.regions.map((region, i) => h("div", { class: "region-card" },
     h("div", { class: "row" },
-      h("button", { class: "linkish", style: "text-align:left", onclick: () => setPage(region.ref_page) }, `第 ${region.ref_page + 1} 頁的範圍`),
+      onReference(region.ref_page)
+        ? h("button", { class: "linkish", style: "text-align:left", onclick: () => setPage(region.ref_page) }, `第 ${region.ref_page + 1} 頁的範圍`)
+        : h("span", { class: "note" }, `第 ${region.ref_page + 1} 頁的範圍（這份範例沒有這頁，保留不變）`),
       i ? h("button", {
         class: "linkish", style: "flex:0 0 auto", onclick: () => { snapshot(); table.regions.splice(i, 1); renderAll(); },
       }, "移除") : null),
     ruleSelect(region, renderAll),
     markerRow("表頭", region.header, "框選表頭",
-      () => { state.markerRegion = i; setPage(region.ref_page); setTool("header"); },
+      () => {
+        if (!onReference(region.ref_page)) { toast("這份基準範例沒有這一頁，請換一份頁數夠的範例", true); return; }
+        state.markerRegion = i; setPage(region.ref_page); setTool("header");
+      },
       () => { snapshot(); delete region.header; renderAll(); })));
   return [
     h("h3", {}, "每一頁的範圍"),
@@ -1231,9 +1333,10 @@ function renderRightTrain() {
     body[0].style.marginBottom = "8px";
   } else {
     const rows = orderedItems().map(({ type, item: entry }) => h("li", {},
-      h("button", { onclick: () => { if (entry.ref_page !== undefined) state.page = entry.ref_page; else state.page = entry.regions[0].ref_page; selectItem(type, entry.id); renderPage(); } },
+      h("button", { onclick: () => { const doc = currentDoc(); const page = entry.ref_page ?? entry.regions[0].ref_page; if (doc && page < doc.pages) state.page = page; selectItem(type, entry.id); renderAll(); } },
         h("span", { class: "num" }, `(${numberOf(entry.id)})`), entry.name,
-        h("span", { class: "kind" }, type === "table" ? "表格" : entry.kind === "key_value" ? "有標題" : "只有值"))));
+        h("span", { class: "kind" }, (type === "table" ? "表格" : entry.kind === "key_value" ? "有標題" : "只有值")
+          + (onReference(entry.ref_page ?? entry.regions[0].ref_page) ? "" : "，這份範例沒有這頁")))));
     const anchorCount = T().anchors.length + T().fields.filter((f) => f.kind === "key_value").length;
     body = [
       h("h2", {}, "要抓的資料"),
@@ -1311,6 +1414,7 @@ const saveTemplate = guard(async () => {
     && !window.confirm(`已經有叫做「${T().name}」的範本，要覆蓋嗎？`)) return;
   await api("/api/templates", { json: { template: T(), reference: state.referenceId } });
   markSaved();
+  saveDraft();
   await loadTemplates();
   if (!state.templateIds.includes(T().template_id)) state.templateIds.push(T().template_id);
   toast(`範本「${T().name}」已儲存。要做下一個範本時，按「開始新範本」`);
@@ -1449,9 +1553,11 @@ const addFiles = guard(async (files) => {
   failed.forEach((item) => toast(`${item.name}：${item.error}`, true));
   const list = state.view === "train" ? state.docs : state.runDocs;
   list.push(...docs);
-  if (state.view === "train" && !state.referenceId && docs.length) state.referenceId = docs[0].id;
+  const newReference = state.view === "train" && !state.referenceId && docs.length > 0;
+  if (newReference) state.referenceId = docs[0].id;
   if (!state.docId && docs.length) { state.docId = docs[0].id; state.page = 0; }
   renderAll();
+  if (newReference) alignToReference();
 });
 
 /* ---------- 與本機程式的連線 ---------- */
