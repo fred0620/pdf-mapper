@@ -361,6 +361,16 @@ def test_template():
     return jsonify({"results": results, "template": template})
 
 
+@app.post("/api/rebase")
+def rebase_template():
+    """換基準範例時，依定位點把範本座標換算到新基準（不存檔）。"""
+    body = _json_body()
+    template = body["template"]
+    if not isinstance(template, dict):
+        raise ValueError("範本格式不正確")
+    return jsonify(tpl.rebase(template, _doc(body["reference"]), bool(body.get("include_weak"))))
+
+
 @app.get("/api/templates")
 def list_templates():
     items = []
