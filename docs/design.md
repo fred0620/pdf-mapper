@@ -70,6 +70,7 @@
 - 儲存格可以有多行，每個能修改的地方（待檢查、表格就地修改、右欄選取、另開視窗）都測：打開時是完整內容且不用捲動、沒改按 Enter 不算修改、Shift+Enter 換行、處理紀錄與 Excel 保留換行。比對前把 `\r\n` 統一成 `\n`，textarea 會自動轉換，沒改的多行內容才不會被當成修改。
 - 用電腦上已有的 Edge 或 Chrome（`channel`），不另外下載瀏覽器；playwright 放在 `ui` 群組，不在 dev，CI 映像檔沒有瀏覽器所以不跑，發版前在自己的電腦執行。
 - 頁面的 CSP 不允許 eval，測試等待條件一律用 `expect`，不用 `wait_for_function`。
+- 什麼時候跑：一輪修改告一段落時跑一次，不是每改一個檔案就跑（一次約 1 分鐘）。`scripts/ui_check.py` 記下上次通過時 `app/pdfmapper`、`tests/ui` 等檔案的雜湊，沒變動就略過。Claude Code 的 Stop hook（`.claude/settings.json`）在每輪結束時呼叫它，沒過就把錯誤交回給 Claude 繼續修；修過一次仍失敗就不再擋，交給人判斷，避免無限循環。找不到瀏覽器而整組跳過時不算通過。規則也寫在 `CLAUDE.md`，沒有 hook 的環境照樣適用。
 
 ## 多範本
 - 先比定位點命中率，分數接近的再實際解析，選問題最少的。

@@ -10,6 +10,7 @@
 - PDF 與結果表格可以各自移到新視窗，兩邊同步選取、頁數與修改，方便兩個螢幕對照
 - 人工確認或修改過的值改用藍色（畫面與 Excel），Excel「待檢查」多一欄「處理」
 - 新增畫面測試（tests/ui），用電腦上的 Edge 或 Chrome 實際操作，包含多行儲存格在每個修改位置的換行保留
+- 開發：`scripts/ui_check.py` 在程式有變動時才跑畫面測試；Claude Code 每輪修改結束時自動執行（`.claude/settings.json`、`CLAUDE.md`）
 
 ## 0.2.2 - 2026-11-11
 

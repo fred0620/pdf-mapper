@@ -26,7 +26,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 |---|---|
 | 跑全部測試 | `uv run --project app pytest tests` |
 | 只跑一個檔案 | `uv run --project app pytest tests/test_server.py` |
-| 跑畫面測試（用電腦上的 Edge 或 Chrome 實際操作） | `uv run --project app --group ui pytest tests/ui` |
+| 跑畫面測試（用電腦上的 Edge 或 Chrome 實際操作） | `uv run --project app --group ui python scripts/ui_check.py`（跟上次通過時比沒變動就略過，`--force` 一定跑） |
 | 用使用者的方式啟動 | `bash run.sh` 或 `run.bat` |
 | 重建範例 PDF 與示範範本 | `uv run --project app python scripts/build_demo.py` |
 | 改了使用手冊的示意圖 | 改 `scripts/make_manual_figures.py` 後執行它 |

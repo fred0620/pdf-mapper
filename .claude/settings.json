@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && uv run --project app --group ui --quiet python scripts/ui_check.py --hook",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}
