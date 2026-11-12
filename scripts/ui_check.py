@@ -44,14 +44,15 @@ def can_run() -> str | None:
     return None
 
 
-def run_tests() -> tuple[bool, str]:
+def run_tests() -> tuple[str, str]:
+    """回傳 (passed / failed / skipped, 輸出的最後幾行)。"""
     proc = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:logging", "tests/ui"],
                           cwd=ROOT, capture_output=True, text=True)
     output = (proc.stdout + proc.stderr).strip().splitlines()
     skipped_all = proc.returncode == 0 and " passed" not in (output[-1] if output else "")
-    if skipped_all:  # 找不到瀏覽器時整組跳過，不能當成通過
-        return True, "畫面測試整組跳過（找不到 Edge 或 Chrome），沒有實際檢查"
-    return proc.returncode == 0, "\n".join(output[-TAIL_LINES:])
+    if skipped_all:  # 找不到瀏覽器時整組跳過，不能當成通過，也不記錄
+        return "skipped", "畫面測試整組跳過（找不到 Edge 或 Chrome），沒有實際檢查"
+    return ("passed" if proc.returncode == 0 else "failed"), "\n".join(output[-TAIL_LINES:])
 
 
 def main() -> int:
@@ -74,8 +75,11 @@ def main() -> int:
     if reason:
         print(reason)
         return 0
-    passed, report = run_tests()
-    if passed:
+    status, report = run_tests()
+    if status == "skipped":
+        print(report)
+        return 0
+    if status == "passed":
         STAMP.parent.mkdir(exist_ok=True)
         STAMP.write_text(current)
         print(report.splitlines()[-1] if report else "畫面測試通過")
