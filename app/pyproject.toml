@@ -1,6 +1,6 @@
 [project]
 name = "pdf-mapper"
-version = "0.2.2"
+version = "0.3.0"
 description = "標注範本後，批次把 PDF 轉成 Excel 的本機工具"
 requires-python = ">=3.10,<3.14"
 dependencies = [
@@ -18,6 +18,9 @@ dependencies = [
 [dependency-groups]
 # 只有跑測試、重新產生範例或手冊才需要，一般使用者不會安裝
 dev = ["markdown>=3.5", "pytest>=8", "reportlab>=4"]
+# 畫面測試（tests/ui）：用電腦上已有的 Edge 或 Chrome，不另外下載瀏覽器。
+# CI 映像檔沒有瀏覽器，所以不放在 dev；在自己的電腦用 uv run --group ui pytest tests/ui 執行
+ui = ["playwright>=1.48"]
 
 [tool.uv]
 package = false

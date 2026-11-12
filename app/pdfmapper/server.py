@@ -29,7 +29,7 @@ from .extract import REASONS, read_box
 from .limits import LimitExceeded
 from .logs import clean as log_text
 from .logs import log
-from .parser import find_value, parse_best, parse_pdf, summarize
+from .parser import find_value, handle_value, parse_best, parse_pdf, summarize
 
 WEB = Path(__file__).resolve().parent / "web"
 UPLOADS = paths.UPLOADS
@@ -490,17 +490,14 @@ def edit_value(run_id):
     if value is None:
         return _error("找不到這個項目")
     action = body.get("action")
-    if action == "confirm":
-        value["status"], value["reasons"] = "confirmed", []
-    else:
-        new = body.get("value")
-        if not isinstance(new, str) or len(new) > MAX_EDIT_LENGTH:
-            raise ValueError(f"修正的內容必須是文字，最多 {MAX_EDIT_LENGTH} 字")
-        value.setdefault("original", value["value"])
-        value["value"], value["status"], value["reasons"] = new, "corrected", []
-        value["source"] = "manual"
+    if action not in ("confirm", "correct", "revert"):
+        raise ValueError("不認得的動作")
+    new = body.get("value")
+    if action == "correct" and (not isinstance(new, str) or len(new) > MAX_EDIT_LENGTH):
+        raise ValueError(f"修正的內容必須是文字，最多 {MAX_EDIT_LENGTH} 字")
+    handle_value(value, action, new)
     summarize(result)
-    log.info("人工%s run=%s doc=%s", "確認" if action == "confirm" else "修正", run_id,
+    log.info("人工%s run=%s doc=%s", {"confirm": "確認", "correct": "修正", "revert": "還原"}[action], run_id,
              log_text(result.get("doc_id", ""), 40))  # 不記錄修正的內容
     return jsonify(result)
 
