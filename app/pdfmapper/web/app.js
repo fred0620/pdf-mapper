@@ -1474,6 +1474,8 @@ function handledLine(value) {
   }
   return h("p", { class: "change" }, "確認原值「", h("strong", {}, value.value || "（空白）"), "」無誤");
 }
+// textarea 會把 \r\n 換成 \n，比對前先統一，沒改的多行內容才不會被當成修改
+const sameText = (a, b) => a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
 function editor(entry, label) {
   // 用 textarea：單行輸入框會吃掉換行，按確認時多行內容就會黏在一起
   const lineCount = entry.value.value.split("\n").length;
@@ -1481,7 +1483,7 @@ function editor(entry, label) {
     value: entry.value.value, rows: Math.min(Math.max(lineCount, 1), 6), "aria-label": `${entry.name} 的正確值`,
   });
   const save = () => {
-    const same = input.value === entry.value.value;
+    const same = sameText(input.value, entry.value.value);
     if (same && !["review", "missing"].includes(entry.value.status)) return;
     editValue(entry.ref, same && entry.value.value ? "confirm" : "correct", input.value);
   };
@@ -1585,7 +1587,7 @@ function editCell(td, value, ref) {
   const finish = (save) => {
     if (done) return;
     done = true;
-    if (save && input.value !== value.value) editValue(ref, "correct", input.value);
+    if (save && !sameText(input.value, value.value)) editValue(ref, "correct", input.value);
     else renderDrawer();
   };
   input.addEventListener("keydown", (e) => {
@@ -1593,7 +1595,11 @@ function editCell(td, value, ref) {
     if (e.key === "Escape") { e.preventDefault(); finish(false); }
   });
   input.addEventListener("blur", () => finish(true));
+  // 儲存格可以有多行：跟著內容長高，長的行折行後也看得到全部
+  const grow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight + 2}px`; };
+  input.addEventListener("input", grow);
   td.replaceChildren(input);
+  grow();
   input.focus();
   input.select();
 }

@@ -40,7 +40,7 @@ def browser():
 
 
 @pytest.fixture(scope="session")
-def app_url(tmp_path_factory, template, invoice_template):
+def app_url(tmp_path_factory, template, invoice_template, floating_template):
     """啟動真正的本機服務，範本、上傳與輸出都放在暫存資料夾。"""
     from werkzeug.serving import make_server
 
@@ -52,6 +52,8 @@ def app_url(tmp_path_factory, template, invoice_template):
         setattr(server, name, folder)
     tpl.save({**template, "template_id": "customs", "name": "報單"}, server.TEMPLATES / "customs.json")
     tpl.save({**invoice_template, "template_id": "invoice", "name": "發票"}, server.TEMPLATES / "invoice.json")
+    # 浮動表格的「內容」欄會換行，用來測多行儲存格
+    tpl.save({**floating_template, "template_id": "floating", "name": "浮動表格"}, server.TEMPLATES / "floating.json")
     httpd = make_server("127.0.0.1", 0, server.app, threaded=True)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

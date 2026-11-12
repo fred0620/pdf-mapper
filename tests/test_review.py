@@ -75,3 +75,27 @@ def test_edit_route_any_value_and_excel_record(samples, template, tmp_path, monk
     finally:
         server._runs.pop("r")
         server._run_templates.pop("r")
+
+
+def test_multiline_correction_in_excel(samples, floating_template, tmp_path):
+    """多行的值修改後，Excel 保留換行並自動換行顯示。"""
+    from openpyxl import load_workbook
+
+    folder, _ = samples
+    result = parse_pdf(folder / "sample_7_table_a.pdf", floating_template)
+    ref, value = next((r, v) for r, _n, v in iter_values(result) if "\n" in v["value"])
+    original = value["value"]
+    handle_value(value, "correct", original + "\n補一行")
+    assert value["original"] == original
+    path = write_excel([result], tmp_path / "out.xlsx")
+    book = load_workbook(path)
+    cells = [c for sheet in book.worksheets for row in sheet.iter_rows() for c in row
+             if c.value == original + "\n補一行"]
+    assert cells and all(c.alignment.wrap_text for c in cells if c.parent.title != "待檢查")
+    review = book["待檢查"]
+    header = [c.value for c in review[1]]
+    row = next(dict(zip(header, (c.value for c in r))) for r in review.iter_rows(min_row=2)
+               if r[header.index("抓到的值")].value == original + "\n補一行")
+    assert original in row["處理"]  # 原值的換行也留著
+    handle_value(value, "revert")
+    assert value["value"] == original
