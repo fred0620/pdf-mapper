@@ -59,6 +59,7 @@ const state = {
   showAllValues: false,
   drawerOpen: false,
   recovery: null,      // 上次關閉時未儲存的範本，等使用者決定要不要接著做
+  popped: { pdf: false, table: false },  // 主視窗：哪些畫面移到另一個視窗
 };
 
 /* ---------- 伺服器 ---------- */
@@ -507,7 +508,8 @@ function renderResultBoxes(layer, result) {
   for (const entry of allValues(result)) {
     const { value, ref } = entry;
     if (!value.box || (value.status === "ok" && !value.value)) continue;
-    const status = ["review", "missing"].includes(value.status) ? value.status : "ok";
+    const status = ["review", "missing"].includes(value.status) ? value.status
+      : ["corrected", "confirmed"].includes(value.status) ? "handled" : "ok";
     const places = [{ page: value.page, box: value.box }, ...(value.extra_boxes || [])];
     for (const place of places.filter((p) => p.page === state.page + 1)) {
       const node = markBox(place.box, `${status}${state.focusRef === ref ? " focus" : ""}`, "",
@@ -577,6 +579,7 @@ function setPage(index) {
   state.page = clamp(index, 0, doc.pages - 1);
   state.pending = null;
   renderToolbar(); renderHint(); renderPage(); renderLeft();
+  sendSync();
 }
 function renderToolbar() {
   const doc = currentDoc();
@@ -585,13 +588,14 @@ function renderToolbar() {
     class: "tool", "aria-pressed": String(state.tool === id), disabled: !editing,
     onclick: () => setTool(id),
   }, label, h("kbd", {}, key))) : [];
-  fill($("toolbar"), ...tools, h("span", { class: "spring" }),
+  fill($("toolbar"), ...tools, POPOUT && doc ? h("span", { class: "toolbar-file" }, doc.name) : null, h("span", { class: "spring" }),
     doc ? h("span", { class: "pager" },
       h("button", { disabled: state.page === 0, "aria-label": "上一頁", onclick: () => setPage(state.page - 1) }, "‹"),
       ` 第 ${state.page + 1} / ${doc.pages} 頁 `,
       h("button", { disabled: state.page >= doc.pages - 1, "aria-label": "下一頁", onclick: () => setPage(state.page + 1) }, "›"),
       h("button", { "aria-label": "縮小", onclick: () => zoomBy(0.85) }, "−"),
-      h("button", { "aria-label": "放大", onclick: () => zoomBy(1.18) }, "+")) : "");
+      h("button", { "aria-label": "放大", onclick: () => zoomBy(1.18) }, "+"),
+      popButton("pdf")) : "");
 }
 function zoomBy(factor) { state.zoom = clamp(state.zoom * factor, 0.5, 4); renderPage(); }
 function renderHint() {
@@ -864,6 +868,7 @@ function renderLeftRun() {
       state.docId = doc.id; state.page = 0;
       state.focusRef = null;
       renderAll();
+      sendSync();
     });
   });
   const running = state.run && !state.run.finished;
@@ -1432,7 +1437,16 @@ function focusValue(ref) {
   const entry = result && allValues(result).find((e) => e.ref === ref);
   if (entry?.value.page && entry.value.page - 1 !== state.page) { state.page = entry.value.page - 1; renderToolbar(); renderLeft(); }
   renderPage();
+  markFocusedCell();
+  if (state.view === "run") renderRight();
   document.querySelector(".box.focus")?.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+  sendSync();
+}
+// 只換 class，不重畫表格：重畫會讓按兩下的第二下點到新的格子，修改就打不開
+function markFocusedCell() {
+  document.querySelectorAll(".data td.focus").forEach((td) => td.classList.remove("focus"));
+  const td = state.focusRef && document.querySelector(`.data td[data-ref="${CSS.escape(state.focusRef)}"]`);
+  if (td) { td.classList.add("focus"); td.scrollIntoView({ block: "nearest", inline: "nearest" }); }
 }
 const editValue = guard(async (ref, action, value) => {
   const index = state.run.results.findIndex((r) => r.doc_id === state.docId);
@@ -1442,6 +1456,7 @@ const editValue = guard(async (ref, action, value) => {
   state.run.exported = false;
   state.run.results[index] = result;
   renderLeft(); renderRight(); renderOverlay(); renderDrawer();
+  sendSync({ result, index });
 });
 function templateNote(result) {
   const match = result.match === null || result.match === undefined ? "" : `，符合 ${Math.round(result.match * 100)}%`;
@@ -1450,6 +1465,65 @@ function templateNote(result) {
     `${candidates.length ? "自動選用" : "使用範本"}：${result.template_name}${match}`,
     candidates.length ? h("small", {}, candidates.map((c) => `${c.name} ${Math.round(c.match * 100)}%`).join("，")) : null);
 }
+// 處理過的值：原本被標記後確認或修改，或是人工改過的正常值。留在畫面上當紀錄，可以還原。
+const isHandled = (value) => !!value.flag || value.original !== undefined;
+function handledLine(value) {
+  if (value.status === "corrected") {
+    return h("p", { class: "change" }, "原本「", h("span", { class: "old" }, value.original || "（空白）"),
+      "」改成「", h("strong", {}, value.value || "（空白）"), "」");
+  }
+  return h("p", { class: "change" }, "確認原值「", h("strong", {}, value.value || "（空白）"), "」無誤");
+}
+// textarea 會把 \r\n 換成 \n，比對前先統一，沒改的多行內容才不會被當成修改
+const sameText = (a, b) => a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
+function editor(entry, label) {
+  // 用 textarea：單行輸入框會吃掉換行，按確認時多行內容就會黏在一起
+  const lineCount = entry.value.value.split("\n").length;
+  const input = h("textarea", {
+    value: entry.value.value, rows: Math.min(Math.max(lineCount, 1), 6), "aria-label": `${entry.name} 的正確值`,
+  });
+  const save = () => {
+    const same = sameText(input.value, entry.value.value);
+    if (same && !["review", "missing"].includes(entry.value.status)) return;
+    editValue(entry.ref, same && entry.value.value ? "confirm" : "correct", input.value);
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); }
+  });
+  return h("div", { class: "row" }, input, h("button", { class: "btn", onclick: save }, label));
+}
+function pendingItem(entry) {
+  return h("article", { class: `review-item ${entry.value.status}`, "data-ref": entry.ref },
+    h("button", { class: "locate", onclick: () => focusValue(entry.ref) },
+      h("h3", {}, entry.name), h("span", { class: "why" }, reasonLine(entry.value))),
+    entry.value.raw && entry.value.raw !== entry.value.value
+      ? h("p", { class: "raw-text" }, "原始內容：", entry.value.raw) : null,
+    editor(entry, "確認"));
+}
+function recordItem(entry) {
+  const { value } = entry;
+  const why = value.flag ? value.flag.reasons.map((code) => state.reasons[code] || code).join("，") : "";
+  return h("article", { class: "review-item handled", "data-ref": entry.ref },
+    h("button", { class: "locate", onclick: () => focusValue(entry.ref) },
+      h("h3", {}, entry.name),
+      h("span", { class: "why" }, value.status === "corrected" ? "已人工修改" : "已確認")),
+    why ? h("p", { class: "flag-note" }, `原本需檢查：${why}`) : null,
+    handledLine(value),
+    h("button", { class: "linkish", onclick: () => editValue(entry.ref, "revert") },
+      value.flag ? "還原，放回待檢查" : "還原成抓到的值"));
+}
+// 點選了不在待檢查清單上的值（正常值或處理紀錄），也能在這裡直接修改
+function selectedEditor(result, pending) {
+  if (!state.focusRef || pending.some((e) => e.ref === state.focusRef)) return null;
+  const entry = allValues(result).find((e) => e.ref === state.focusRef);
+  if (!entry) return null;
+  return h("article", { class: "review-item selected", "data-ref": entry.ref },
+    h("h3", {}, `選取：${entry.name}`),
+    entry.value.raw && entry.value.raw !== entry.value.value
+      ? h("p", { class: "raw-text" }, "原始內容：", entry.value.raw) : null,
+    editor(entry, "儲存修改"),
+    h("p", { class: "note" }, "修改會保留抓到的原值，之後可以還原。"));
+}
 function renderRightRun() {
   const result = activeResult();
   if (!result) {
@@ -1457,29 +1531,23 @@ function renderRightRun() {
       h("p", { class: "note" }, "解析完成後，有疑慮的值會列在這裡，點一下就能看到它在頁面上的位置。"));
     return;
   }
-  const pending = allValues(result).filter((e) => ["review", "missing"].includes(e.value.status));
-  const items = pending.map((entry) => {
-    // 用 textarea：單行輸入框會吃掉換行，按確認時多行內容就會黏在一起
-    const lineCount = entry.value.value.split("\n").length;
-    const input = h("textarea", {
-      value: entry.value.value, rows: Math.min(Math.max(lineCount, 1), 6), "aria-label": `${entry.name} 的正確值`,
-    });
-    return h("article", { class: `review-item ${entry.value.status}` },
-      h("button", { class: "locate", onclick: () => focusValue(entry.ref) },
-        h("h3", {}, entry.name), h("span", { class: "why" }, reasonLine(entry.value))),
-      entry.value.raw && entry.value.raw !== entry.value.value
-        ? h("p", { class: "raw-text" }, "原始內容：", entry.value.raw) : null,
-      h("div", { class: "row" }, input,
-        h("button", { class: "btn", onclick: () => editValue(entry.ref, input.value === entry.value.value && entry.value.value ? "confirm" : "correct", input.value) }, "確認")));
-  });
+  const values = allValues(result);
+  const pending = values.filter((e) => ["review", "missing"].includes(e.value.status));
+  const records = values.filter((e) => isHandled(e.value) && !["review", "missing"].includes(e.value.status));
+  const confirmed = records.filter((e) => e.value.status === "confirmed").length;
+  const summary = records.length
+    ? `待檢查都已處理：確認 ${confirmed} 項，修改 ${records.length - confirmed} 項。`
+    : "這份沒有需要檢查的值。";
   const done = state.run.finished;
-  fill($("right"), 
+  fill($("right"),
     h("h2", {}, `${result.file}`),
     h("p", { class: "note" }, `${result.pages} 頁，${result.counts.total} 個值。`),
     templateNote(result),
     result.issues.map((issue) => issueRow(issue, true)),
+    selectedEditor(result, pending),
     h("h2", {}, `待檢查 ${pending.length} 項`),
-    items.length ? items : h("p", { class: "note" }, "這份沒有需要檢查的值。"),
+    pending.length ? pending.map(pendingItem) : h("p", { class: "note", id: "pendingNote" }, summary),
+    records.length ? [h("h2", {}, `處理紀錄 ${records.length} 項`), records.map(recordItem)] : null,
     h("div", { class: "actions" },
       h("a", {
         class: "btn primary wide", style: "text-align:center;text-decoration:none", download: "",
@@ -1499,12 +1567,41 @@ function renderRightRun() {
 function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); }
 
 /* ---------- 抓取結果 ---------- */
+const CELL_STATUS = { review: "review", missing: "missing", corrected: "handled", confirmed: "handled" };
 function dataCell(value, ref, text) {
-  const status = ["review", "missing", "corrected"].includes(value?.status) ? value.status : "";
-  return h("td", {
-    class: status, title: value ? [text, reasonLine(value)].filter(Boolean).join("\n") : "",
+  const editable = state.view === "run" && !!value;
+  const td = h("td", {
+    class: [CELL_STATUS[value?.status] || "", state.focusRef === ref ? "focus" : ""].filter(Boolean).join(" "),
+    "data-ref": ref,
+    title: value ? [text, reasonLine(value), editable ? "按兩下可以修改" : ""].filter(Boolean).join("\n") : "",
     onclick: () => value && focusValue(ref),
   }, text ?? "");
+  if (editable) td.addEventListener("dblclick", () => editCell(td, value, ref));
+  return td;
+}
+// 就地修改：Enter 儲存、Shift+Enter 換行、Esc 取消
+function editCell(td, value, ref) {
+  if (td.querySelector("textarea")) return;
+  const input = h("textarea", { class: "cell-edit", value: value.value, rows: Math.max(1, value.value.split("\n").length), "aria-label": "修改這一格" });
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    if (save && !sameText(input.value, value.value)) editValue(ref, "correct", input.value);
+    else renderDrawer();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); finish(true); }
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+  // 儲存格可以有多行：跟著內容長高，長的行折行後也看得到全部
+  const grow = () => { input.style.height = "auto"; input.style.height = `${input.scrollHeight + 2}px`; };
+  input.addEventListener("input", grow);
+  td.replaceChildren(input);
+  grow();
+  input.focus();
+  input.select();
 }
 function renderDrawer() {
   const result = activeResult();
@@ -1520,7 +1617,11 @@ function renderDrawer() {
       h("thead", {}, h("tr", {}, h("th", {}, "頁"), table.columns.map((c) => h("th", {}, c.name)))),
       h("tbody", {}, table.rows.map((row, r) => h("tr", {}, h("td", {}, String(row.page)),
         table.columns.map((c) => dataCell(row.cells[c.id], `t:${table.id}:${r}:${c.id}`, row.cells[c.id]?.value))))))]);
-  fill(drawer, fieldTable, tables);
+  const doc = currentDoc();
+  fill(drawer, h("div", { class: "drawer-bar" },
+    h("span", {}, POPOUT && doc ? doc.name : "抓取結果"), h("span", { class: "spring" }),
+    state.view === "run" ? popButton("table") : null), fieldTable, tables);
+  markFocusedCell();
 }
 
 /* ---------- 解析流程 ---------- */
@@ -1536,6 +1637,7 @@ const startRun = guard(async () => {
     state.run = { id, ...data };
     renderLeft();
     if (state.run.results.length && !state.focusRef) renderAll();
+    sendSync({ reload: true });
   }
   const pending = state.run.results.filter((r) => r.status !== "ok").length;
   toast(pending ? `完成，${pending} 份有待檢查項目` : "完成，全部正常");
@@ -1580,7 +1682,89 @@ function watchConnection() {
   setInterval(heartbeat, 15000);
   window.addEventListener("pagehide", () => navigator.sendBeacon(`/api/bye?client=${encodeURIComponent(clientId)}`));
   window.addEventListener("pageshow", (event) => { if (event.persisted) heartbeat(); });
-  window.addEventListener("beforeunload", (event) => { if (hasUnsavedResults()) event.preventDefault(); });
+  // 另開的視窗只是同一份結果的另一個畫面，關掉不會遺失資料
+  if (!POPOUT) window.addEventListener("beforeunload", (event) => { if (hasUnsavedResults()) event.preventDefault(); });
+}
+
+/* ---------- 另開視窗核對 ----------
+ * PDF 或結果表格可以移到另一個視窗（例如第二個螢幕），兩邊對照。
+ * 各視窗用 BroadcastChannel 互相通知選取、頁面與修改；資料都在本機程式，另開的視窗自己去拿。
+ * 主視窗關閉或重新整理時，另開的視窗會跟著關掉，避免看著過期的結果。
+ */
+const POPOUT = ["pdf", "table"].includes(new URLSearchParams(location.search).get("popout"))
+  ? new URLSearchParams(location.search).get("popout") : null;
+const channel = "BroadcastChannel" in window ? new BroadcastChannel("pdfmapper-popout") : null;
+const POP_TEXT = { pdf: "PDF", table: "結果表格" };
+function popButton(mode) {
+  if (!channel || state.view !== "run") return null;
+  if (POPOUT === mode) {
+    return h("button", { class: "pop", title: "關閉這個視窗，回到主視窗", onclick: () => window.close() }, "收回到主視窗");
+  }
+  if (POPOUT) return null;
+  return h("button", { class: "pop", title: `把${POP_TEXT[mode]}移到另一個視窗，方便對照`, onclick: () => popOut(mode) }, "在新視窗開啟");
+}
+function popOut(mode) {
+  const size = mode === "pdf" ? "width=900,height=1000" : "width=1200,height=560";
+  const win = window.open(`/?popout=${mode}`, `pdfmapper-${mode}`, `popup,${size}`);
+  if (!win) { toast("瀏覽器擋住了新視窗，請允許這個網站開啟彈出式視窗", true); return; }
+  setPopped(mode, true);
+}
+function popIn(mode) {
+  channel?.postMessage({ type: "close", target: mode });
+  setPopped(mode, false);
+}
+function setPopped(mode, on) {
+  state.popped[mode] = on;
+  document.body.classList.toggle(`${mode}-out`, on);
+  const out = Object.keys(state.popped).filter((key) => state.popped[key]);
+  const note = $("popnote");
+  note.hidden = !out.length;
+  fill(note, out.map((key) => h("span", {}, `${POP_TEXT[key]}在另一個視窗　`,
+    h("button", { class: "linkish", onclick: () => popIn(key) }, "收回"))));
+  renderPage();
+  renderDrawer();
+}
+function sendSync(extra = {}) {
+  if (!channel || state.view !== "run" || !state.run) return;
+  channel.postMessage({
+    type: "sync", from: POPOUT || "main", runId: state.run.id, docId: state.docId, page: state.page,
+    focusRef: state.focusRef, runDocs: POPOUT ? undefined : state.runDocs, ...extra,
+  });
+}
+const applySync = guard(async (msg) => {
+  if (msg.runDocs) state.runDocs = msg.runDocs;
+  if (!state.run || state.run.id !== msg.runId || msg.reload) {
+    const data = await api(`/api/runs/${msg.runId}`);
+    state.run = { id: msg.runId, ...data };
+  }
+  if (msg.result) state.run.results[msg.index] = msg.result;
+  state.view = "run";
+  state.docId = msg.docId;
+  state.page = msg.page;
+  state.focusRef = msg.focusRef;
+  renderAll();
+  document.querySelector(".box.focus")?.scrollIntoView({ block: "center", inline: "nearest" });
+});
+function listenPopouts() {
+  if (!channel) return;
+  channel.addEventListener("message", ({ data: msg }) => {
+    if (msg.type === "sync") applySync(msg);
+    if (POPOUT) {
+      if (msg.type === "close" && (msg.target === POPOUT || msg.target === "all")) window.close();
+      return;
+    }
+    if (msg.type === "hello") { setPopped(msg.from, true); sendSync(); }
+    if (msg.type === "closed") setPopped(msg.from, false);
+  });
+  window.addEventListener("pagehide", () => {
+    channel.postMessage(POPOUT ? { type: "closed", from: POPOUT } : { type: "close", target: "all" });
+  });
+}
+function startPopout() {
+  state.view = "run";
+  state.drawerOpen = true;
+  document.body.classList.add("popout", `popout-${POPOUT}`);
+  document.title = `${POP_TEXT[POPOUT]}・PDF 解析器`;
 }
 
 /* ---------- 切換與啟動 ---------- */
@@ -1628,7 +1812,8 @@ async function main() {
     document.body.classList.remove("dropping");
     addFiles(e.dataTransfer.files);
   });
-  loadDraft();
+  if (POPOUT) startPopout(); else loadDraft();
+  listenPopouts();
   renderAll();
   watchConnection();
   try {
@@ -1640,6 +1825,7 @@ async function main() {
     $("engine").classList.toggle("bad", !status.ocr);
     await loadTemplates();
     renderAll();
+    if (POPOUT) channel.postMessage({ type: "hello", from: POPOUT });
   } catch (error) {
     toast(error.message, true);
   }

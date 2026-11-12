@@ -100,6 +100,39 @@ def find_value(result: dict, ref: str) -> dict | None:
     return next((value for key, _name, value in iter_values(result) if key == ref), None)
 
 
+FLAGGED = ("review", "missing")
+
+
+def handle_value(value: dict, action: str, new: str | None = None) -> None:
+    """人工確認、修改或還原一個值。
+
+    處理過的警示不刪除：第一次處理前把原本的狀態與原因存在 flag，原值存在 original，
+    畫面和 Excel 才看得出「原本為什麼要檢查、後來改了什麼」，也能還原。
+    """
+    if "flag" not in value and value.get("status") in FLAGGED:
+        value["flag"] = {"status": value["status"], "reasons": list(value.get("reasons", []))}
+    if action == "revert":
+        if "original" in value:
+            value["value"] = value.pop("original")
+            value["source"] = value.pop("original_source", value.get("source", ""))
+        flag = value.pop("flag", None)
+        value["status"], value["reasons"] = (flag["status"], flag["reasons"]) if flag else ("ok", [])
+        return
+    if action == "confirm":
+        value["status"], value["reasons"] = "confirmed", []
+        return
+    if "original" not in value:
+        value["original"], value["original_source"] = value.get("value", ""), value.get("source", "")
+    if new == value["original"]:  # 改回原值：有警示就當作確認，沒有就回到原狀
+        value["value"], value["source"] = value.pop("original"), value.pop("original_source")
+        if "flag" in value:
+            value["status"], value["reasons"] = "confirmed", []
+        else:
+            value["status"], value["reasons"] = "ok", []
+        return
+    value["value"], value["status"], value["reasons"], value["source"] = new, "corrected", [], "manual"
+
+
 def blocking_issues(result: dict) -> list[dict]:
     """需要人處理的整份疑點。level 為 notice 的只是提示，不影響狀態和範本挑選。"""
     return [issue for issue in result.get("issues", []) if issue.get("level") != "notice"]

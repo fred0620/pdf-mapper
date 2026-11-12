@@ -155,6 +155,7 @@ button { cursor: pointer; }
 .box.review { border-color: var(--warning); background: var(--warning-soft); }
 .box.missing { border-color: var(--danger); background: rgba(239, 68, 68, .14); }
 .box.ok { border-color: var(--success); background: rgba(34, 197, 94, .07); }
+.box.handled { border-color: var(--accent); background: var(--accent-soft); }
 .box.focus { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--text-strong); z-index: 4; }
 .tag {
   position: absolute; left: -1.5px; bottom: calc(100% + 2px); padding: 0 6px; border-radius: 4px;
@@ -319,6 +320,12 @@ details .form { margin-top: 10px; }
   background: var(--warning-soft); color: var(--warning-text); font-size: 12px; font-weight: 500; line-height: 1.5;
 }
 .review-item.missing .why { background: var(--danger-soft); color: var(--danger-text); }
+/* 處理過的：藍色，是人確認或修改過的（和 data-processor 相同的顏色規則） */
+.review-item.handled .why { background: var(--accent-soft); color: var(--accent-text); }
+.review-item .flag-note { margin: 6px 0 0; font-size: 12.5px; color: var(--text); }
+.review-item .change { margin: 4px 0 6px; font-size: 13px; color: var(--text-strong); overflow-wrap: anywhere; white-space: pre-line; }
+.review-item .change .old { color: var(--text); text-decoration: line-through; }
+.review-item.selected { margin-top: 8px; padding: 12px; border: 0; border-radius: var(--radius-md); background: var(--canvas); }
 .review-item .row { margin-top: 8px; align-items: flex-start; }
 .review-item textarea {
   flex: 3; min-width: 0; padding: 7px 11px; font: inherit; font-size: 13px; resize: vertical;
@@ -368,8 +375,41 @@ details .form { margin-top: 10px; }
 .data td:hover { background: var(--ink-1); }
 .data td.review { background: var(--warning-soft); }
 .data td.missing { background: var(--danger-soft); }
-.data td.corrected { background: var(--success-soft); }
-.data td:is(.review, .missing, .corrected):hover { box-shadow: inset 0 0 0 1px var(--line); }
+.data td.handled { background: var(--accent-soft); }
+.data td:is(.review, .missing, .handled):hover { box-shadow: inset 0 0 0 1px var(--line); }
+.data td.focus { box-shadow: inset 0 0 0 1.5px var(--text-strong); }
+.data td:has(.cell-edit) { padding: 2px; }
+.cell-edit {
+  display: block; width: 100%; min-width: 120px; padding: 4px 8px; font: inherit; resize: vertical;
+  border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); outline: none;
+}
+
+/* 另開視窗核對 */
+.drawer-bar {
+  position: sticky; top: 0; left: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line-faint);
+  font-size: 12.5px; font-weight: 600; color: var(--text-strong);
+}
+.drawer-bar .spring { flex: 1; }
+.pop {
+  height: var(--button); padding: 0 10px; background: var(--surface); border: 0; border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--ink-4); color: var(--text-strong); font-size: 12.5px; font-weight: 500;
+}
+.pop:hover { background: color-mix(in srgb, var(--surface), #000 4%); }
+.pager .pop { margin-left: 6px; }
+.popnote {
+  margin: 0; padding: 8px 14px; display: flex; gap: 18px; flex-wrap: wrap;
+  background: var(--surface); border-bottom: 1px solid var(--line); font-size: 13px; color: var(--text);
+}
+.toolbar-file { font-size: 13px; font-weight: 600; color: var(--text-strong); }
+.pdf-out #toolbar, .pdf-out #hint, .pdf-out #stage { display: none; }
+.pdf-out .drawer { flex: 1; }
+.table-out #drawer { display: none; }
+.popout .bar, .popout #left, .popout #right, .popout #popnote { display: none; }
+.popout .workspace { grid-template-columns: minmax(0, 1fr); }
+.popout-table #toolbar, .popout-table #hint, .popout-table #stage { display: none; }
+.popout-table .drawer { flex: 1; border-top: 0; box-shadow: none; }
+.popout-pdf #drawer { display: none; }
 
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);

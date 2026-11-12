@@ -20,7 +20,9 @@ from .parser import iter_values
 FILL = {
     "review": PatternFill("solid", fgColor="FBE3D6"),
     "missing": PatternFill("solid", fgColor="F4C7C3"),
-    "corrected": PatternFill("solid", fgColor="DDEBDF"),
+    # 藍色是人處理過的（和 data-processor 相同的顏色規則）
+    "corrected": PatternFill("solid", fgColor="DBEAFE"),
+    "confirmed": PatternFill("solid", fgColor="DBEAFE"),
 }
 HEADER_FILL = PatternFill("solid", fgColor="2C5F34")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -55,6 +57,21 @@ def reason_text(value: dict) -> str:
     return "；".join(REASONS.get(code, code) for code in value.get("reasons", []))
 
 
+def flag_reasons(value: dict) -> str:
+    """處理前標記的原因；沒被標記過就是空字串。"""
+    flag = value.get("flag") or {}
+    return "；".join(REASONS.get(code, code) for code in flag.get("reasons", []))
+
+
+def handled_text(value: dict) -> str:
+    """人工處理的方式，寫在 Excel 的「處理」欄與註解。"""
+    if value.get("status") == "corrected":
+        return f"已人工修改，原本抓到「{value.get('original', '')}」"
+    if value.get("status") == "confirmed":
+        return "已確認無誤"
+    return ""
+
+
 def _header(sheet, titles: list[str]) -> None:
     append_row(sheet, titles)
     for cell in sheet[sheet.max_row]:
@@ -74,8 +91,9 @@ def _write(cell, value: dict) -> None:
     note = reason_text(value)
     if note and value.get("raw") and value.get("raw") != value.get("value"):
         note = f"{note}\n原始內容：{value['raw']}"
-    if value.get("status") == "corrected":
-        note = f"原本抓到：{value.get('original', '')}"
+    if value.get("status") in ("corrected", "confirmed"):
+        why = flag_reasons(value)
+        note = handled_text(value) + (f"\n原本需檢查：{why}" if why else "")
     if note:
         cell.comment = Comment(safe_text(note), "PDF 解析器", width=280, height=90)
 
@@ -179,28 +197,32 @@ def _crop_image(doc: Document | None, value: dict) -> io.BytesIO | None:
 def _write_pending(sheet, result: dict, pending: list, doc: Document | None) -> None:
     for name, value in pending:
         raw = value.get("raw", "")
+        flag = value.get("flag") or {}
+        status = flag.get("status") or value["status"]  # 處理過的列出原本的狀態，處理方式寫在「處理」欄
         append_row(sheet, [result["file"], result.get("template_name", ""), value.get("page"), name,
-                      value.get("value", ""), raw if raw != value.get("value", "") else "", VALUE_STATUS[value["status"]], reason_text(value),
-                      SOURCE_TEXT.get(value.get("source", ""), "")])
+                      value.get("value", ""), raw if raw != value.get("value", "") else "",
+                      VALUE_STATUS.get(status, "正常"), flag_reasons(value) or reason_text(value),
+                      handled_text(value), SOURCE_TEXT.get(value.get("source", ""), "")])
         row = sheet.max_row
-        sheet.cell(row=row, column=5).fill = FILL[value["status"]]
+        sheet.cell(row=row, column=5).fill = FILL[value["status"]] if value["status"] in FILL else PatternFill()
         crop = _crop_image(doc, value)
         if crop:
             picture = XLImage(crop)
-            sheet.add_image(picture, f"J{row}")
+            sheet.add_image(picture, f"K{row}")
             sheet.row_dimensions[row].height = max(18, picture.height * 0.78)
 
 
 def _review_sheet(book: Workbook, results: list[dict]) -> None:
     sheet = book.create_sheet("待檢查", 0)
-    _header(sheet, ["檔名", "使用範本", "頁", "項目", "抓到的值", "原始內容", "狀態", "原因", "來源", "原圖"])
+    _header(sheet, ["檔名", "使用範本", "頁", "項目", "抓到的值", "原始內容", "狀態", "原因", "處理", "來源", "原圖"])
     for result in results:
         for issue in result.get("issues", []):
             append_row(sheet, [result["file"], result.get("template_name", ""), issue.get("page"),
                           "整份檢查", "", "", "提示" if issue.get("level") == "notice" else "需檢查",
                           issue["message"]])
+        # 已處理的也列出來當紀錄，跟還沒處理的一起看
         pending = [(name, value) for _ref, name, value in iter_values(result)
-                   if value.get("status") in ("review", "missing")]
+                   if value.get("status") in ("review", "missing") or value.get("flag") or "original" in value]
         if not pending:
             continue
         try:
@@ -213,7 +235,7 @@ def _review_sheet(book: Workbook, results: list[dict]) -> None:
             if doc:
                 doc.close()
     _widths(sheet)
-    sheet.column_dimensions["J"].width = 48
+    sheet.column_dimensions["K"].width = 48
     if sheet.max_row == 1:
         append_row(sheet, ["沒有需要檢查的項目"])
 
