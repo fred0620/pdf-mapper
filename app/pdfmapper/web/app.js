@@ -560,7 +560,10 @@ function renderPage() {
   const [w, h_] = doc.sizes[state.page];
   const available = $("stage").clientWidth - 36;
   const fit = Math.min(available, ($("stage").clientHeight - 36) * (w / h_) * 1.6);
-  $("sheet").style.width = `${Math.max(320, fit) * state.zoom}px`;
+  const width = Math.max(320, fit) * state.zoom;
+  $("sheet").style.width = `${width}px`;
+  // 頁面縮得小時，框上的名稱會互相蓋住、也蓋住內容，改成移到框上或選取時才顯示
+  $("sheet").classList.toggle("compact", width < COMPACT_SHEET_WIDTH);
   renderOverlay();
 }
 function renderEmpty() {
@@ -597,6 +600,7 @@ function renderToolbar() {
       h("button", { "aria-label": "放大", onclick: () => zoomBy(1.18) }, "+"),
       popButton("pdf")) : "");
 }
+const COMPACT_SHEET_WIDTH = 640;
 function zoomBy(factor) { state.zoom = clamp(state.zoom * factor, 0.5, 4); renderPage(); }
 function renderHint() {
   let text = "";
@@ -776,8 +780,8 @@ function renderLeftTrain() {
     if (!doc.has_text) meta += "，無文字層";
     let cls = "";
     if (test) {
-      const pending = test.counts.review + test.counts.missing + blocking(test.issues).length;
-      meta = pending ? `${meta}，${pending} 項待檢查` : `${meta}，全部通過`;
+      const pending = pendingLabel(test);
+      meta = pending ? `${meta}，${pending}` : `${meta}，全部通過`;
       cls = pending ? "warn" : "good";
     }
     const makeReference = doc.id === state.referenceId ? null
@@ -858,10 +862,10 @@ function renderLeftRun() {
     let meta = `${doc.pages} 頁`;
     let cls = "";
     if (result) {
-      const pending = result.counts.review + result.counts.missing + blocking(result.issues).length;
+      const pending = pendingLabel(result);
       const used = result.template_name ? `${result.template_name}，` : "";
       if (result.status === "failed") { meta = "解析失敗"; cls = "bad"; }
-      else if (pending) { meta = `${used}${pending} 項待檢查`; cls = "warn"; }
+      else if (pending) { meta = `${used}${pending}`; cls = "warn"; }
       else { meta = `${used}全部正常`; cls = "good"; }
     }
     return docRow(doc, meta, cls, () => {
@@ -1363,6 +1367,12 @@ function renderRightTrain() {
 }
 // level 為 notice 的整份疑點只是提示，不算進待檢查
 const blocking = (issues) => issues.filter((issue) => issue.level !== "notice");
+// 檔案清單的摘要。值的數目要和右邊「待檢查 N 項」一致，整份檔案的提醒另外計，不混在一起
+function pendingLabel(result) {
+  const values = result.counts.review + result.counts.missing;
+  const notes = blocking(result.issues).length;
+  return [values ? `${values} 項待檢查` : "", notes ? `${notes} 個提醒` : ""].filter(Boolean).join("，");
+}
 function issueRow(issue, withPage) {
   const notice = issue.level === "notice";
   const text = withPage && issue.page ? `第 ${issue.page} 頁：${issue.message}` : issue.message;
@@ -1625,6 +1635,15 @@ function renderDrawer() {
 }
 
 /* ---------- 解析流程 ---------- */
+// 解析中只拿新完成的結果接在後面，不重傳已經有的（批次大時每份結果都不小）
+async function fetchProgress() {
+  const run = state.run;
+  const data = await api(`/api/runs/${run.id}?since=${run.results.length}`);
+  if (state.run !== run) return 0;  // 等待期間換了別次解析
+  const { results, since, ...status } = data;
+  state.run = { ...run, ...status, results: [...run.results.slice(0, since), ...results] };
+  return results.length;
+}
 const startRun = guard(async () => {
   const docs = state.runDocs.map((d) => d.id);
   const { run_id: id } = await api("/api/runs", { json: { template_ids: state.templateIds, docs } });
@@ -1633,11 +1652,10 @@ const startRun = guard(async () => {
   renderLeft();
   while (!state.run.finished) {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const data = await api(`/api/runs/${id}`);
-    state.run = { id, ...data };
+    const added = await fetchProgress();
     renderLeft();
-    if (state.run.results.length && !state.focusRef) renderAll();
-    sendSync({ reload: true });
+    if (added && !state.focusRef) renderAll();
+    if (added || state.run.finished) sendSync({ progress: true });
   }
   const pending = state.run.results.filter((r) => r.status !== "ok").length;
   toast(pending ? `完成，${pending} 份有待檢查項目` : "完成，全部正常");
@@ -1734,8 +1752,10 @@ function sendSync(extra = {}) {
 const applySync = guard(async (msg) => {
   if (msg.runDocs) state.runDocs = msg.runDocs;
   if (!state.run || state.run.id !== msg.runId || msg.reload) {
-    const data = await api(`/api/runs/${msg.runId}`);
+    const { since, ...data } = await api(`/api/runs/${msg.runId}`);
     state.run = { id: msg.runId, ...data };
+  } else if (msg.progress) {
+    await fetchProgress();
   }
   if (msg.result) state.run.results[msg.index] = msg.result;
   state.view = "run";

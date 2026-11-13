@@ -10,6 +10,7 @@ from . import ocr as ocr_engine
 from .align import Transform, find_marker
 from .document import Box, Glyph, Page, group_lines, inside, is_garbled, line_text, normalize_text
 from .limits import check_deadline
+from .limits import search as pattern_search  # 範本裡的正規表達式一律經過這裡，有逾時
 
 OCR_MIN_CONFIDENCE = 0.85
 LABEL_MOVED = 0.03
@@ -117,7 +118,7 @@ def shape_value(reading_text: str, lines: list[str], spec: dict) -> tuple[str, l
         value = lines[index] if -len(lines) <= index < len(lines) else ""
     extract = spec.get("extract")
     if extract and value:
-        match = re.search(extract, value)
+        match = pattern_search(extract, value)
         if match:
             value = (match.group(1) if match.groups() else match.group(0)) or ""
         else:  # 擷取失敗就留空，不把整段內容塞進欄位
@@ -125,7 +126,7 @@ def shape_value(reading_text: str, lines: list[str], spec: dict) -> tuple[str, l
             return "", reasons
     value = value.strip()
     pattern = spec.get("pattern") or TYPE_PATTERNS.get(spec.get("type", "text"))
-    if value and pattern and not re.search(pattern, value):
+    if value and pattern and not pattern_search(pattern, value):
         reasons.append("format_mismatch")
     return value, reasons
 
@@ -367,7 +368,7 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
         glyphs, source, page_reasons = _table_glyphs(page, box, dividers, spec.get("source", "auto"), use_ocr)
         if stop_pattern:
             for line in group_lines(glyphs):
-                if re.search(stop_pattern, line_text(line).replace(" ", "")):
+                if pattern_search(stop_pattern, line_text(line).replace(" ", "")):
                     limit = min(g.y0 for g in line)
                     glyphs = [g for g in glyphs if g.cy < limit]
                     stopped = True
@@ -429,7 +430,7 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
 def _key_lines(glyphs, dividers, key_index, key_pattern):
     left, right = dividers[key_index], dividers[key_index + 1]
     candidates = group_lines([g for g in glyphs if left <= g.cx < right])
-    return [line for line in candidates if re.search(key_pattern, line_text(line).strip())]
+    return [line for line in candidates if pattern_search(key_pattern, line_text(line).strip())]
 
 
 def _rows_on_page(glyphs, dividers, key_index, key_pattern, box, key_at_top):
@@ -545,7 +546,7 @@ def _cell_value(column, joined, lines, starts, parts) -> tuple[str, list[str]]:
         value = read_after_start(lines, column, list(starts))
         return shape_value(value, [value], _plain_spec(column))
     if column.get("extract") and not column.get("pick_line"):
-        match = re.search(column["extract"], joined)
+        match = pattern_search(column["extract"], joined)
         if not match:  # 這格沒有這筆資料。必有的欄位請勾「每一列都一定有這欄」
             return "", []
         value = ((match.group(1) if match.groups() else match.group(0)) or "").strip()

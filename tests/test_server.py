@@ -1,4 +1,6 @@
 """確認網頁用到的匯出路由都存在，單元測試碰不到這一層。"""
+import pytest
+
 import pdfmapper.server as server
 from pdfmapper.parser import parse_pdf
 
@@ -96,3 +98,43 @@ def test_guides_are_served_and_others_are_not():
         assert b"<html" in response.data
     assert client.get("/docs/pyproject.toml").status_code == 404
     assert client.get("/docs/..%2Fpyproject.toml").status_code == 404
+
+
+def test_evicted_doc_stays_open_until_request_finishes(samples, tmp_path, monkeypatch):
+    """開著的 PDF 超過上限時，正在被其他請求讀取的檔案要等讀完才關閉。"""
+    import shutil
+
+    folder, _ = samples
+    monkeypatch.setattr(server, "UPLOADS", tmp_path)
+    monkeypatch.setattr(server, "MAX_OPEN_DOCS", 1)
+    first, second = "a" * 32, "b" * 32
+    for doc_id in (first, second):
+        shutil.copy(folder / "sample_1_standard.pdf", tmp_path / f"{doc_id}__x.pdf")
+    try:
+        with server._using(first) as doc:
+            with server._using(second):
+                pass  # 開第二份時把第一份淘汰
+            assert first not in server._docs
+            assert doc.pages[0].render(40).size  # 還能讀
+        with pytest.raises(Exception):
+            doc.pages[0].render(41)  # 用完就關閉，不會一直佔著記憶體
+        assert not server._doc_users
+    finally:
+        server._clear_uploads()
+
+
+def test_run_status_returns_only_new_results():
+    """解析中每 0.5 秒查一次進度，只回傳還沒拿到的結果。"""
+    results = [{"doc_id": "a"}, {"doc_id": "b"}, {"doc_id": "c"}]
+    server._runs["s"] = {"total": 4, "done": 3, "current": "d.pdf", "results": results, "finished": False}
+    client = server.app.test_client()
+    try:
+        full = client.get("/api/runs/s").json
+        assert [r["doc_id"] for r in full["results"]] == ["a", "b", "c"] and full["since"] == 0
+        part = client.get("/api/runs/s?since=2").json
+        assert [r["doc_id"] for r in part["results"]] == ["c"]
+        assert part["since"] == 2 and part["done"] == 3 and part["current"] == "d.pdf"
+        assert client.get("/api/runs/s?since=9").json["results"] == []
+        assert client.get("/api/runs/s?since=-1").json["since"] == 0
+    finally:
+        server._runs.pop("s")
