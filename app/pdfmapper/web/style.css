@@ -67,7 +67,7 @@ button { cursor: pointer; }
   position: relative; z-index: 2;
 }
 .bar h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.005em; }
-.bar h1 .version { margin-left: 4px; color: var(--text-faint); font-size: 12.5px; font-weight: 500; }
+.bar h1 .version { margin-left: 4px; color: var(--text); font-size: 12.5px; font-weight: 500; }
 .bar nav { display: inline-grid; grid-auto-flow: column; padding: 2px; border-radius: var(--radius-md); background: var(--ink-2); }
 .tab {
   height: var(--button); padding: 0 14px; background: none; border: 0; border-radius: var(--radius-sm);
@@ -111,7 +111,7 @@ button { cursor: pointer; }
 .tool[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
 .tool:disabled { color: var(--text-faint); cursor: default; }
 .tool kbd {
-  font: 500 11px/16px var(--mono); padding: 0 5px; border-radius: 4px; background: var(--ink-2); color: var(--text);
+  font: 500 11px/16px var(--mono); padding: 0 5px; border-radius: var(--radius-sm); background: var(--ink-2); color: var(--text);
 }
 .tool[aria-pressed="true"] kbd { background: transparent; color: var(--accent-text); }
 .toolbar .spring { flex: 1; }
@@ -156,9 +156,10 @@ button { cursor: pointer; }
 .box.missing { border-color: var(--danger); background: rgba(239, 68, 68, .14); }
 .box.ok { border-color: var(--success); background: rgba(34, 197, 94, .07); }
 .box.handled { border-color: var(--accent); background: var(--accent-soft); }
-.box.focus { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--text-strong); z-index: 4; }
+/* 正在看的那一個：和其他元件的焦點一樣用主色外框，中間留一圈白色和框線分開 */
+.box.focus { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); z-index: 4; }
 .tag {
-  position: absolute; left: -1.5px; bottom: calc(100% + 2px); padding: 0 6px; border-radius: 4px;
+  position: absolute; left: -1.5px; bottom: calc(100% + 2px); padding: 0 6px; border-radius: var(--radius-sm);
   background: var(--accent); color: #fff; font-size: 11px; font-weight: 500; line-height: 16px; white-space: nowrap;
   pointer-events: none;
 }
@@ -184,9 +185,14 @@ button { cursor: pointer; }
 .divider:hover::after { border-left-width: 2.5px; left: 3px; }
 .band-name {
   position: absolute; top: calc(100% + 2px); padding: 0 4px; font-size: 11px; font-weight: 500; line-height: 15px;
-  border-radius: 3px; background: rgba(255, 255, 255, .92); color: var(--accent-text);
+  border-radius: var(--radius-sm); background: rgba(255, 255, 255, .92); color: var(--accent-text);
   white-space: nowrap; overflow: hidden; pointer-events: none;
 }
+/* 頁面縮小時只在移到框上、選取或正在看的框顯示名稱 */
+.sheet.compact .tag, .sheet.compact .band-name { display: none; }
+.sheet.compact .box:hover .tag, .sheet.compact .box.selected .tag, .sheet.compact .box.focus .tag,
+.sheet.compact .box.selected .band-name, .sheet.compact .box.focus .band-name { display: block; }
+.sheet.compact .box.label .tag { display: none; }
 .rubber { position: absolute; border: 1.5px solid var(--accent); border-radius: 2px; background: var(--accent-soft); pointer-events: none; }
 
 /* 清單 */
@@ -226,7 +232,7 @@ button { cursor: pointer; }
 .meta.warn { color: var(--warning-text); }
 .meta.bad { color: var(--danger-text); }
 .meta.good { color: var(--success-text); }
-.items .num { display: inline-block; min-width: 30px; color: var(--text); font-family: var(--mono); font-size: 12px; }
+.items .num { display: inline-block; min-width: 4ch; margin-right: 8px; color: var(--text); font-family: var(--mono); font-size: 12px; }
 .items .kind { float: right; font-size: 12px; color: var(--text); }
 .thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .thumbs button {
@@ -377,7 +383,7 @@ details .form { margin-top: 10px; }
 .data td.missing { background: var(--danger-soft); }
 .data td.handled { background: var(--accent-soft); }
 .data td:is(.review, .missing, .handled):hover { box-shadow: inset 0 0 0 1px var(--line); }
-.data td.focus { box-shadow: inset 0 0 0 1.5px var(--text-strong); }
+.data td.focus, .data td.focus:hover { box-shadow: inset 0 0 0 1.5px var(--accent); } /* 滑鼠停在上面時也保留選取框 */
 .data td:has(.cell-edit) { padding: 2px; }
 .cell-edit {
   display: block; width: 100%; min-width: 120px; padding: 4px 8px; font: inherit; resize: vertical;
@@ -425,7 +431,10 @@ details .form { margin-top: 10px; }
 }
 .drop:hover { border-color: var(--accent); color: var(--accent-text); }
 
+.narrow-note { display: none; }
 @media (max-width: 1000px) {
+  /* 三欄放不下時改成上下排，PDF 會變得很小，提醒使用者放大視窗 */
+  .narrow-note { display: block; }
   .workspace { grid-template-columns: 1fr; grid-auto-rows: minmax(300px, auto); overflow: auto; }
   .left, .right { border: 0; }
 }

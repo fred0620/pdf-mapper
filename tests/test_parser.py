@@ -788,3 +788,23 @@ def test_start_value_on_one_page_is_not_flagged():
     assert _page_flags({"start": "ECCN", "end": "line"}, "5A992", lines, info) == []
     assert _page_flags({}, "ECCN: 5A992 Origin: TW", lines, info) == ["row_spans_pages"]
     assert _page_flags({"start": "ECCN", "end": "next"}, "5A992 Origin: TW", lines, info) == ["row_spans_pages"]
+
+
+def test_parse_best_opens_pdf_once(samples, template, invoice_template, monkeypatch):
+    """多個範本時只開一次 PDF，影像辨識不用每個範本重做。"""
+    from pdfmapper import parser as parser_module
+
+    folder, _ = samples
+    opened = []
+    real = parser_module.Document
+
+    def counting(path):
+        opened.append(path)
+        return real(path)
+
+    monkeypatch.setattr(parser_module, "Document", counting)
+    similar = {**template, "template_id": "copy"}
+    result = parser_module.parse_best(folder / "sample_1_standard.pdf", [template, similar, invoice_template])
+    assert len(opened) == 1
+    assert result["template_id"] in (template["template_id"], "copy")
+    assert result["counts"]["total"] > 0

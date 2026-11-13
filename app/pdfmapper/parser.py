@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Callable, Iterator
 
@@ -161,13 +162,14 @@ def summarize(result: dict) -> None:
 
 
 def parse_pdf(path: str | Path, template: dict, use_ocr: bool = True,
-              progress: Callable[[str], None] | None = None) -> dict:
+              progress: Callable[[str], None] | None = None, doc: Document | None = None) -> dict:
+    """doc：已經開好的同一份 PDF。多個範本比較時共用，文字層與影像辨識的結果不用重做。"""
     path = Path(path)
     result: dict = {"file": path.name, "path": str(path), "template_id": template.get("template_id"),
                     "template_name": template.get("name") or template.get("template_id"),
                     "pages": 0, "fields": [], "tables": [], "issues": [], "align": []}
     try:
-        with file_deadline(), Document(path) as doc:
+        with file_deadline(), (nullcontext(doc) if doc is not None else Document(path)) as doc:
             total = len(doc)
             result["pages"] = total
             if progress:
@@ -251,17 +253,18 @@ def _parse_best(path, templates, use_ocr, progress) -> dict:
     if len(templates) == 1:
         return parse_pdf(path, templates[0], use_ocr, progress)
     try:
-        with Document(path) as doc:
-            scored = sorted(((_match_score(doc, t), i) for i, t in enumerate(templates)), reverse=True)
+        doc = Document(path)
     except Exception:  # 打不開的檔案交給 parse_pdf 回報
         return parse_pdf(path, templates[0], use_ocr, progress)
-
-    top = scored[0][0]
-    # 命中率接近時才實際解析比較，取值結果比定位點更能分出高下
-    finalists = [i for score, i in scored if score >= top - SHORTLIST_MARGIN][:MAX_FINALISTS]
-    parsed = sorted(((_quality(r), order, r) for order, r in enumerate(
-        parse_pdf(path, templates[i], use_ocr, progress) for i in finalists)),
-        key=lambda item: (-item[0], item[1]))
+    # 整個比較過程共用同一份開好的 PDF：掃描檔的影像辨識最花時間，候選範本之間不用重做
+    with doc:
+        scored = sorted(((_match_score(doc, t), i) for i, t in enumerate(templates)), reverse=True)
+        top = scored[0][0]
+        # 命中率接近時才實際解析比較，取值結果比定位點更能分出高下
+        finalists = [i for score, i in scored if score >= top - SHORTLIST_MARGIN][:MAX_FINALISTS]
+        parsed = sorted(((_quality(r), order, r) for order, r in enumerate(
+            parse_pdf(path, templates[i], use_ocr, progress, doc) for i in finalists)),
+            key=lambda item: (-item[0], item[1]))
     best = parsed[0][2]
     best["selection"] = {
         "auto": True,

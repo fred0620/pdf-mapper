@@ -121,3 +121,20 @@ def test_evicted_doc_stays_open_until_request_finishes(samples, tmp_path, monkey
         assert not server._doc_users
     finally:
         server._clear_uploads()
+
+
+def test_run_status_returns_only_new_results():
+    """解析中每 0.5 秒查一次進度，只回傳還沒拿到的結果。"""
+    results = [{"doc_id": "a"}, {"doc_id": "b"}, {"doc_id": "c"}]
+    server._runs["s"] = {"total": 4, "done": 3, "current": "d.pdf", "results": results, "finished": False}
+    client = server.app.test_client()
+    try:
+        full = client.get("/api/runs/s").json
+        assert [r["doc_id"] for r in full["results"]] == ["a", "b", "c"] and full["since"] == 0
+        part = client.get("/api/runs/s?since=2").json
+        assert [r["doc_id"] for r in part["results"]] == ["c"]
+        assert part["since"] == 2 and part["done"] == 3 and part["current"] == "d.pdf"
+        assert client.get("/api/runs/s?since=9").json["results"] == []
+        assert client.get("/api/runs/s?since=-1").json["since"] == 0
+    finally:
+        server._runs.pop("s")

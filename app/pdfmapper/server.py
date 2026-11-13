@@ -498,9 +498,11 @@ def start_run():
 
 @app.get("/api/runs/<run_id>")
 def run_status(run_id):
+    """解析進度。since=n 只回傳第 n 份之後的結果：解析中每 0.5 秒查一次，不用每次重傳全部。"""
+    since = max(request.args.get("since", 0, type=int) or 0, 0)
     run = _run(run_id)
     with _runs_lock:
-        return jsonify(run)
+        return jsonify({**run, "since": since, "results": run["results"][since:]})
 
 
 @app.post("/api/runs/<run_id>/edit")
