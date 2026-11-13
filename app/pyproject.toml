@@ -1,6 +1,6 @@
 [project]
 name = "pdf-mapper"
-version = "0.3.0"
+version = "0.3.1"
 description = "標注範本後，批次把 PDF 轉成 Excel 的本機工具"
 requires-python = ">=3.10,<3.14"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
     "pillow>=10.0",
     "pypdfium2>=4.30",
     "rapidocr>=3.4",
+    "regex>=2024.11.6",
 ]
 
 [dependency-groups]

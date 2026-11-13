@@ -1,4 +1,6 @@
 """確認網頁用到的匯出路由都存在，單元測試碰不到這一層。"""
+import pytest
+
 import pdfmapper.server as server
 from pdfmapper.parser import parse_pdf
 
@@ -96,3 +98,26 @@ def test_guides_are_served_and_others_are_not():
         assert b"<html" in response.data
     assert client.get("/docs/pyproject.toml").status_code == 404
     assert client.get("/docs/..%2Fpyproject.toml").status_code == 404
+
+
+def test_evicted_doc_stays_open_until_request_finishes(samples, tmp_path, monkeypatch):
+    """開著的 PDF 超過上限時，正在被其他請求讀取的檔案要等讀完才關閉。"""
+    import shutil
+
+    folder, _ = samples
+    monkeypatch.setattr(server, "UPLOADS", tmp_path)
+    monkeypatch.setattr(server, "MAX_OPEN_DOCS", 1)
+    first, second = "a" * 32, "b" * 32
+    for doc_id in (first, second):
+        shutil.copy(folder / "sample_1_standard.pdf", tmp_path / f"{doc_id}__x.pdf")
+    try:
+        with server._using(first) as doc:
+            with server._using(second):
+                pass  # 開第二份時把第一份淘汰
+            assert first not in server._docs
+            assert doc.pages[0].render(40).size  # 還能讀
+        with pytest.raises(Exception):
+            doc.pages[0].render(41)  # 用完就關閉，不會一直佔著記憶體
+        assert not server._doc_users
+    finally:
+        server._clear_uploads()

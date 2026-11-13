@@ -13,6 +13,7 @@ import time
 import urllib.request
 import uuid
 import webbrowser
+from contextlib import contextmanager
 from pathlib import Path
 
 import cv2
@@ -63,6 +64,7 @@ app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 300 * 1024 * 1024
 
 _docs: dict[str, Document] = {}
+_doc_users: dict[Document, int] = {}  # 正在使用的請求數；淘汰或移除時等用完才關閉
 _docs_lock = threading.Lock()
 _runs: dict[str, dict] = {}
 _run_templates: dict[str, dict[str, dict]] = {}  # 含影像圖塊，不放進回傳給頁面的資料
@@ -114,22 +116,41 @@ def _json_body() -> dict:
     return body
 
 
-def _doc(doc_id: str) -> Document:
+@contextmanager
+def _using(doc_id: str):
+    """取用上傳的 PDF。開著的檔案有上限，超過時淘汰最久沒用的；
+    被淘汰的檔案如果別的請求還在讀（例如縮圖載入時按下儲存範本），等那個請求結束才關閉。"""
     with _docs_lock:
         if doc_id in _docs:
             _docs[doc_id] = _docs.pop(doc_id)  # 移到最新，淘汰最久沒用的
         else:
             if len(_docs) >= MAX_OPEN_DOCS:
-                _docs.pop(next(iter(_docs))).close()
+                _close_when_free(_docs.pop(next(iter(_docs))))
             _docs[doc_id] = Document(_doc_path(doc_id))
-        return _docs[doc_id]
+        doc = _docs[doc_id]
+        _doc_users[doc] = _doc_users.get(doc, 0) + 1
+    try:
+        yield doc
+    finally:
+        with _docs_lock:
+            _doc_users[doc] -= 1
+            if not _doc_users[doc]:
+                del _doc_users[doc]
+                if _docs.get(doc_id) is not doc:  # 使用期間被淘汰或移除
+                    doc.close()
+
+
+def _close_when_free(doc: Document) -> None:
+    """呼叫前要先拿 _docs_lock，並已把 doc 從 _docs 拿掉。還有人在用就留給最後一個使用者關閉。"""
+    if not _doc_users.get(doc):
+        doc.close()
 
 
 def _describe(doc_id: str, name: str) -> dict:
-    doc = _doc(doc_id)
-    has_text = any(len(p.glyphs) > 0 for p in doc.pages[:3])
-    return {"id": doc_id, "name": name, "pages": len(doc), "has_text": has_text,
-            "sizes": [[p.width, p.height] for p in doc.pages]}
+    with _using(doc_id) as doc:
+        has_text = any(len(p.glyphs) > 0 for p in doc.pages[:3])
+        return {"id": doc_id, "name": name, "pages": len(doc), "has_text": has_text,
+                "sizes": [[p.width, p.height] for p in doc.pages]}
 
 
 def _template_path(template_id: str) -> Path:
@@ -301,7 +322,7 @@ def remove_doc(doc_id):
     with _docs_lock:
         doc = _docs.pop(doc_id, None)
         if doc:
-            doc.close()
+            _close_when_free(doc)
     path.unlink(missing_ok=True)
     with _runs_lock:
         for run in _runs.values():
@@ -313,10 +334,10 @@ def remove_doc(doc_id):
 @app.get("/api/docs/<doc_id>/page/<int:index>.png")
 def page_image(doc_id, index):
     dpi = min(max(request.args.get("dpi", PREVIEW_DPI, type=int) or PREVIEW_DPI, MIN_DPI), MAX_DPI)
-    doc = _doc(doc_id)
-    if index >= len(doc.pages):
-        raise Missing("沒有這一頁")
-    image = doc.pages[index].render(dpi)
+    with _using(doc_id) as doc:
+        if index >= len(doc.pages):
+            raise Missing("沒有這一頁")
+        image = doc.pages[index].render(dpi)
     ok, encoded = cv2.imencode(".png", cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
     if not ok:
         raise RuntimeError("無法產生頁面圖片")
@@ -329,8 +350,8 @@ def page_image(doc_id, index):
 @app.post("/api/docs/<doc_id>/read")
 def read_region(doc_id):
     body = _json_body()
-    page = _doc(doc_id).pages[body["page"]]
-    reading = read_box(page, tuple(body["box"]), body.get("source", "auto"))
+    with _using(doc_id) as doc:
+        reading = read_box(doc.pages[body["page"]], tuple(body["box"]), body.get("source", "auto"))
     return jsonify({"text": reading.text, "lines": reading.lines, "source": reading.source,
                     "confidence": reading.confidence,
                     "notes": [REASONS.get(r, r) for r in reading.reasons]})
@@ -339,8 +360,9 @@ def read_region(doc_id):
 @app.post("/api/docs/<doc_id>/suggest-anchors")
 def suggest(doc_id):
     body = _json_body()
-    page = _doc(doc_id).pages[body["page"]]
-    return jsonify({"anchors": tpl.suggest_anchors(page, body.get("avoid", []), body.get("page_rule", "first"))})
+    with _using(doc_id) as doc:
+        anchors = tpl.suggest_anchors(doc.pages[body["page"]], body.get("avoid", []), body.get("page_rule", "first"))
+    return jsonify({"anchors": anchors})
 
 
 
@@ -353,7 +375,8 @@ def test_template():
     errors = tpl.validate(template)
     if errors:
         return _error("；".join(errors))
-    tpl.finalize(template, _doc(body["reference"]))
+    with _using(body["reference"]) as reference:
+        tpl.finalize(template, reference)
     results = [parse_pdf(_doc_path(doc_id), template) for doc_id in body["docs"]]
     for doc_id, result in zip(body["docs"], results):
         result["doc_id"] = doc_id
@@ -368,7 +391,9 @@ def rebase_template():
     template = body["template"]
     if not isinstance(template, dict):
         raise ValueError("範本格式不正確")
-    return jsonify(tpl.rebase(template, _doc(body["reference"]), bool(body.get("include_weak"))))
+    with _using(body["reference"]) as reference:
+        rebased = tpl.rebase(template, reference, bool(body.get("include_weak")))
+    return jsonify(rebased)
 
 
 @app.get("/api/templates")
@@ -398,7 +423,8 @@ def save_template():
         raise ValueError("範本格式不正確")
     path = _template_path(template.get("template_id"))
     if body.get("reference"):
-        tpl.finalize(template, _doc(body["reference"]))
+        with _using(body["reference"]) as reference:
+            tpl.finalize(template, reference)
     tpl.save(template, path)
     log.info("儲存範本 template=%s", template["template_id"])
     return jsonify({"saved": template["template_id"]})
@@ -479,27 +505,30 @@ def run_status(run_id):
 
 @app.post("/api/runs/<run_id>/edit")
 def edit_value(run_id):
-    """人工修正或確認。原值保留，方便回頭查。"""
+    """人工修正、確認或還原。原值保留，方便回頭查。"""
     body = _json_body()
-    results = _run(run_id)["results"]
-    index = body.get("file_index")
-    if not isinstance(index, int) or not 0 <= index < len(results):
-        raise Missing("找不到這份檔案的結果")
-    result = results[index]
-    value = find_value(result, body["ref"])
-    if value is None:
-        return _error("找不到這個項目")
     action = body.get("action")
     if action not in ("confirm", "correct", "revert"):
         raise ValueError("不認得的動作")
     new = body.get("value")
     if action == "correct" and (not isinstance(new, str) or len(new) > MAX_EDIT_LENGTH):
         raise ValueError(f"修正的內容必須是文字，最多 {MAX_EDIT_LENGTH} 字")
-    handle_value(value, action, new)
-    summarize(result)
+    # 上鎖修改：頁面同時在讀解析進度時，改到一半的資料可能讓回傳出錯
+    with _runs_lock:
+        results = _run(run_id)["results"]
+        index = body.get("file_index")
+        if not isinstance(index, int) or not 0 <= index < len(results):
+            raise Missing("找不到這份檔案的結果")
+        result = results[index]
+        value = find_value(result, body["ref"])
+        if value is None:
+            return _error("找不到這個項目")
+        handle_value(value, action, new)
+        summarize(result)
+        response = jsonify(result)  # 在鎖內序列化
     log.info("人工%s run=%s doc=%s", {"confirm": "確認", "correct": "修正", "revert": "還原"}[action], run_id,
              log_text(result.get("doc_id", ""), 40))  # 不記錄修正的內容
-    return jsonify(result)
+    return response
 
 
 @app.get("/api/runs/<run_id>/excel")

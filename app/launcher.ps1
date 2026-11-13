@@ -187,10 +187,24 @@ function Invoke-Rollback {
     $from = Get-AppVersion $AppDir
     $to = Get-AppVersion $old
     $temp = "app.swap"
-    Remove-Item -Recurse -Force (Join-Path $Root $temp) -ErrorAction SilentlyContinue
+    $swap = Join-Path $Root $temp
+    Remove-Item -Recurse -Force $swap -ErrorAction SilentlyContinue
     Rename-WithRetry $AppDir $temp
-    Rename-WithRetry $old "app"
-    Rename-WithRetry (Join-Path $Root $temp) "app.old"
+    try {
+        Rename-WithRetry $old "app"
+    } catch {
+        # 上一版換不上來時，把目前版本放回 app，否則 run.bat 會找不到啟動程式
+        $reason = $_.Exception.Message
+        Rename-WithRetry $swap "app"
+        Stop-WithMessage "無法退回（app.old 可能被其他程式開著），已維持目前版本：$reason"
+    }
+    try {
+        Rename-WithRetry $swap "app.old"
+    } catch {
+        # 已經退回成功，只是目前版本留在 app.swap；下次退回前要先改名
+        Write-Host "已退回，但目前版本留在 app.swap，沒有改名成 app.old。下次要回到 $from 時，請先把 app.swap 改名為 app.old。" -ForegroundColor Yellow
+        return
+    }
     Write-Host "已從 $from 退回 $to。再執行一次 run.bat rollback 可以回到 $from。" -ForegroundColor Green
 }
 
@@ -229,6 +243,16 @@ function Move-LegacyRuntime {
     Write-Host "已沿用舊版下載的 uv 與 Python。確認新版正常後，可以刪除 .tools 和 .venv。"
 }
 
+# 環境的 Python 版本是否符合 app\.python-version（只比主要與次要版本，例如 3.12）
+function Test-VenvPython {
+    $wanted = (Get-Content (Join-Path $AppDir ".python-version") | Select-Object -First 1).Trim()
+    $config = Join-Path $venv "pyvenv.cfg"
+    if (-not (Test-Path $config)) { return $true }  # 看不出版本時沿用，套件安裝失敗會再提示
+    $line = Select-String -Path $config -Pattern '^version_info\s*=\s*(\d+\.\d+)' | Select-Object -First 1
+    if (-not $line) { return $true }
+    return $line.Matches[0].Groups[1].Value -eq (($wanted -split '\.')[0..1] -join '.')
+}
+
 function Initialize-Environment {
     Move-LegacyRuntime
     if (-not (Test-Path $uv)) { Install-Uv }
@@ -236,6 +260,11 @@ function Initialize-Environment {
     if (Test-Path $python) {
         & $python -c "pass" 2>$null
         if ($LASTEXITCODE -ne 0) { Remove-Item -Recurse -Force $venv -ErrorAction SilentlyContinue }  # 資料夾搬過位置
+    }
+    if ((Test-Path $python) -and -not (Test-VenvPython)) {
+        # 新版改了 Python 版本：離線套件是照新版本下載的，裝不進舊環境，重建
+        Write-Host "這一版改用不同的 Python 版本，正在重建環境..."
+        Remove-Item -Recurse -Force $venv -ErrorAction SilentlyContinue
     }
     if (-not (Test-Path $python)) { Write-Host "正在準備 Python 與套件，第一次約需 1 到 3 分鐘..." }
 
