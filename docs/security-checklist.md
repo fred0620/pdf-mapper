@@ -12,6 +12,7 @@
 [ ] 7. 有疑慮就標記：解析邏輯的修改沒有把「標記給人確認」改成「直接猜值」
 [ ] 8. CHANGELOG 寫了這版改了什麼（自動：沒寫不能發布）
 [ ] 9. 畫面測試通過（手動：uv run --project app --group ui pytest tests/ui，CI 沒有瀏覽器）
+[ ] 10. 新功能導覽已更新：whatsnew.json 有這一版的條目（自動：check_whatsnew.py，沒寫不能發布）
 ```
 
 ## 已經內建、修改時要維持的

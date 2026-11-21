@@ -4,7 +4,7 @@
 
 | 你是 | 請看 |
 |---|---|
-| 使用者 | [使用手冊](docs/使用手冊.md)（工具右上角也能開啟）、[換版說明](docs/換版說明.md) |
+| 使用者 | [使用手冊](docs/使用手冊.md)（工具右上角「說明」也能開啟）、[換版說明](docs/換版說明.md) |
 | 負責人、接手的人 | [工具卡](OWNER.md) → [維護手冊](docs/maintain.md) → [設計決策](docs/design.md) |
 | 要發布新版 | [維護手冊的發布步驟](docs/maintain.md#3-發布新版) 與 [發版檢查清單](docs/security-checklist.md) |
 
