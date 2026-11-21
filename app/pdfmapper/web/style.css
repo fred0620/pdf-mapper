@@ -45,6 +45,11 @@
   --press: cubic-bezier(0.2, 0.8, 0.2, 1);
   --font: system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
   --mono: "SF Mono", "SFMono-Regular", ui-monospace, Consolas, monospace;
+  /* 補充 token（導覽元件用，Stageshow 沒有獨立名稱）：深底上的字，對應 Stageshow tooltip 的白字；
+     建議位置的虛線用 text-strong 的 60% */
+  --text-inverse: #ffffff;
+  --guide-line: color-mix(in srgb, var(--text-strong) 60%, transparent);
+  --settle: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -437,5 +442,118 @@ details .form { margin-top: 10px; }
   .narrow-note { display: block; }
   .workspace { grid-template-columns: 1fr; grid-auto-rows: minmax(300px, auto); overflow: auto; }
   .left, .right { border: 0; }
+}
+
+/* ---------- 導覽（spotlights.js） ----------
+   引導一律用深色（text-strong）：藍色在這個工具代表「已人工處理」與主按鈕，
+   引導若也用藍色，在結果表格與 PDF 框上分不清是「要你點」還是「已處理」。 */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.btn.ghost { background: none; box-shadow: none; color: var(--text-strong); }
+.btn.ghost:hover:not(:disabled) { background: var(--ink-2); }
+
+/* 進度列：只占中央欄 */
+.guide-bar {
+  display: flex; align-items: center; gap: 12px; height: var(--bar); padding: 0 12px;
+  background: var(--surface); border-bottom: 1px solid var(--ink-2); font-size: 12.5px;
+}
+.guide-name { font-weight: 600; color: var(--text-strong); white-space: nowrap; }
+.guide-steps { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; }
+.guide-steps li { display: flex; align-items: center; }
+.guide-steps li + li::before { content: ""; width: 14px; max-width: 20px; height: 1px; background: var(--ink-2); }
+.guide-step {
+  position: relative; width: 18px; height: 18px; padding: 0; background: none; border: 0; border-radius: var(--radius-pill);
+}
+.guide-step::after {
+  content: ""; position: absolute; inset: 5px; border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--ink-5); background: transparent;
+}
+.guide-step.done::after { background: var(--text-strong); box-shadow: none; }
+.guide-step.active::after { background: var(--text-strong); box-shadow: 0 0 0 3px var(--ink-2); }
+.guide-step.skipped::after { background: linear-gradient(135deg, transparent 45%, var(--text) 45%, var(--text) 58%, transparent 58%); }
+.guide-progress { color: var(--text-strong); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guide-bar .spring { flex: 1; }
+.guide-bar-actions { display: flex; gap: 8px; }
+.guide-bar-actions .btn { font-size: 12.5px; }
+
+/* 指令條：版面的一部分，不是浮動物，所以沒有陰影 */
+.mission-strip {
+  display: flex; align-items: flex-start; gap: 10px; margin: 8px 12px; padding: 10px 12px;
+  background: var(--well); border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--ink-2);
+}
+.mission-enter { animation: missionIn 300ms var(--ui); }
+@keyframes missionIn { from { opacity: 0; } to { opacity: 1; } }
+.mission-badge {
+  flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px; border-radius: var(--radius-pill);
+  display: grid; place-items: center; background: var(--text-strong); color: var(--text-inverse);
+  font-size: 12.5px; font-weight: 600; line-height: 1;
+}
+.mission-text { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.mission-text p { margin: 0; }
+.mission-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-strong); }
+.mission-tip, .mission-note { font-size: 12.5px; color: var(--text); }
+.mission-note { color: var(--text-strong); }
+.mission-assist { min-height: 24px; padding: 0 8px; font-size: 12.5px; box-shadow: inset 0 0 0 1px var(--ink-4); }
+.mission-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.mission-controls .btn { font-size: 12.5px; }
+.mission-controls .linkish { margin-right: 4px; }
+
+/* 五色圖例 */
+.legend-row { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--text-strong); }
+.legend-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: var(--radius-sm); }
+.legend-swatch { width: 10px; height: 10px; border-radius: 3px; }
+.sw-review { background: var(--warning); }
+.sw-missing { background: var(--danger); }
+.sw-handled { background: var(--accent); }
+.sw-ok { background: var(--success); }
+.sw-notice { background: var(--ink-5); }
+
+/* 指向浮標：深底白字、帶三角，不擋滑鼠 */
+.mission-pointer {
+  position: fixed; z-index: 15; height: 26px; padding: 0 10px; border-radius: var(--radius-md);
+  display: inline-flex; align-items: center; white-space: nowrap; pointer-events: none;
+  background: var(--text-strong); color: var(--text-inverse); font-size: 12.5px; font-weight: 500; box-shadow: var(--shadow-float);
+}
+.mission-pointer::after { content: ""; position: absolute; border: 6px solid transparent; }
+.mission-pointer[data-dir="left"]::after { right: 100%; top: 50%; margin-top: -6px; border-right-color: var(--text-strong); }
+.mission-pointer[data-dir="right"]::after { left: 100%; top: 50%; margin-top: -6px; border-left-color: var(--text-strong); }
+.mission-pointer[data-dir="down"]::after { top: 100%; left: 50%; margin-left: -6px; border-top-color: var(--text-strong); }
+.mission-pointer[data-dir="up"]::after { bottom: 100%; left: 50%; margin-left: -6px; border-bottom-color: var(--text-strong); }
+
+/* 畫布虛線靶框：和已畫好的藍色實線範本框區分 */
+.guide-ghost {
+  position: absolute; border: 1.5px dashed var(--guide-line); border-radius: 2px; background: var(--ink-1);
+  pointer-events: none; z-index: 5;
+}
+.guide-ghost-tag {
+  position: absolute; left: -1.5px; bottom: calc(100% + 4px); height: 22px; padding: 0 8px; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; white-space: nowrap;
+  background: var(--text-strong); color: var(--text-inverse); font-size: 12.5px; font-weight: 500;
+}
+.guide-ghost-line { position: absolute; width: 0; border-left: 1.5px dashed var(--guide-line); pointer-events: none; z-index: 5; }
+.guide-ghost-dot {
+  position: absolute; left: -4px; top: -10px; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--text-strong);
+}
+
+/* 要你點的目標：深色實線外框，進入新步驟時脈衝 2 次後靜止 */
+.guide-target { outline: 2px solid var(--text-strong) !important; outline-offset: 3px; border-radius: var(--radius-sm); }
+.guide-pulse { animation: targetPulse 350ms var(--ui) 2; }
+@keyframes targetPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+
+/* 浮動卡：教學卡、說明選單、新功能小卡共用 */
+.float-card {
+  position: fixed; z-index: 16; width: 312px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto;
+  padding: 12px; background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-float);
+  font-size: 12.5px; line-height: 1.5; color: var(--text);
+}
+.float-enter { animation: floatIn 250ms var(--ui); }
+@keyframes floatIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.float-card h2 { margin: 0 0 6px; font-size: 14px; font-weight: 500; color: var(--text-strong); }
+.float-card p { margin: 0; }
+.float-card .card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.float-card .card-actions .spring { flex: 1; }
+.float-card .card-count { color: var(--text); font-size: 12.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mission-enter, .guide-pulse, .float-enter, .help-dot { animation: none !important; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

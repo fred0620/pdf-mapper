@@ -21,6 +21,8 @@
   <aside id="left" class="side left" aria-label="檔案"></aside>
   <main class="center">
     <div id="toolbar" class="toolbar"></div>
+    <div id="guideBar" class="guide-bar" hidden aria-label="導覽進度"></div>
+    <div id="missionStrip" class="mission-strip" hidden aria-live="polite" aria-atomic="true"></div>
     <p id="hint" class="hint" role="status"></p>
     <div id="stage" class="stage">
       <div id="empty" class="empty"></div>
@@ -34,8 +36,11 @@
   </main>
   <aside id="right" class="side right" aria-label="設定"></aside>
 </div>
+<div id="coachCard" class="float-card coach-card" hidden role="dialog" aria-label="操作提示"></div>
+<div id="missionPointer" class="mission-pointer" hidden aria-hidden="true"></div>
 <div id="toast" class="toast" role="alert" hidden></div>
 <input id="filePicker" type="file" accept="application/pdf" multiple hidden>
+<script src="/web/spotlights.js"></script>
 <script src="/web/app.js"></script>
 </body>
 </html>

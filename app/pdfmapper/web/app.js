@@ -60,6 +60,8 @@ const state = {
   drawerOpen: false,
   recovery: null,      // 上次關閉時未儲存的範本，等使用者決定要不要接著做
   popped: { pdf: false, table: false },  // 主視窗：哪些畫面移到另一個視窗
+  onboarding: blankPrefs(),  // 導覽進度與偏好（spotlights.js），啟動時從 localStorage 讀
+  guide: blankGuide(),       // 執行中的導覽狀態，不存檔
 };
 
 /* ---------- 伺服器 ---------- */
@@ -528,6 +530,7 @@ function renderOverlay() {
   if (editing) renderDefinitions(layer);
   const result = activeResult();
   if (result && (!editing || state.tool === "select" && !state.selected)) renderResultBoxes(layer, result);
+  renderGhostGuides(layer);
 }
 function startDraw(event) {
   document.activeElement?.blur?.();
@@ -599,6 +602,7 @@ function renderToolbar() {
       h("button", { "aria-label": "縮小", onclick: () => zoomBy(0.85) }, "−"),
       h("button", { "aria-label": "放大", onclick: () => zoomBy(1.18) }, "+"),
       popButton("pdf")) : "");
+  scheduleGuide();
 }
 const COMPACT_SHEET_WIDTH = 640;
 function zoomBy(factor) { state.zoom = clamp(state.zoom * factor, 0.5, 4); renderPage(); }
@@ -619,6 +623,7 @@ function renderHint() {
     else if (state.selected?.type === "table") text = "在表格內點一下加分隔線。拖曳分隔線可移動，雙擊可刪除。";
   }
   $("hint").textContent = text;
+  scheduleGuide();
 }
 
 /* ---------- 左欄 ---------- */
@@ -898,7 +903,7 @@ function renderLeftRun() {
       h("p", { class: "note" }, `${state.run.done}/${state.run.total}，${state.run.current}`)] : null,
     thumbs());
 }
-function renderLeft() { (state.view === "train" ? renderLeftTrain : renderLeftRun)(); }
+function renderLeft() { (state.view === "train" ? renderLeftTrain : renderLeftRun)(); scheduleGuide(); }
 
 /* ---------- 右欄：建立範本 ---------- */
 function ruleSelect(item, onChange) {
@@ -1575,7 +1580,7 @@ function renderRightRun() {
         onchange: (e) => { state.onlyConfirmed = e.target.checked; renderRight(); },
       }), "乾淨資料只輸出已確認")));
 }
-function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); }
+function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); scheduleGuide(); }
 
 /* ---------- 抓取結果 ---------- */
 const CELL_STATUS = { review: "review", missing: "missing", corrected: "handled", confirmed: "handled" };
@@ -1618,6 +1623,7 @@ function renderDrawer() {
   const result = activeResult();
   const drawer = $("drawer");
   drawer.hidden = !result || !state.drawerOpen;
+  scheduleGuide();
   if (drawer.hidden) return;
   const fieldTable = result.fields.length ? [h("h3", {}, "欄位"), h("table", { class: "data" },
     h("thead", {}, h("tr", {}, result.fields.map((f) => h("th", {}, f.name)))),
@@ -1833,10 +1839,11 @@ async function main() {
     document.body.classList.remove("dropping");
     addFiles(e.dataTransfer.files);
   });
-  if (POPOUT) startPopout(); else loadDraft();
+  if (POPOUT) startPopout(); else { loadDraft(); restoreGuide(); }
   listenPopouts();
   renderAll();
   watchConnection();
+  watchGuideLayout();
   try {
     const status = await api("/api/status");
     state.reasons = status.reasons;
