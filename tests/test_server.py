@@ -138,3 +138,85 @@ def test_run_status_returns_only_new_results():
         assert client.get("/api/runs/s?since=-1").json["since"] == 0
     finally:
         server._runs.pop("s")
+
+
+def test_demo_samples_whitelist_and_origin(tmp_path, monkeypatch):
+    """示範模式走伺服器端白名單，不接受路徑；跨站請求一樣被擋。"""
+    monkeypatch.setattr(server, "UPLOADS", tmp_path)
+    client = server.app.test_client()
+    for mode in ("nope", "../train", "sample_1_standard.pdf", None, ["run"]):
+        assert client.post("/api/demo-samples", json={"mode": mode}).status_code == 400, mode
+    blocked = client.post("/api/demo-samples", json={"mode": "run"}, headers={"Origin": "https://evil.example"})
+    assert blocked.status_code == 403
+    cross = client.post("/api/demo-samples", json={"mode": "run"}, headers={"Sec-Fetch-Site": "cross-site"})
+    assert cross.status_code == 403
+    assert not list(tmp_path.iterdir())
+
+
+def test_demo_samples_copy_into_uploads(tmp_path, monkeypatch):
+    uploads, templates = tmp_path / "uploads", tmp_path / "templates"
+    templates.mkdir()
+    monkeypatch.setattr(server, "UPLOADS", uploads)
+    monkeypatch.setattr(server, "TEMPLATES", templates)
+    client = server.app.test_client()
+    try:
+        train = client.post("/api/demo-samples", json={"mode": "train"}).json
+        assert train["demo"] and len(train["docs"]) == 1 and "template" not in train
+        assert train["guide"]["template_id"] == "invoice_demo"
+        assert "patch" not in str(train["guide"])  # 影像圖塊不傳給頁面
+        run = client.post("/api/demo-samples", json={"mode": "run"}).json
+        assert [d["pages"] > 0 for d in run["docs"]] == [True, True]
+        assert run["recommended_template_id"] == "customs_demo" and run["template"]["template_id"] == "customs_demo"
+        (templates / "customs_demo.json").write_text("{}", encoding="utf-8")
+        assert "template" not in client.post("/api/demo-samples", json={"mode": "run"}).json  # 已有同代號範本就用它
+        showcase = client.post("/api/demo-samples", json={"mode": "showcase"}).json
+        assert showcase["template"]["template_id"] == "invoice_demo"
+        assert all(p.parent == uploads for p in uploads.iterdir())
+        assert not list((templates).glob("invoice*"))  # 不寫入 workspace/templates
+    finally:
+        for doc_id in list(server._docs):
+            server._docs.pop(doc_id).close()
+
+
+def test_demo_runs_do_not_count_and_export_prefix(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "OUTPUT", tmp_path)
+    saved = dict(server._runs)
+    server._runs.clear()
+    try:
+        for i in range(server.MAX_RUNS):
+            server._runs[f"n{i}"] = {"total": 0, "done": 0, "current": "", "results": [], "finished": True}
+        server._runs["d"] = {"total": 0, "done": 0, "current": "", "results": [], "finished": True, "demo": True}
+        server._forget_old_runs()
+        assert "d" in server._runs and len([k for k in server._runs if k.startswith("n")]) == server.MAX_RUNS - 1
+        server._forget_old_runs(demo=True)  # 新的示範解析取代舊的，正式結果不受影響
+        assert "d" not in server._runs and len(server._runs) == server.MAX_RUNS - 1
+        server._runs["d"] = {"total": 0, "done": 0, "current": "", "results": [], "finished": True, "demo": True}
+        response = server.app.test_client().get("/api/runs/d/excel")
+        assert "示範_" in response.headers["Content-Disposition"] or "%E7%A4%BA%E7%AF%84_" in response.headers["Content-Disposition"]
+    finally:
+        server._runs.clear()
+        server._runs.update(saved)
+
+
+def test_only_practice_templates_can_be_deleted(tmp_path, monkeypatch):
+    from pdfmapper import template as tpl
+
+    monkeypatch.setattr(server, "TEMPLATES", tmp_path)
+    base = {"schema_version": 1, "fields": [], "tables": [], "anchors": [], "validations": []}
+    tpl.save({**base, "template_id": "real", "name": "正式範本"}, tmp_path / "real.json")
+    tpl.save({**base, "template_id": "practice", "name": "商業發票（練習）"}, tmp_path / "practice.json")
+    client = server.app.test_client()
+    assert client.delete("/api/templates/real").status_code == 403
+    assert client.delete("/api/templates/practice").status_code == 200
+    assert client.delete("/api/templates/practice").status_code == 404
+    assert client.delete("/api/templates/..%2Freal").status_code in (400, 404)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["real.json"]
+
+
+def test_demo_files_match_samples():
+    """示範檔從 app/samples 與示範範本複製，兩邊要一致（重建用 scripts/build_demo.py）。"""
+    app = server.paths.APP
+    for name in ("sample_1_standard.pdf", "sample_5_errors.pdf", "sample_6_invoice.pdf"):
+        assert (server.DEMO / name).read_bytes() == (app / "samples" / name).read_bytes(), name
+    for name in ("invoice_demo.json", "customs_demo.json"):
+        assert (server.DEMO / name).read_bytes() == (app / "examples" / "templates" / name).read_bytes(), name

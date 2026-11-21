@@ -33,6 +33,17 @@ from .logs import log
 from .parser import find_value, handle_value, parse_best, parse_pdf, summarize
 
 WEB = Path(__file__).resolve().parent / "web"
+# 新手導覽的示範檔，隨 app 更新、使用者刪不掉，不依賴 workspace/templates
+DEMO = Path(__file__).resolve().parent / "demo"
+# 只接受白名單裡的模式，不接受任何路徑或檔名參數。（檔名, 頁面上顯示的名稱）
+DEMO_SETS = {
+    "train": {"docs": [("sample_6_invoice.pdf", "示範發票.pdf")], "template": None, "guide": "invoice_demo.json"},
+    "run": {"docs": [("sample_1_standard.pdf", "示範報單_正常.pdf"), ("sample_5_errors.pdf", "示範報單_有疑點.pdf")],
+            "template": "customs_demo.json", "guide": None},
+    "showcase": {"docs": [("sample_6_invoice.pdf", "示範發票.pdf")], "template": "invoice_demo.json", "guide": None},
+}
+DEMO_RUN_TEMPLATE = "customs_demo.json"
+PRACTICE_SUFFIX = "（練習）"   # 導覽練習存的範本名稱結尾，只有這種範本可以從導覽刪除
 UPLOADS = paths.UPLOADS
 TEMPLATES = paths.TEMPLATES
 OUTPUT = paths.OUTPUT
@@ -327,6 +338,10 @@ def remove_doc(doc_id):
     with _runs_lock:
         for run in _runs.values():
             run["results"] = [r for r in run["results"] if r.get("doc_id") != doc_id]
+        # 關閉示範文件時，示範解析結果一起刪掉
+        for run_id in [k for k, run in _runs.items() if run.get("demo") and run["finished"] and not run["results"]]:
+            _runs.pop(run_id, None)
+            _run_templates.pop(run_id, None)
     log.info("移除 doc=%s", doc_id)
     return jsonify({"removed": doc_id})
 
@@ -415,6 +430,64 @@ def get_template(template_id):
     return jsonify(tpl.load(_template_path(template_id)))
 
 
+@app.delete("/api/templates/<template_id>")
+def delete_practice_template(template_id):
+    """導覽完成時刪掉練習存的範本。只刪名稱以「（練習）」結尾的，正式範本不能從這裡刪。"""
+    path = _template_path(template_id)
+    if not path.is_file():
+        raise Missing("找不到這個範本")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not str(data.get("name", "")).endswith(PRACTICE_SUFFIX):
+        return _error("只能刪除導覽練習存的範本", 403)
+    path.unlink()
+    log.info("刪除練習範本 template=%s", template_id)
+    return jsonify({"removed": template_id})
+
+
+def _demo_template(name: str) -> dict:
+    """示範範本唯讀，從 app 讀取；影像圖塊不傳給頁面。"""
+    data = tpl.load(DEMO / name)
+    for item in [*data.get("fields", []), *data.get("anchors", [])]:
+        for part in (item, item.get("label") or {}):
+            part.pop("patch", None)
+    for table in data.get("tables", []):
+        for marker in [table.get("end_marker") or {}, *[r.get("header") or {} for r in table.get("regions", [])]]:
+            marker.pop("patch", None)
+    return data
+
+
+@app.post("/api/demo-samples")
+def demo_samples():
+    """新手導覽：把 app 內附的示範 PDF 複製進上傳暫存，和一般上傳一樣檢查頁數與損壞。"""
+    body = _json_body()
+    mode = body.get("mode")
+    if not isinstance(mode, str) or mode not in DEMO_SETS:
+        raise ValueError("不認得的示範模式")
+    spec = DEMO_SETS[mode]
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    docs = []
+    for source, name in spec["docs"]:
+        doc_id = uuid.uuid4().hex
+        target = UPLOADS / f"{doc_id}__{name}"
+        shutil.copyfile(DEMO / source, target)
+        try:
+            docs.append({**_describe(doc_id, name), "demo": True})
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
+    response = {"docs": docs, "demo": True, "recommended_template_id": None}
+    if spec["template"]:
+        template = _demo_template(spec["template"])
+        response["recommended_template_id"] = template["template_id"]
+        # 解析 PDF 的示範：使用者已經有同代號的範本就用它，否則前端用暫用範本（不寫入 workspace）
+        if mode == "showcase" or not _template_path(template["template_id"]).is_file():
+            response["template"] = template
+    if spec["guide"]:
+        response["guide"] = _demo_template(spec["guide"])  # 只用來畫導覽的虛線靶框
+    log.info("載入示範 mode=%s docs=%s count=%d", mode, ",".join(d["id"] for d in docs), len(docs))
+    return jsonify(response)
+
+
 @app.post("/api/templates")
 def save_template():
     body = _json_body()
@@ -464,10 +537,17 @@ def _run_job(run_id: str, templates: list[dict], docs: list[str]) -> None:
                  run_id, run["done"], failed, time.time() - started)
 
 
-def _forget_old_runs() -> None:
+def _forget_old_runs(demo: bool = False) -> None:
+    """正式解析最多保留 MAX_RUNS 次；示範解析不算在內，只留最新一次。"""
     with _runs_lock:
-        finished = [run_id for run_id, run in _runs.items() if run["finished"]]
-        for run_id in finished[:max(0, len(_runs) - MAX_RUNS + 1)]:
+        if demo:
+            for run_id in [k for k, run in _runs.items() if run.get("demo") and run["finished"]]:
+                _runs.pop(run_id, None)
+                _run_templates.pop(run_id, None)
+            return
+        normal = [k for k, run in _runs.items() if not run.get("demo")]
+        finished = [k for k in normal if _runs[k]["finished"]]
+        for run_id in finished[:max(0, len(normal) - MAX_RUNS + 1)]:
             _runs.pop(run_id, None)
             _run_templates.pop(run_id, None)
 
@@ -475,23 +555,28 @@ def _forget_old_runs() -> None:
 @app.post("/api/runs")
 def start_run():
     body = _json_body()
-    if not body.get("template_ids"):
+    # 示範解析：伺服器端固定用 app 內附的示範範本，不接受頁面傳來的範本內容
+    demo = body.get("demo") == "run"
+    if not demo and not body.get("template_ids"):
         return _error("請先選擇範本")
     if not body.get("docs"):
         return _error("請先加入 PDF")
-    if not isinstance(body["docs"], list) or not isinstance(body["template_ids"], list):
+    if not isinstance(body["docs"], list) or not isinstance(body.get("template_ids", []), list):
         raise ValueError("請求內容格式不正確")
     docs = list(dict.fromkeys(body["docs"]))
     for doc_id in docs:
         _doc_path(doc_id)  # 先確認檔案都在，避免背景工作中途才失敗
-    templates = [tpl.load(_template_path(template_id)) for template_id in body["template_ids"]]
-    _forget_old_runs()
+    if demo:
+        templates = [tpl.load(DEMO / DEMO_RUN_TEMPLATE)]
+    else:
+        templates = [tpl.load(_template_path(template_id)) for template_id in body["template_ids"]]
+    _forget_old_runs(demo)
     run_id = uuid.uuid4().hex
     with _runs_lock:
-        _runs[run_id] = {"total": len(docs), "done": 0, "current": "", "results": [], "finished": False}
+        _runs[run_id] = {"total": len(docs), "done": 0, "current": "", "results": [], "finished": False, "demo": demo}
         _run_templates[run_id] = {t["template_id"]: t for t in templates}
-    log.info("開始解析 run=%s files=%d templates=%s", run_id, len(docs),
-             ",".join(t["template_id"] for t in templates))
+    log.info("開始解析 run=%s files=%d templates=%s demo=%s", run_id, len(docs),
+             ",".join(t["template_id"] for t in templates), demo)
     threading.Thread(target=_run_job, args=(run_id, templates, docs), daemon=True).start()
     return jsonify({"run_id": run_id})
 
@@ -537,7 +622,8 @@ def edit_value(run_id):
 def export(run_id):
     run = _run(run_id)
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    path = write_excel(run["results"], OUTPUT / f"解析結果_{stamp}.xlsx")
+    prefix = "示範_" if run.get("demo") else ""  # 示範的匯出檔和正式資料分得出來
+    path = write_excel(run["results"], OUTPUT / f"{prefix}解析結果_{stamp}.xlsx")
     log.info("匯出檢查用 Excel run=%s file=%s", run_id, path.name)
     return send_file(path, as_attachment=True, download_name=path.name)
 
@@ -547,8 +633,9 @@ def export_clean(run_id):
     run = _run(run_id)
     stamp = time.strftime("%Y%m%d_%H%M%S")
     only_confirmed = request.args.get("only_confirmed") == "1"
+    prefix = "示範_" if run.get("demo") else ""
     path = write_clean(run["results"], _run_templates.get(run_id, {}),
-                       OUTPUT / f"乾淨資料_{stamp}.xlsx", only_confirmed)
+                       OUTPUT / f"{prefix}乾淨資料_{stamp}.xlsx", only_confirmed)
     log.info("匯出乾淨資料 run=%s file=%s only_confirmed=%s", run_id, path.name, only_confirmed)
     return send_file(path, as_attachment=True, download_name=path.name)
 

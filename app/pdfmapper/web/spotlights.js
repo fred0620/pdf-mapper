@@ -266,7 +266,7 @@ function renderGuideBar(info) {
 function renderMissionStrip(info) {
   const strip = $("missionStrip");
   const g = state.guide;
-  if (!info) { strip.hidden = true; g.stripKey = ""; return; }
+  if (!info || (!info.step && !info.complete)) { strip.hidden = true; g.stripKey = ""; return; }
   const view = info.view;
   const content = info.complete ? completionContent(view) : stepContent(info);
   const key = JSON.stringify([view, content.key]);

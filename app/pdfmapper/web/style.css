@@ -146,8 +146,26 @@ button { cursor: pointer; }
   border: 1.5px dashed var(--ink-5); border-radius: var(--radius-window); color: var(--text); padding: 24px;
   background: color-mix(in srgb, var(--surface) 60%, transparent);
 }
-.empty strong { display: block; font-size: 18px; font-weight: 600; color: var(--text-strong); margin-bottom: 6px; }
-.empty button { margin-top: 14px; justify-self: center; }
+/* 起點歡迎畫面：入口卡置中偏上（上方留約 1/3），文字靠左 */
+.empty:has(.welcome) { place-content: start center; padding-top: max(24px, calc(33% - 120px)); }
+.welcome { width: min(420px, 100%); display: grid; gap: 12px; text-align: left; }
+.welcome-title { margin: 0; font-size: 14px; font-weight: 500; color: var(--text-strong); }
+.welcome-card {
+  display: grid; gap: 2px; width: 100%; padding: 14px 16px; border: 0; border-radius: var(--radius-lg); text-align: left;
+  background: var(--accent); color: var(--text-inverse); box-shadow: var(--shadow-card);
+  transition: transform 180ms var(--press), background-color 160ms ease;
+}
+.welcome-card:hover:not(:disabled) { background: color-mix(in srgb, var(--accent), #000 10%); }
+.welcome-card:active:not(:disabled) { transform: scale(0.99); }
+.welcome-card:disabled { opacity: .6; cursor: default; }
+.welcome-card-title { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; font-weight: 600; }
+.welcome-card-time { font-size: 12.5px; font-weight: 500; opacity: .85; }
+.welcome-card-sub { font-size: 12.5px; opacity: .9; }
+.welcome-card.quiet { background: var(--surface); color: var(--text-strong); box-shadow: inset 0 0 0 1px var(--ink-4); }
+.welcome-card.quiet:hover:not(:disabled) { background: color-mix(in srgb, var(--surface), #000 4%); }
+.welcome-card.quiet .welcome-card-sub, .welcome-card.quiet .welcome-card-time { color: var(--text); opacity: 1; }
+.welcome-more { display: flex; gap: 8px; }
+.welcome-note { margin: 0; font-size: 12.5px; color: var(--text); }
 .dropping .empty, .dropping .drop { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
 
 /* 頁面上的框 */
