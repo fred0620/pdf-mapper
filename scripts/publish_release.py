@@ -57,7 +57,7 @@ def release_body(tag: str, version: str) -> dict:
         "tag_name": tag,
         "name": f"PDF 解析器 {version}",
         "description": (f"下載 {zip_name} 和 SHA256SUMS.txt，不用解壓，兩個都放進工具資料夾後雙擊 run.bat，"
-                        "核對相符就會安裝，範本不受影響。步驟見 docs/換版說明.md，更新內容見 CHANGELOG.md。"),
+                        "核對相符就會安裝，範本不受影響。步驟見 ZIP 裡的 app/換版說明.html，更新內容見 CHANGELOG.md。"),
         "assets": {"links": [
             {"name": zip_name, "url": package_url(version, zip_name), "link_type": "package"},
             {"name": "SHA256SUMS.txt", "url": package_url(version, "SHA256SUMS.txt"), "link_type": "other"},

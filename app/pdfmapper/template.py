@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+import regex
+
 from . import ocr as ocr_engine
 from .align import Transform, align_page, box_center, find_text, make_patch
 from .document import Document, Page, expand, group_lines, is_garbled, line_text
@@ -18,6 +20,7 @@ except ImportError:  # pragma: no cover
 
 SCHEMA_VERSION = 1
 MAX_PATTERN_LENGTH = 500
+NESTED_REPEAT_LIMIT = 3  # 外層可重複幾次以上就檢查巢狀重複（MAXREPEAT 是無上限，一定大於這個數）
 _REPEATS = {_sre.MAX_REPEAT, _sre.MIN_REPEAT}
 FIELD_KINDS = {"key_value", "position"}
 PAGE_RULES = {"first", "rest", "last", "all"}
@@ -76,15 +79,17 @@ def _has_inner_repeat(op, av) -> bool:
 
 
 def _nested_repeat(items) -> bool:
-    """找「無上限的重複裡面又有重複，而且沒有固定字元隔開」，例如 (a+)+、(\\w+\\s?)+。
+    """找「可以重複三次以上的內容裡面又有重複，而且沒有固定字元隔開」，例如 (a+)+、(\\w+\\s?)+、(\\d+\\s?){6}。
 
-    這種寫法遇到比不中的長字串時會反覆回溯，時間呈指數增長，單一儲存格就能讓解析卡住。
+    這種寫法遇到比不中的長字串時會反覆回溯：無上限時呈指數增長，上限 n 次時約是字數的 n 次方，
+    單一儲存格就能讓解析卡住。實測 (\\d+\\s?){3} 遇到 300 字就要好幾秒，{2} 不到 0.3 秒，所以從 3 次開始擋。
     (\\d+,)+ 這類中間有固定字元的寫法不受影響。
+    這裡只是儲存時的提醒，擋不到所有寫法（例如 (a|aa)+）；真正的保護是執行時的逾時（limits.search）。
     """
     for op, av in items:
         if op in _REPEATS:
             body = _flatten(av[2])
-            if av[1] == _sre.MAXREPEAT and any(_has_inner_repeat(o, a) for o, a in body):
+            if av[1] >= NESTED_REPEAT_LIMIT and any(_has_inner_repeat(o, a) for o, a in body):
                 anchored = any(not _has_inner_repeat(o, a) and _sre_parse.SubPattern(av[2].state, [(o, a)]).getwidth()[0] > 0
                                for o, a in body)
                 if not anchored:
@@ -110,7 +115,8 @@ def _check_regex(spec: dict, keys: tuple[str, ...], where: str, errors: list[str
             continue
         try:
             re.compile(pattern)
-        except re.error as exc:
+            regex.compile(pattern)  # 解析時用 regex 套件執行，兩邊都要能接受
+        except (re.error, regex.error) as exc:
             errors.append(f"{where} 的正規表達式有誤：{pattern}（{exc}）")
             continue
         if _nested_repeat(_sre_parse.parse(pattern)):

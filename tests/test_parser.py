@@ -788,3 +788,47 @@ def test_start_value_on_one_page_is_not_flagged():
     assert _page_flags({"start": "ECCN", "end": "line"}, "5A992", lines, info) == []
     assert _page_flags({}, "ECCN: 5A992 Origin: TW", lines, info) == ["row_spans_pages"]
     assert _page_flags({"start": "ECCN", "end": "next"}, "5A992 Origin: TW", lines, info) == ["row_spans_pages"]
+
+
+def test_parse_best_opens_pdf_once(samples, template, invoice_template, monkeypatch):
+    """多個範本時只開一次 PDF，影像辨識不用每個範本重做。"""
+    from pdfmapper import parser as parser_module
+
+    folder, _ = samples
+    opened = []
+    real = parser_module.Document
+
+    def counting(path):
+        opened.append(path)
+        return real(path)
+
+    monkeypatch.setattr(parser_module, "Document", counting)
+    similar = {**template, "template_id": "copy"}
+    result = parser_module.parse_best(folder / "sample_1_standard.pdf", [template, similar, invoice_template])
+    assert len(opened) == 1
+    assert result["template_id"] in (template["template_id"], "copy")
+    assert result["counts"]["total"] > 0
+
+
+def test_validation_issue_clears_when_its_value_is_handled(samples, template):
+    from pdfmapper.parser import blocking_issues, find_value, handle_value, summarize
+
+    folder, _ = samples
+    result = parse_pdf(folder / "sample_5_errors.pdf", template)
+    issue = next(i for i in result["issues"] if i["code"] == "sum_mismatch")
+    value = find_value(result, issue["ref"])
+    assert "sum_mismatch" in value["reasons"] and issue in blocking_issues(result)
+
+    handle_value(value, "confirm")
+    summarize(result)
+    assert issue["resolved"] and issue not in blocking_issues(result)
+    if not result["counts"]["review"] and not result["counts"]["missing"] and not blocking_issues(result):
+        assert result["status"] == "ok"
+
+    handle_value(value, "revert")
+    summarize(result)
+    assert not issue["resolved"] and issue in blocking_issues(result)
+
+    handle_value(value, "correct", "1")
+    summarize(result)
+    assert issue["resolved"]

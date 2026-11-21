@@ -49,7 +49,8 @@ def _summary(values: list[dict]) -> tuple[str, str]:
 
 
 def _issues(result: dict) -> str:
-    return "；".join(("提示：" if issue.get("level") == "notice" else "") + issue["message"]
+    return "；".join(("已處理：" if issue.get("resolved") else "提示：" if issue.get("level") == "notice" else "")
+                    + issue["message"]
                     for issue in result.get("issues", []))
 
 
