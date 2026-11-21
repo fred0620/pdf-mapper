@@ -102,3 +102,69 @@ def test_train_journey_with_demo_invoice(page):
     strip(page).get_by_role("button", name="刪除練習範本").click()
     expect(page.locator("#toast")).to_contain_text("已刪除練習範本")
     assert not [p for p in server.TEMPLATES.glob("*.json") if "練習" in json.loads(p.read_text("utf-8"))["name"]]
+
+
+def start_run_demo(page):
+    page.click("#tabRun")
+    page.click("#demoStartBtn")
+    expect(page.locator(".docs .meta.warn, .docs .meta.good")).to_have_count(2, timeout=120_000)
+
+
+def test_run_journey_with_demo_files(page, context):
+    start_run_demo(page)
+    expect(page.locator(".docs li[aria-current=true]")).to_contain_text("有疑點")  # 解析完切到異常檔
+    expect_step(page, 2, "橘色")
+    expect(strip(page).locator(".legend-row li")).to_have_count(5)
+    expect(strip(page).locator(".legend-row")).to_contain_text("待檢查缺值已處理正常整份提示")
+
+    # 直接修改第一個示警（沒先按定位）：停在第 3 步並指向還原，看見處理紀錄後才到第 4 步
+    item = page.locator("#right .review-item.review, #right .review-item.missing").first
+    item.locator("textarea").fill("人工值")
+    item.locator("textarea").press("Enter")
+    expect_step(page, 3, "改對按 Enter")
+    expect(page.locator("#right .review-item.handled .linkish")).to_have_class(TARGET)
+    expect(strip(page).locator(".mission-tip")).to_contain_text("還原")
+    expect_step(page, 4, "正常格")
+
+    normal = page.locator("#drawer td[data-ref]:not(.review):not(.missing):not(.handled)").first
+    expect(normal).to_have_class(TARGET)
+    page.locator("#drawer td.handled").first.click()  # 剛處理過的格子不算正常格
+    page.wait_for_timeout(400)
+    expect_step(page, 4, "正常格")
+
+    # 在另開的表格視窗點選正常格並修改，主視窗也會推進
+    with context.expect_page() as info:
+        page.locator("#popTableBtn").click()
+    popup = info.value
+    popup.wait_for_selector("#drawer td[data-ref]")
+    expect(popup.locator("#nextFlaggedBtn")).to_be_visible()  # 實用功能，表格視窗保留
+    for hidden in ("#guideBar", "#missionStrip", "#missionPointer", ".drawer-tip"):
+        expect(popup.locator(hidden)).to_be_hidden()
+    cell = popup.locator("#drawer td[data-ref]:not(.review):not(.missing):not(.handled)").nth(1)
+    ref = cell.get_attribute("data-ref")
+    cell.click()
+    expect_step(page, 5, "儲存修改")
+    popup.locator(f'#drawer td[data-ref="{ref}"]').dblclick()
+    popup.locator(".cell-edit").fill("微調\n第二行")
+    popup.locator(".cell-edit").press("Enter")
+    expect_step(page, 6, "匯出")
+    with popup.expect_event("close"):
+        page.locator("#popnote").get_by_role("button", name="收回").click()
+    expect(page.locator(f'#drawer td[data-ref="{ref}"]')).to_have_text("微調\n第二行")
+
+    with page.expect_download() as download:
+        page.locator("#exportExcelBtn").click()
+    assert download.value.suggested_filename.startswith("示範_")
+    expect(strip(page).locator(".mission-action")).to_have_text("核對流程走完了")
+    assert [run for run in server._runs.values() if run.get("demo")]  # 示範解析另外標記，不佔正式紀錄
+
+
+def test_next_flagged_jumps_across_files(page, samples):
+    from helpers import run_parse
+
+    run_parse(page, samples, ["sample_1_standard.pdf", "sample_5_errors.pdf"])
+    page.locator(".docs li", has_text="sample_1_standard.pdf").locator(".doc-open").click()
+    page.locator("#nextFlaggedBtn").click()
+    expect(page.locator(".docs li[aria-current=true]")).to_contain_text("sample_5_errors.pdf")
+    expect(page.locator("#overlay .box.focus")).to_have_count(1)
+    expect(page.locator("#drawer td.focus")).to_have_count(1)

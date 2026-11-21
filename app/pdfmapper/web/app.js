@@ -1527,6 +1527,7 @@ function focusValue(ref) {
   state.focusRef = ref;
   const result = activeResult();
   const entry = result && allValues(result).find((e) => e.ref === ref);
+  if (["review", "missing"].includes(entry?.value.status)) state.guide.runInspectedAlert = true;
   if (entry?.value.page && entry.value.page - 1 !== state.page) { state.page = entry.value.page - 1; renderToolbar(); renderLeft(); }
   renderPage();
   markFocusedCell();
@@ -1542,6 +1543,12 @@ function markFocusedCell() {
 }
 const editValue = guard(async (ref, action, value) => {
   const index = state.run.results.findIndex((r) => r.doc_id === state.docId);
+  // 導覽用的旗標：處理示警一定是看過示警；修改原本正常的值就是微調；按還原代表看到了處理紀錄
+  const before = allValues(state.run.results[index]).find((e) => e.ref === ref)?.value;
+  const flagged = ["review", "missing"].includes(before?.status);
+  if (flagged && action !== "revert") state.guide.runInspectedAlert = true;
+  if (action === "correct" && before && !flagged && !before.flag) state.guide.runFineTuned = true;
+  if (action === "revert") state.guide.runSawHandled = true;
   const result = await api(`/api/runs/${state.run.id}/edit`, {
     json: { file_index: index, ref, action, value },
   });
@@ -1639,17 +1646,20 @@ function renderRightRun() {
     selectedEditor(result, pending),
     h("h2", {}, `待檢查 ${pending.length} 項`),
     pending.length ? pending.map(pendingItem) : h("p", { class: "note", id: "pendingNote" }, summary),
+    // 這份清空了、但整批還有其他檔案待檢查：直接切過去
+    !pending.length && state.run.results.some((r) => r.doc_id !== result.doc_id && r.counts.review + r.counts.missing > 0)
+      ? h("button", { class: "linkish", id: "nextFileBtn", onclick: jumpNextFlagged }, "下一份有待檢查的檔案 ›") : null,
     records.length ? [h("h2", {}, `處理紀錄 ${records.length} 項`), records.map(recordItem)] : null,
     h("div", { class: "actions" },
       h("a", {
-        class: "btn primary wide", style: "text-align:center;text-decoration:none", download: "",
+        class: "btn primary wide", id: "exportExcelBtn", style: "text-align:center;text-decoration:none", download: "",
         href: done ? `/api/runs/${state.run.id}/excel` : undefined,
-        onclick: () => { state.run.exported = true; },
+        onclick: () => { state.run.exported = true; scheduleGuide(); },
       }, "匯出檢查用 Excel"),
       h("a", {
-        class: "btn wide", style: "text-align:center;text-decoration:none", download: "",
+        class: "btn wide", id: "exportCleanBtn", style: "text-align:center;text-decoration:none", download: "",
         href: done ? `/api/runs/${state.run.id}/clean?only_confirmed=${state.onlyConfirmed ? 1 : 0}` : undefined,
-        onclick: () => { state.run.exported = true; },
+        onclick: () => { state.run.exported = true; scheduleGuide(); },
       }, "匯出乾淨資料"),
       h("label", { class: "check-line" }, h("input", {
         type: "checkbox", checked: !!state.onlyConfirmed,
@@ -1679,8 +1689,11 @@ function editCell(td, value, ref) {
   const finish = (save) => {
     if (done) return;
     done = true;
-    if (save && !sameText(input.value, value.value)) editValue(ref, "correct", input.value);
-    else renderDrawer();
+    if (save && !sameText(input.value, value.value)) {
+      editValue(ref, "correct", input.value);
+      // 「點一格定位原圖，按兩下可改字」：成功改過 3 次就不再顯示
+      if (!POPOUT && state.onboarding.tipsSeen.drawerTip < 3) { state.onboarding.tipsSeen.drawerTip += 1; saveOnboardingPrefs(); }
+    } else renderDrawer();
   };
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); finish(true); }
@@ -1711,10 +1724,36 @@ function renderDrawer() {
       h("tbody", {}, table.rows.map((row, r) => h("tr", {}, h("td", {}, String(row.page)),
         table.columns.map((c) => dataCell(row.cells[c.id], `t:${table.id}:${r}:${c.id}`, row.cells[c.id]?.value))))))]);
   const doc = currentDoc();
+  const run = state.view === "run";
   fill(drawer, h("div", { class: "drawer-bar" },
-    h("span", {}, POPOUT && doc ? doc.name : "抓取結果"), h("span", { class: "spring" }),
-    state.view === "run" ? popButton("table") : null), fieldTable, tables);
+    h("span", {}, POPOUT && doc ? doc.name : "抓取結果"),
+    run && state.onboarding.tipsSeen.drawerTip < 3 ? h("span", { class: "drawer-tip" }, "點一格定位原圖，按兩下可改字") : null,
+    h("span", { class: "spring" }),
+    run ? h("button", { class: "pop", id: "nextFlaggedBtn", title: "跨頁跨檔依序跳到下一個待檢查", onclick: jumpNextFlagged }, "跳到待檢查 ›") : null,
+    run ? popButton("table") : null), fieldTable, tables);
   markFocusedCell();
+}
+
+// 跳到下一個待檢查：依檔案清單順序、頁面順序，跨頁跨檔；到最後一個再從頭
+function jumpNextFlagged() {
+  const results = state.run?.results || [];
+  const order = state.runDocs.map((d) => results.find((r) => r.doc_id === d.id)).filter(Boolean);
+  const flat = order.flatMap((r, docIndex) => allValues(r)
+    .filter((e) => ["review", "missing"].includes(e.value.status))
+    .map((e) => ({ doc: r.doc_id, docIndex, ref: e.ref, page: e.value.page || 0 }))
+    .sort((a, b) => a.page - b.page));
+  state.guide.runUsedNextFlagged = true;
+  if (!flat.length) { toast("沒有待檢查的項目了"); scheduleGuide(); return; }
+  const at = flat.findIndex((x) => x.doc === state.docId && x.ref === state.focusRef);
+  const here = order.findIndex((r) => r.doc_id === state.docId);
+  const next = at >= 0 ? flat[(at + 1) % flat.length] : flat.find((x) => x.docIndex >= here) || flat[0];
+  if (next.doc !== state.docId) {
+    state.docId = next.doc;
+    state.page = 0;
+    state.focusRef = null;
+    renderAll();
+  }
+  focusValue(next.ref);
 }
 
 /* ---------- 解析流程 ---------- */
@@ -1897,11 +1936,12 @@ const channel = "BroadcastChannel" in window ? new BroadcastChannel("pdfmapper-p
 const POP_TEXT = { pdf: "PDF", table: "結果表格" };
 function popButton(mode) {
   if (!channel || state.view !== "run") return null;
+  const id = mode === "pdf" ? "popPdfBtn" : "popTableBtn";
   if (POPOUT === mode) {
-    return h("button", { class: "pop", title: "關閉這個視窗，回到主視窗", onclick: () => window.close() }, "收回到主視窗");
+    return h("button", { class: "pop", id, title: "關閉這個視窗，回到主視窗", onclick: () => window.close() }, "收回到主視窗");
   }
   if (POPOUT) return null;
-  return h("button", { class: "pop", title: `把${POP_TEXT[mode]}移到另一個視窗，方便對照`, onclick: () => popOut(mode) }, "在新視窗開啟");
+  return h("button", { class: "pop", id, title: `把${POP_TEXT[mode]}移到另一個視窗，方便對照`, onclick: () => popOut(mode) }, "在新視窗開啟");
 }
 function popOut(mode) {
   const size = mode === "pdf" ? "width=900,height=1000" : "width=1200,height=560";

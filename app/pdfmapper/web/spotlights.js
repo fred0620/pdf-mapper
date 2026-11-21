@@ -728,3 +728,114 @@ function goRunWithTemplate() {
   if (id && !state.templateIds.includes(id)) state.templateIds.push(id);
   setView("run");
 }
+
+/* ---------- 解析 PDF 6 步 ----------
+ * 第 2 步不用「處理過」當完成條件（A5）：直接處理示警時，處理動作本身會把 runInspectedAlert 設為 true。
+ * 第 3 步要處理過 1 筆、而且看見藍色處理紀錄（或按過還原），還原的教學才不會被跳過。
+ * 第 4 到 6 步做過一次就算完成，之後點到別的格子不會被拉回去。
+ */
+const runFinished = () => !!state.run?.finished;
+const runValues = () => (state.run?.results || []).flatMap((r) => allValues(r));
+const isPending = (value) => ["review", "missing"].includes(value.status);
+const handledAny = () => runValues().some((e) => isHandled(e.value));
+const unflaggedCorrected = () => runValues().some((e) => e.value.status === "corrected" && !e.value.flag);
+const noAlerts = () => runFinished() && !state.guide.batchHadAlerts;
+function selectedNormal() {
+  const result = activeResult();
+  const entry = result && state.focusRef ? allValues(result).find((e) => e.ref === state.focusRef) : null;
+  return !!entry && entry.value.status === "ok" && !isHandled(entry.value);
+}
+const NORMAL_CELL = "#drawer td[data-ref]:not(.review):not(.missing):not(.handled)";
+
+const RUN_MISSIONS = [
+  {
+    id: "run-1", tab: "run", title: "準備與解析",
+    action: "勾範本、加 PDF、按開始解析",
+    tip: "選多個範本時，每份 PDF 會自動用最符合的。",
+    target: () => {
+      if (state.run && !state.run.finished) return null;
+      if (!state.templateIds.length && !state.run?.demo) return { sel: "#left .template-picks input", label: "勾選範本" };
+      if (!state.runDocs.length) return { sel: "#left .drop", label: "加入 PDF" };
+      return { sel: "#runStartBtn", label: "開始解析" };
+    },
+    done: runFinished,
+  },
+  {
+    id: "run-2", tab: "run", title: "看懂示警顏色",
+    action: "點橘色項目，看它在原圖哪裡",
+    legend: true,
+    target: () => {
+      const result = activeResult();
+      if (result && allValues(result).some((e) => isPending(e.value))) {
+        return { sel: "#right .review-item:not(.handled):not(.selected) button.locate", label: "點這裡看原圖" };
+      }
+      return { sel: ".docs li:has(.meta.warn) .doc-open", label: "這份有待檢查" };
+    },
+    done: () => runFinished() && (state.guide.runInspectedAlert || noAlerts()),
+  },
+  {
+    id: "run-3", tab: "run", title: "修改或確認，再試還原",
+    action: "改對按 Enter，或按確認",
+    tip: () => (handledAny() ? "藍色是處理過的，按「還原」可放回待檢查。" : "改錯也沒關係，處理過的都能還原。"),
+    target: () => (handledAny()
+      ? { sel: "#right .review-item.handled .linkish", label: "可以還原" }
+      : { sel: "#right .review-item:not(.handled):not(.selected) textarea", label: "改對按 Enter" }),
+    done: () => runFinished() && ((handledAny() && state.guide.runSawHandled) || noAlerts()),
+  },
+  {
+    id: "run-4", tab: "run", title: "點選正常格子",
+    action: "點結果表格任一正常格",
+    tip: "正常的值也能改，點一下會在原圖標出位置。",
+    note: () => (noAlerts() ? "這批沒有示警，可以跳過看顏色的步驟。" : null),
+    target: () => ({ sel: NORMAL_CELL, label: "點一格正常的" }),
+    sticky: true,
+    done: () => runFinished() && (selectedNormal() || !!document.querySelector("#drawer .cell-edit")
+      || state.guide.runFineTuned || unflaggedCorrected()),
+  },
+  {
+    id: "run-5", tab: "run", title: "微調並儲存",
+    action: "改字後按「儲存修改」",
+    tip: "修改會保留抓到的原值，之後可以還原。",
+    target: () => {
+      if (document.querySelector("#drawer .cell-edit")) return { sel: "#drawer .cell-edit", label: "按 Enter 儲存" };
+      if (document.querySelector("#right .review-item.selected textarea")) return { sel: "#right .review-item.selected textarea", label: "改字後按儲存修改" };
+      return { sel: NORMAL_CELL, label: "先點一格" };
+    },
+    sticky: true,
+    done: () => runFinished() && (unflaggedCorrected() || state.guide.runFineTuned),
+  },
+  {
+    id: "run-6", tab: "run", title: "瀏覽與匯出",
+    action: "試「跳到待檢查」，再匯出",
+    tip: "匯出後也會在 workspace/output 留一份。",
+    target: () => (runValues().some((e) => isPending(e.value)) && !state.guide.runUsedNextFlagged
+      ? { sel: "#nextFlaggedBtn", label: "跳到待檢查" }
+      : { sel: "#exportExcelBtn", label: "匯出檢查用 Excel" }),
+    sticky: true,
+    done: () => !!state.run?.exported,
+  },
+];
+
+/* 第 3 步：藍色處理紀錄出現在畫面上至少 600ms，才算看見（IntersectionObserver） */
+let handledObserver = null;
+let handledTimer = 0;
+let handledNodes = [];
+function watchHandledRecords(step) {
+  const g = state.guide;
+  const want = step?.id === "run-3" && !g.runSawHandled && "IntersectionObserver" in window;
+  const nodes = want ? [...document.querySelectorAll("#right .review-item.handled")] : [];
+  if (nodes.length === handledNodes.length && nodes.every((n, i) => n === handledNodes[i])) return;
+  handledObserver?.disconnect();
+  clearTimeout(handledTimer);
+  handledNodes = nodes;
+  if (!nodes.length) return;
+  const seen = new Set();
+  handledObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) seen.add(entry.target); else seen.delete(entry.target);
+    }
+    clearTimeout(handledTimer);
+    if (seen.size) handledTimer = setTimeout(() => { g.runSawHandled = true; scheduleGuide(); }, 600);
+  }, { threshold: 0.5 });
+  nodes.forEach((node) => handledObserver.observe(node));
+}

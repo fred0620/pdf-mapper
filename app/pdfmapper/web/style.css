@@ -431,10 +431,15 @@ details .form { margin-top: 10px; }
   background: var(--surface); border-bottom: 1px solid var(--line); font-size: 13px; color: var(--text);
 }
 .toolbar-file { font-size: 13px; font-weight: 600; color: var(--text-strong); }
+.drawer-tip { font-size: 12.5px; font-weight: 400; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#nextFileBtn { display: block; margin: 4px 0 8px; }
 .pdf-out #toolbar, .pdf-out #hint, .pdf-out #stage { display: none; }
 .pdf-out .drawer { flex: 1; }
 .table-out #drawer { display: none; }
 .popout .bar, .popout #left, .popout #right, .popout #popnote { display: none; }
+/* 另開的視窗只是同一份結果的另一個畫面：所有導覽元件都不顯示，跳到待檢查（實用功能）保留 */
+.popout :is(#guideBar, #missionStrip, #coachCard, #featurePopover, #helpPopover, #whatsNewCard, #missionPointer,
+  .help-dot, .help-hint, .drawer-tip) { display: none !important; }
 .popout .workspace { grid-template-columns: minmax(0, 1fr); }
 .popout-table #toolbar, .popout-table #hint, .popout-table #stage { display: none; }
 .popout-table .drawer { flex: 1; border-top: 0; box-shadow: none; }
