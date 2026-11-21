@@ -59,7 +59,7 @@ def _run_validations(template: dict, fields: dict, tables: dict, page_count: int
             numbers = re.findall(r"\d+", (target or {}).get("value", ""))
             if numbers and int(numbers[-1]) != page_count:
                 _flag(target, "sum_mismatch")
-                issues.append({"code": "page_count", "page": None,
+                issues.append({"code": "page_count", "page": None, "ref": f"f:{target['id']}",
                                "message": f"單據標示共 {numbers[-1]} 頁，實際 {page_count} 頁"})
             continue
         if kind == "sum_column":
@@ -81,7 +81,7 @@ def _run_validations(template: dict, fields: dict, tables: dict, page_count: int
         actual = sum(numbers)
         if abs(actual - expected) > rule.get("tolerance", 0.01):
             _flag(target, "sum_mismatch")
-            issues.append({"code": "sum_mismatch", "page": target.get("page"),
+            issues.append({"code": "sum_mismatch", "page": target.get("page"), "ref": f"f:{target['id']}",
                            "message": f"{label} {actual:,.2f}，與單據的 {expected:,.2f} 不符"})
     return issues
 
@@ -134,9 +134,21 @@ def handle_value(value: dict, action: str, new: str | None = None) -> None:
     value["value"], value["status"], value["reasons"], value["source"] = new, "corrected", [], "manual"
 
 
+HANDLED = ("confirmed", "corrected")
+
+
 def blocking_issues(result: dict) -> list[dict]:
-    """需要人處理的整份疑點。level 為 notice 的只是提示，不影響狀態和範本挑選。"""
-    return [issue for issue in result.get("issues", []) if issue.get("level") != "notice"]
+    """需要人處理的整份疑點。level 為 notice 的只是提示；已處理的也不算，都不影響狀態和範本挑選。"""
+    return [issue for issue in result.get("issues", [])
+            if issue.get("level") != "notice" and not issue.get("resolved")]
+
+
+def _mark_resolved(result: dict) -> None:
+    """驗證不符（加總、頁數）的疑點連著一個值（ref）。那個值確認或修改後，疑點就算處理完；還原時回到待處理。"""
+    for issue in result.get("issues", []):
+        if issue.get("ref"):
+            value = find_value(result, issue["ref"])
+            issue["resolved"] = bool(value and value.get("status") in HANDLED)
 
 
 def file_ref(path: str | Path) -> str:
@@ -149,6 +161,7 @@ def file_ref(path: str | Path) -> str:
 
 
 def summarize(result: dict) -> None:
+    _mark_resolved(result)
     values = [value for _ref, _name, value in iter_values(result)]
     review = sum(v["status"] == "review" for v in values)
     missing = sum(v["status"] == "missing" for v in values)

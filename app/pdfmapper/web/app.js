@@ -1365,8 +1365,8 @@ function renderRightTrain() {
   }
   fill($("right"), body, actionsBar());
 }
-// level 為 notice 的整份疑點只是提示，不算進待檢查
-const blocking = (issues) => issues.filter((issue) => issue.level !== "notice");
+// level 為 notice 的整份疑點只是提示，已處理的（連著的值確認或修改過）也不算進待檢查
+const blocking = (issues) => issues.filter((issue) => issue.level !== "notice" && !issue.resolved);
 // 檔案清單的摘要。值的數目要和右邊「待檢查 N 項」一致，整份檔案的提醒另外計，不混在一起
 function pendingLabel(result) {
   const values = result.counts.review + result.counts.missing;
@@ -1374,8 +1374,9 @@ function pendingLabel(result) {
   return [values ? `${values} 項待檢查` : "", notes ? `${notes} 個提醒` : ""].filter(Boolean).join("，");
 }
 function issueRow(issue, withPage) {
-  const notice = issue.level === "notice";
   const text = withPage && issue.page ? `第 ${issue.page} 頁：${issue.message}` : issue.message;
+  if (issue.resolved) return h("div", { class: "issue notice resolved" }, `已處理：${text}`);
+  const notice = issue.level === "notice";
   return h("div", { class: notice ? "issue notice" : "issue" }, notice ? `提示：${text}` : text);
 }
 function testSummary() {

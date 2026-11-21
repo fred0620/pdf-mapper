@@ -808,3 +808,27 @@ def test_parse_best_opens_pdf_once(samples, template, invoice_template, monkeypa
     assert len(opened) == 1
     assert result["template_id"] in (template["template_id"], "copy")
     assert result["counts"]["total"] > 0
+
+
+def test_validation_issue_clears_when_its_value_is_handled(samples, template):
+    from pdfmapper.parser import blocking_issues, find_value, handle_value, summarize
+
+    folder, _ = samples
+    result = parse_pdf(folder / "sample_5_errors.pdf", template)
+    issue = next(i for i in result["issues"] if i["code"] == "sum_mismatch")
+    value = find_value(result, issue["ref"])
+    assert "sum_mismatch" in value["reasons"] and issue in blocking_issues(result)
+
+    handle_value(value, "confirm")
+    summarize(result)
+    assert issue["resolved"] and issue not in blocking_issues(result)
+    if not result["counts"]["review"] and not result["counts"]["missing"] and not blocking_issues(result):
+        assert result["status"] == "ok"
+
+    handle_value(value, "revert")
+    summarize(result)
+    assert not issue["resolved"] and issue in blocking_issues(result)
+
+    handle_value(value, "correct", "1")
+    summarize(result)
+    assert issue["resolved"]

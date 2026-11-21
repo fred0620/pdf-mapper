@@ -58,3 +58,17 @@ def test_narrow_window_note(page):
     expect(note).to_be_visible()
     page.set_viewport_size({"width": 1440, "height": 900})
     expect(note).to_be_hidden()
+
+
+def test_sum_mismatch_clears_after_confirming_its_value(page, samples):
+    
+    run_parse(page, samples, ["sample_5_errors.pdf"])
+    right = page.locator("#right")
+    issue = right.locator(".issue", has_text="加總")
+    expect(issue).not_to_have_class("issue notice resolved")
+    item = right.locator(".review-item", has_text="稅費合計")
+    item.get_by_role("button", name="確認").click()
+    expect(issue).to_have_class("issue notice resolved")
+    expect(issue).to_contain_text("已處理")
+    meta = page.locator(".docs li", has_text="sample_5_errors.pdf").locator(".meta")
+    expect(meta).not_to_contain_text("提醒")
