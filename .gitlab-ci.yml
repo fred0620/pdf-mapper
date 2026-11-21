@@ -57,6 +57,8 @@ test:
     - uv venv /tmp/venv --python 3.12
     - uv pip install --python /tmp/venv/bin/python --require-hashes -r /tmp/requirements-ci.txt
     - /tmp/venv/bin/python -m pytest -q tests
+    # 新功能導覽要有這一版的條目，spotlight 都指得到（打標籤時 build_release.py 也會再檢查一次）
+    - python3 scripts/check_whatsnew.py
 
 package:
   stage: build

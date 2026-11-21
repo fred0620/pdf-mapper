@@ -1,4 +1,5 @@
-"""重建 app/samples/ 與 app/examples/templates/ 的示範範本。"""
+"""重建 app/samples/、app/examples/templates/ 的示範範本，以及新手導覽用的 app/pdfmapper/demo/。"""
+import shutil
 import sys
 from pathlib import Path
 
@@ -24,4 +25,11 @@ floating = make_samples.build_floating_template()
 with Document(APP / "samples" / "sample_7_table_a.pdf") as reference:
     tpl.finalize(floating, reference)
 tpl.save(floating, APP / "examples" / "templates" / "floating_demo.json")
+# 新手導覽的示範檔：從上面產生的範例複製，跟著 app 更新、使用者刪不掉（不依賴 workspace/templates）
+DEMO = APP / "pdfmapper" / "demo"
+DEMO.mkdir(exist_ok=True)
+for name in ("sample_1_standard.pdf", "sample_5_errors.pdf", "sample_6_invoice.pdf"):
+    shutil.copy2(APP / "samples" / name, DEMO / name)
+for name in ("invoice_demo.json", "customs_demo.json"):
+    shutil.copy2(APP / "examples" / "templates" / name, DEMO / name)
 print("完成")

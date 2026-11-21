@@ -59,7 +59,11 @@ const state = {
   showAllValues: false,
   drawerOpen: false,
   recovery: null,      // 上次關閉時未儲存的範本，等使用者決定要不要接著做
+  showcase: false,     // 開著觀摩範本：唯讀，儲存時另存成自己的範本
   popped: { pdf: false, table: false },  // 主視窗：哪些畫面移到另一個視窗
+  whatsnew: null,      // 新功能：{ current, versions, pending }（whatsnew.json）
+  onboarding: blankPrefs(),  // 導覽進度與偏好（spotlights.js），啟動時從 localStorage 讀
+  guide: blankGuide(),       // 執行中的導覽狀態，不存檔
 };
 
 /* ---------- 伺服器 ---------- */
@@ -153,8 +157,48 @@ function resumeDraft() {
   renderAll();
   toast(state.docs.length ? "已接著上次的範本" : "已接著上次的範本，請加入基準範例 PDF 才能看到框線");
 }
+// 改用示範發票練習前，未儲存的範本先收在另一格，練習時的草稿不會蓋掉它
+const PARKED_KEY = "pdfmapper.draft.parked";
+function parkTemplate() {
+  if (!hasUnsavedTemplate()) return;
+  try { localStorage.setItem(PARKED_KEY, JSON.stringify({ template: T(), saved: state.savedTemplate })); } catch (_e) { /* 非必要 */ }
+}
+function parkedTemplate() {
+  try {
+    const data = JSON.parse(localStorage.getItem(PARKED_KEY) || "null");
+    return data && data.template ? { template: { ...blankTemplate(), ...data.template }, saved: data.saved || null } : null;
+  } catch (_e) { return null; }
+}
+function dropParked() {
+  try { localStorage.removeItem(PARKED_KEY); } catch (_e) { /* 非必要 */ }
+  renderLeft();
+}
+function resumeParked() {
+  const parked = parkedTemplate();
+  if (!parked) { renderLeft(); return; }
+  if (hasUnsavedTemplate() && !window.confirm("目前的範本還沒儲存，接回之前的範本後，目前的標注會消失。要繼續嗎？")) return;
+  state.template = parked.template;
+  state.savedTemplate = parked.saved;
+  state.savedId = parked.saved ? parked.template.template_id : null;
+  state.undo = [];
+  state.selected = null;
+  state.showcase = false;
+  saveDraft();
+  dropParked();
+  renderAll();
+  toast("已接回之前的範本");
+}
 function recoveryNotice() {
   const draft = state.recovery;
+  const parked = !draft && state.view === "train" ? parkedTemplate() : null;
+  if (parked) {
+    const name = parked.template.name ? `「${parked.template.name}」` : "";
+    return h("div", { class: "recovery" },
+      h("p", {}, `練習前未儲存的範本${name}先收起來了，要接回來嗎？`),
+      h("div", { class: "list-actions" },
+        h("button", { class: "linkish", onclick: resumeParked }, "接回來"),
+        h("button", { class: "linkish", onclick: dropParked }, "捨棄")));
+  }
   if (!draft) return null;
   const name = draft.template.name ? `「${draft.template.name}」` : "";
   return h("div", { class: "recovery" },
@@ -528,6 +572,7 @@ function renderOverlay() {
   if (editing) renderDefinitions(layer);
   const result = activeResult();
   if (result && (!editing || state.tool === "select" && !state.selected)) renderResultBoxes(layer, result);
+  renderGhostGuides(layer);
 }
 function startDraw(event) {
   document.activeElement?.blur?.();
@@ -566,13 +611,25 @@ function renderPage() {
   $("sheet").classList.toggle("compact", width < COMPACT_SHEET_WIDTH);
   renderOverlay();
 }
+// 起點歡迎畫面：仍可整個視窗拖曳放檔。關閉過導覽的人一樣看得到示範入口，只是改成不搶眼的樣式
 function renderEmpty() {
   const train = state.view === "train";
-  fill($("empty"), h("div", {},
-    h("strong", {}, train ? "把範例 PDF 拖到這裡" : "把要解析的 PDF 拖到這裡"),
-    train ? "第一份會成為基準範例，你在它上面標注；其他範例用來測試。" : "可以一次放多份。",
-    h("br"),
-    h("button", { class: "btn", onclick: () => $("filePicker").click() }, "選擇檔案")));
+  const quiet = state.onboarding.dismissed;
+  const loading = state.guide.loadingDemo;
+  fill($("empty"), h("div", { class: "welcome" },
+    h("p", { class: "welcome-title" }, "把 PDF 拖進來，或選一個方式開始"),
+    h("button", {
+      type: "button", class: `welcome-card${quiet ? " quiet" : ""}`, id: "demoStartBtn", disabled: loading,
+      onclick: (e) => requestGuide(state.view, e.currentTarget),
+    },
+    h("span", { class: "welcome-card-title" }, train ? "用示範發票邊做邊學" : "用示範文件練習核對",
+      h("span", { class: "welcome-card-time" }, loading ? "載入中" : train ? "約 5 分鐘" : "約 3 分鐘")),
+    h("span", { class: "welcome-card-sub" }, train ? "跟著 8 步做出一個發票範本" : "解析 2 份報單，練習看示警、修改與匯出")),
+    h("div", { class: "welcome-more" },
+      train ? h("button", { type: "button", class: "btn ghost", id: "showcaseBtn", disabled: loading, onclick: (e) => startShowcase(e.currentTarget) }, "觀摩做好的範本")
+        : h("button", { type: "button", class: "btn ghost", onclick: () => setView("train") }, "去建立範本"),
+      h("button", { type: "button", class: "btn ghost", id: "pickFileBtn", onclick: () => $("filePicker").click() }, "選擇 PDF…")),
+    h("p", { class: "welcome-note" }, train ? "第一份 PDF 會成為基準範例，你在它上面標注；其他範例用來測試。" : "可以一次放多份。")));
 }
 
 /* ---------- 工具列與提示 ---------- */
@@ -588,7 +645,7 @@ function renderToolbar() {
   const doc = currentDoc();
   const editing = isReference();
   const tools = state.view === "train" ? TOOLS.map(([id, label, key]) => h("button", {
-    class: "tool", "aria-pressed": String(state.tool === id), disabled: !editing,
+    class: "tool", "aria-pressed": String(state.tool === id), disabled: !editing, dataset: { tool: id },
     onclick: () => setTool(id),
   }, label, h("kbd", {}, key))) : [];
   fill($("toolbar"), ...tools, POPOUT && doc ? h("span", { class: "toolbar-file" }, doc.name) : null, h("span", { class: "spring" }),
@@ -599,6 +656,7 @@ function renderToolbar() {
       h("button", { "aria-label": "縮小", onclick: () => zoomBy(0.85) }, "−"),
       h("button", { "aria-label": "放大", onclick: () => zoomBy(1.18) }, "+"),
       popButton("pdf")) : "");
+  scheduleGuide();
 }
 const COMPACT_SHEET_WIDTH = 640;
 function zoomBy(factor) { state.zoom = clamp(state.zoom * factor, 0.5, 4); renderPage(); }
@@ -619,6 +677,7 @@ function renderHint() {
     else if (state.selected?.type === "table") text = "在表格內點一下加分隔線。拖曳分隔線可移動，雙擊可刪除。";
   }
   $("hint").textContent = text;
+  scheduleGuide();
 }
 
 /* ---------- 左欄 ---------- */
@@ -792,8 +851,8 @@ function renderLeftTrain() {
     recoveryNotice(),
     h("h2", {}, "範本名稱"),
     h("input", {
-      type: "text", value: T().name, autocomplete: "off", placeholder: "例如：進口報單", "aria-label": "範本名稱",
-      oninput: (e) => { T().name = e.target.value; T().template_id = e.target.value.trim().replace(/[^\p{L}\p{N}_-]+/gu, "_"); saveDraft(); renderRightActions(); },
+      type: "text", id: "templateName", value: T().name, autocomplete: "off", placeholder: "例如：進口報單", "aria-label": "範本名稱",
+      oninput: (e) => setTemplateName(e.target.value),
     }),
     h("h2", {}, "範例 PDF"),
     list.length ? [h("ul", { class: "docs" }, list), listActions(list.length)]
@@ -804,6 +863,13 @@ function renderLeftTrain() {
       state.templates.map((t) => h("option", { value: t.id }, t.name))),
     missingNote(),
     thumbs());
+}
+function setTemplateName(name) {
+  T().name = name;
+  T().template_id = name.trim().replace(/[^\p{L}\p{N}_-]+/gu, "_");
+  saveDraft();
+  renderRightActions();
+  scheduleGuide();
 }
 function missingNote() {
   const pages = missingPages();
@@ -833,7 +899,7 @@ const resetTemplate = guard(async () => {
     template: blankTemplate(), savedTemplate: null, savedId: null, undo: [],
     docs: [], referenceId: null, tests: [], docId: null, page: 0, zoom: 1,
     tool: "select", pending: null, selected: null, read: null, checkDraft: null, drawerOpen: false,
-    outputPanel: false, columnPreview: null,
+    outputPanel: false, columnPreview: null, showcase: false,
   });
   saveDraft();
   renderAll();
@@ -843,6 +909,7 @@ const openTemplate = guard(async (id) => {
   if (!id) return;
   snapshot();
   state.template = { ...blankTemplate(), ...await api(`/api/templates/${encodeURIComponent(id)}`) };
+  state.showcase = false;
   markSaved();
   saveDraft();
   state.selected = null;
@@ -891,14 +958,15 @@ function renderLeftRun() {
       : h("button", { class: "drop", onclick: () => $("filePicker").click() }, "加入 PDF"),
     h("div", { style: "margin-top:12px" },
       h("button", {
-        class: "btn primary wide", disabled: !state.templateIds.length || !state.runDocs.length || running,
-        onclick: startRun,
+        class: "btn primary wide", id: "runStartBtn", disabled: !state.templateIds.length || !state.runDocs.length || running,
+        onclick: () => startRun(),
       }, running ? "解析中" : "開始解析")),
+    state.run?.demo ? h("p", { class: "note" }, "示範解析用內附的「進口報單（示範）」範本，不佔解析紀錄，匯出檔名會加上「示範_」。") : null,
     running ? [h("div", { class: "progress" }, h("div", { style: `width:${state.run.done / state.run.total * 100}%` })),
       h("p", { class: "note" }, `${state.run.done}/${state.run.total}，${state.run.current}`)] : null,
     thumbs());
 }
-function renderLeft() { (state.view === "train" ? renderLeftTrain : renderLeftRun)(); }
+function renderLeft() { (state.view === "train" ? renderLeftTrain : renderLeftRun)(); scheduleGuide(); }
 
 /* ---------- 右欄：建立範本 ---------- */
 function ruleSelect(item, onChange) {
@@ -916,7 +984,7 @@ function bind(item, key, label, extra = {}) {
   }));
 }
 function typeSelect(item) {
-  return h("select", { "aria-label": "資料類型", onchange: (e) => { item.type = e.target.value; saveDraft(); } },
+  return h("select", { "aria-label": "資料類型", onchange: (e) => { item.type = e.target.value; saveDraft(); scheduleGuide(); } },
     TYPE_OPTIONS.map(([value, label]) => h("option", { value, selected: (item.type || "text") === value }, label)));
 }
 function startContinuation(field) {
@@ -957,7 +1025,7 @@ function fieldPanel(field) {
           if (e.target.checked) startContinuation(field);
           else { snapshot(); delete field.continuation; state.continuing = null; setTool("select"); renderAll(); }
         },
-      }), "內容可能接到下一頁"),
+      }), "內容可能接到下一頁", helpHint("feat-pos-field", "續頁與取行規則")),
       field.continuation ? h("p", { class: "note" }, `接續範圍在第 ${field.continuation.ref_page + 1} 頁，接上時會標記給人確認。`) : null),
     h("details", {}, h("summary", {}, "進階設定"), h("div", { class: "form" },
       field.kind === "key_value" ? h("label", {}, "比對用的標題文字", h("input", {
@@ -1081,13 +1149,13 @@ function columnDetail(table, column) {
       onchange: (e) => { if (e.target.checked) column.row_required = true; else delete column.row_required; saveDraft(); },
     }), "每一列都一定有這欄"),
     h("p", { class: "note" }, "用來判斷跨頁：這欄沒抓到，代表這一列還沒結束。"),
-    h("label", {}, "這一欄怎麼取值", h("select", {
+    h("label", {}, h("span", { class: "label-line" }, "這一欄怎麼取值", helpHint("feat-cell-extract", "表格取值方式")), h("select", {
       "aria-label": "這一欄怎麼取值",
       onchange: (e) => { snapshot(); setValueMode(table, column, e.target.value); renderRight(); },
     }, VALUE_MODES.map(([value, label]) =>
       h("option", { value, selected: valueMode(column) === value }, label)))),
     valueOptions(column),
-    isReference() ? h("button", { class: "linkish", style: "text-align:left", onclick: () => previewColumn(table, column) }, "用基準範例試抓這一欄") : null,
+    isReference() ? h("button", { class: "linkish column-preview-btn", style: "text-align:left", onclick: () => previewColumn(table, column) }, "用基準範例試抓這一欄") : null,
     previewRows(column),
     h("div", { class: "row" },
       h("button", {
@@ -1138,7 +1206,7 @@ function columnsTab(table) {
   return [
     h("label", { class: "field-label" }, "用哪一欄判斷新的一列", h("select", {
       id: "keyColumn", "aria-label": "用哪一欄判斷新的一列",
-      onchange: (e) => { table.key_column = e.target.value || null; saveDraft(); renderRight(); },
+      onchange: (e) => { table.key_column = e.target.value || null; saveDraft(); renderRight(); renderOverlay(); },
     }, h("option", { value: "" }, "請選擇，通常是項次"),
     table.columns.map((c) => h("option", { value: c.id, selected: table.key_column === c.id }, c.name)))),
     h("p", { class: "note" }, "在頁面的表格內點一下，可以切出新的直欄。"),
@@ -1162,7 +1230,7 @@ function placementTab(table) {
       },
       () => { snapshot(); delete region.header; renderAll(); })));
   return [
-    h("h3", {}, "每一頁的範圍"),
+    h("h3", { class: "label-line" }, "每一頁的範圍", helpHint("feat-cross-page", "跨頁表格、表頭與表尾")),
     regions,
     h("button", { class: "linkish", onclick: () => setTool("region") }, "在目前這一頁加範圍"),
     h("p", { class: "note" }, "明細接到下一頁時，切到那一頁再加。表格起始位置不固定時，框選表頭。"),
@@ -1249,6 +1317,7 @@ function checksPanel() {
   const fieldOptions = fields.map((f) => h("option", { value: f.id }, f.name));
   const form = h("div", { class: "form" },
     h("label", {}, "檢查方式", h("select", {
+      id: "checkTypeSelect",
       onchange: (e) => { state.checkDraft = { type: e.target.value, fields: [] }; renderRight(); },
     }, [["sum_fields", "幾個欄位相加"], ["sum_column", "表格某欄加總"], ["page_count", "比對總頁數"]].map(([value, label]) =>
       h("option", { value, selected: draft.type === value }, label)))),
@@ -1257,14 +1326,16 @@ function checksPanel() {
       onchange: (e) => { draft.fields = [...e.target.selectedOptions].map((o) => o.value); },
     }, fieldOptions)) : null,
     draft.type === "sum_column" ? h("label", {}, "表格欄", h("select", {
+      id: "checkColSelect",
       onchange: (e) => { [draft.table, draft.column] = e.target.value.split("|"); },
     }, h("option", { value: "|" }, "選擇"), T().tables.flatMap((t) => t.columns.map((c) =>
       h("option", { value: `${t.id}|${c.id}` }, `${t.name}：${c.name}`))))) : null,
     h("label", {}, draft.type === "page_count" ? "寫著總頁數的欄位" : "要等於", h("select", {
+      id: "checkTargetSelect",
       onchange: (e) => { draft.target = e.target.value; },
     }, h("option", { value: "" }, "選擇"), fieldOptions.map((o) => o.cloneNode(true)))),
     h("button", {
-      class: "btn", onclick: () => {
+      class: "btn", id: "checkAddBtn", onclick: () => {
         if (!draft.target) { toast("請選擇要比對的欄位", true); return; }
         snapshot();
         const rule = draft.type === "page_count" ? { type: "page_count", field: draft.target }
@@ -1278,7 +1349,10 @@ function checksPanel() {
   return [
     h("ul", { class: "checks" }, T().validations.map((rule, i) => h("li", { class: "row note" }, h("span", {}, describe(rule)),
       h("button", { class: "linkish", style: "flex:0 0 auto", onclick: () => { snapshot(); T().validations.splice(i, 1); renderRight(); } }, "移除")))),
-    h("details", {}, h("summary", {}, "新增檢查"), form),
+    h("details", {
+      id: "checksDetails", open: !!state.checksOpen,
+      ontoggle: (e) => { state.checksOpen = e.target.open; scheduleGuide(); },
+    }, h("summary", {}, "新增檢查"), form),
   ];
 }
 /* 輸出設定：沒列在設定裡的欄位預設輸出，新增的欄位不會漏掉 */
@@ -1320,7 +1394,7 @@ function outputPanel() {
   const fields = T().fields.map((f) => [f.id, f.name]);
   return [
     h("button", { class: "linkish", style: "margin-bottom:8px", onclick: () => { state.outputPanel = false; renderRight(); } }, "回到欄位清單"),
-    h("h2", {}, "輸出欄位"),
+    h("h2", { class: "label-line" }, "輸出欄位", helpHint("feat-output", "輸出整理")),
     h("p", { class: "note" }, "只影響「乾淨資料」，檢查用 Excel 維持完整內容。欄名留空就用原本的名稱。"),
     fields.length ? outputGroup("欄位", fields, () => T().output?.fields, (list) => { output().fields = list; }) : null,
     T().tables.map((table) => outputGroup(table.name, table.columns.map((c) => [c.id, c.name]),
@@ -1338,7 +1412,7 @@ function renderRightTrain() {
     body = outputPanel();
   } else if (item) {
     const panel = { field: fieldPanel, table: tablePanel, anchor: anchorPanel }[state.selected.type](item);
-    body = [h("button", { class: "linkish", onclick: () => { state.selected = null; renderAll(); } }, "回到欄位清單"), panel];
+    body = [h("button", { class: "linkish", id: "rightBackBtn", onclick: () => { state.selected = null; renderAll(); } }, "回到欄位清單"), panel];
     body[0].style.marginBottom = "8px";
   } else {
     const rows = orderedItems().map(({ type, item: entry }) => h("li", {},
@@ -1353,13 +1427,15 @@ function renderRightTrain() {
         : h("p", { class: "note" }, "還沒有欄位。選上方的工具，在頁面上框出要抓的資料。"),
       h("h2", {}, "定位點"),
       h("p", { class: "note" }, `目前 ${anchorCount} 個（欄位標題也算）。每一頁至少要有 3 個，每份都不變的文字最適合。`),
-      h("button", { class: "btn", disabled: !isReference(), onclick: suggestAnchors }, "自動找這一頁的定位點"),
+      // 導覽關閉後也保留的靜默提醒：有框了東西、定位點卻不到 3 個
+      hasDefinitions() && anchorCount < 3 ? h("p", { class: "guide-nudge" }, "定位點還不到 3 個，對位可能不準。按下方「自動找」補上。") : null,
+      h("button", { class: "btn", id: "suggestAnchorsBtn", disabled: !isReference(), onclick: suggestAnchors }, "自動找這一頁的定位點"),
       h("h2", {}, "數字檢查"),
       h("p", { class: "note" }, "對不上時，結果會標記給人確認。"),
       checksPanel(),
       h("h2", {}, "輸出"),
       h("p", { class: "note" }, "選擇乾淨資料要輸出哪些欄，以及欄名和順序。沒設定時全部輸出。"),
-      h("button", { class: "btn", onclick: () => { state.outputPanel = true; renderRight(); } }, "設定輸出欄位"),
+      h("button", { class: "btn", id: "outputBtn", onclick: () => { state.outputPanel = true; renderRight(); } }, "設定輸出欄位"),
       state.tests.length ? testSummary() : null,
     ];
   }
@@ -1394,10 +1470,10 @@ function testSummary() {
 function actionsBar() {
   return h("div", { class: "actions", id: "actions" },
     h("button", {
-      class: "btn primary wide", disabled: state.testing || !state.docs.length, onclick: testTemplate,
+      class: "btn primary wide", id: "testBtn", disabled: state.testing || !state.docs.length, onclick: testTemplate,
     }, state.testing ? "測試中" : `用 ${state.docs.length} 份範例測試`),
     h("button", { class: "btn wide", id: "saveButton", disabled: !T().template_id, onclick: saveTemplate },
-      T().template_id ? "儲存範本" : "先填範本名稱才能儲存"),
+      state.showcase ? "另存成我的範本" : T().template_id ? "儲存範本" : "先填範本名稱才能儲存"),
     h("button", {
       class: "btn wide", id: "resetButton", disabled: templateIsEmpty() && !state.docs.length, onclick: resetTemplate,
     }, "開始新範本"));
@@ -1425,6 +1501,11 @@ const testTemplate = guard(async () => {
   }
 });
 const saveTemplate = guard(async () => {
+  if (state.showcase) {
+    // 觀摩範本另存成自己的範本，示範範本保持原樣
+    T().name = "商業發票（我的）";
+    T().template_id = "商業發票_我的";
+  }
   const id = T().template_id;
   if (id !== state.savedId && state.templates.some((t) => t.id === id)
     && !window.confirm(`已經有叫做「${T().name}」的範本，要覆蓋嗎？`)) return;
@@ -1433,9 +1514,12 @@ const saveTemplate = guard(async () => {
   saveDraft();
   await loadTemplates();
   if (!state.templateIds.includes(T().template_id)) state.templateIds.push(T().template_id);
+  state.showcase = false;
+  state.guide.justSavedTemplateId = T().template_id;
   toast(`範本「${T().name}」已儲存。要做下一個範本時，按「開始新範本」`);
   renderLeft();
   renderRightActions();
+  scheduleGuide();
 });
 
 /* ---------- 右欄：解析結果 ---------- */
@@ -1446,6 +1530,7 @@ function focusValue(ref) {
   state.focusRef = ref;
   const result = activeResult();
   const entry = result && allValues(result).find((e) => e.ref === ref);
+  if (["review", "missing"].includes(entry?.value.status)) state.guide.runInspectedAlert = true;
   if (entry?.value.page && entry.value.page - 1 !== state.page) { state.page = entry.value.page - 1; renderToolbar(); renderLeft(); }
   renderPage();
   markFocusedCell();
@@ -1461,6 +1546,12 @@ function markFocusedCell() {
 }
 const editValue = guard(async (ref, action, value) => {
   const index = state.run.results.findIndex((r) => r.doc_id === state.docId);
+  // 導覽用的旗標：處理示警一定是看過示警；修改原本正常的值就是微調；按還原代表看到了處理紀錄
+  const before = allValues(state.run.results[index]).find((e) => e.ref === ref)?.value;
+  const flagged = ["review", "missing"].includes(before?.status);
+  if (flagged && action !== "revert") state.guide.runInspectedAlert = true;
+  if (action === "correct" && before && !flagged && !before.flag) state.guide.runFineTuned = true;
+  if (action === "revert") state.guide.runSawHandled = true;
   const result = await api(`/api/runs/${state.run.id}/edit`, {
     json: { file_index: index, ref, action, value },
   });
@@ -1558,24 +1649,27 @@ function renderRightRun() {
     selectedEditor(result, pending),
     h("h2", {}, `待檢查 ${pending.length} 項`),
     pending.length ? pending.map(pendingItem) : h("p", { class: "note", id: "pendingNote" }, summary),
+    // 這份清空了、但整批還有其他檔案待檢查：直接切過去
+    !pending.length && state.run.results.some((r) => r.doc_id !== result.doc_id && r.counts.review + r.counts.missing > 0)
+      ? h("button", { class: "linkish", id: "nextFileBtn", onclick: jumpNextFlagged }, "下一份有待檢查的檔案 ›") : null,
     records.length ? [h("h2", {}, `處理紀錄 ${records.length} 項`), records.map(recordItem)] : null,
     h("div", { class: "actions" },
       h("a", {
-        class: "btn primary wide", style: "text-align:center;text-decoration:none", download: "",
+        class: "btn primary wide", id: "exportExcelBtn", style: "text-align:center;text-decoration:none", download: "",
         href: done ? `/api/runs/${state.run.id}/excel` : undefined,
-        onclick: () => { state.run.exported = true; },
+        onclick: () => { state.run.exported = true; scheduleGuide(); },
       }, "匯出檢查用 Excel"),
       h("a", {
-        class: "btn wide", style: "text-align:center;text-decoration:none", download: "",
+        class: "btn wide", id: "exportCleanBtn", style: "text-align:center;text-decoration:none", download: "",
         href: done ? `/api/runs/${state.run.id}/clean?only_confirmed=${state.onlyConfirmed ? 1 : 0}` : undefined,
-        onclick: () => { state.run.exported = true; },
+        onclick: () => { state.run.exported = true; scheduleGuide(); },
       }, "匯出乾淨資料"),
       h("label", { class: "check-line" }, h("input", {
         type: "checkbox", checked: !!state.onlyConfirmed,
         onchange: (e) => { state.onlyConfirmed = e.target.checked; renderRight(); },
-      }), "乾淨資料只輸出已確認")));
+      }), "乾淨資料只輸出已確認", helpHint("run-clean-export", "只輸出已確認"))));
 }
-function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); }
+function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); scheduleGuide(); }
 
 /* ---------- 抓取結果 ---------- */
 const CELL_STATUS = { review: "review", missing: "missing", corrected: "handled", confirmed: "handled" };
@@ -1598,8 +1692,11 @@ function editCell(td, value, ref) {
   const finish = (save) => {
     if (done) return;
     done = true;
-    if (save && !sameText(input.value, value.value)) editValue(ref, "correct", input.value);
-    else renderDrawer();
+    if (save && !sameText(input.value, value.value)) {
+      editValue(ref, "correct", input.value);
+      // 「點一格定位原圖，按兩下可改字」：成功改過 3 次就不再顯示
+      if (!POPOUT && state.onboarding.tipsSeen.drawerTip < 3) { state.onboarding.tipsSeen.drawerTip += 1; saveOnboardingPrefs(); }
+    } else renderDrawer();
   };
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); finish(true); }
@@ -1618,6 +1715,7 @@ function renderDrawer() {
   const result = activeResult();
   const drawer = $("drawer");
   drawer.hidden = !result || !state.drawerOpen;
+  scheduleGuide();
   if (drawer.hidden) return;
   const fieldTable = result.fields.length ? [h("h3", {}, "欄位"), h("table", { class: "data" },
     h("thead", {}, h("tr", {}, result.fields.map((f) => h("th", {}, f.name)))),
@@ -1629,10 +1727,36 @@ function renderDrawer() {
       h("tbody", {}, table.rows.map((row, r) => h("tr", {}, h("td", {}, String(row.page)),
         table.columns.map((c) => dataCell(row.cells[c.id], `t:${table.id}:${r}:${c.id}`, row.cells[c.id]?.value))))))]);
   const doc = currentDoc();
+  const run = state.view === "run";
   fill(drawer, h("div", { class: "drawer-bar" },
-    h("span", {}, POPOUT && doc ? doc.name : "抓取結果"), h("span", { class: "spring" }),
-    state.view === "run" ? popButton("table") : null), fieldTable, tables);
+    h("span", {}, POPOUT && doc ? doc.name : "抓取結果"),
+    run && state.onboarding.tipsSeen.drawerTip < 3 ? h("span", { class: "drawer-tip" }, "點一格定位原圖，按兩下可改字") : null,
+    h("span", { class: "spring" }),
+    run ? h("button", { class: "pop", id: "nextFlaggedBtn", title: "跨頁跨檔依序跳到下一個待檢查", onclick: jumpNextFlagged }, "跳到待檢查 ›") : null,
+    run ? popButton("table") : null), fieldTable, tables);
   markFocusedCell();
+}
+
+// 跳到下一個待檢查：依檔案清單順序、頁面順序，跨頁跨檔；到最後一個再從頭
+function jumpNextFlagged() {
+  const results = state.run?.results || [];
+  const order = state.runDocs.map((d) => results.find((r) => r.doc_id === d.id)).filter(Boolean);
+  const flat = order.flatMap((r, docIndex) => allValues(r)
+    .filter((e) => ["review", "missing"].includes(e.value.status))
+    .map((e) => ({ doc: r.doc_id, docIndex, ref: e.ref, page: e.value.page || 0 }))
+    .sort((a, b) => a.page - b.page));
+  state.guide.runUsedNextFlagged = true;
+  if (!flat.length) { toast("沒有待檢查的項目了"); scheduleGuide(); return; }
+  const at = flat.findIndex((x) => x.doc === state.docId && x.ref === state.focusRef);
+  const here = order.findIndex((r) => r.doc_id === state.docId);
+  const next = at >= 0 ? flat[(at + 1) % flat.length] : flat.find((x) => x.docIndex >= here) || flat[0];
+  if (next.doc !== state.docId) {
+    state.docId = next.doc;
+    state.page = 0;
+    state.focusRef = null;
+    renderAll();
+  }
+  focusValue(next.ref);
 }
 
 /* ---------- 解析流程 ---------- */
@@ -1645,10 +1769,12 @@ async function fetchProgress() {
   state.run = { ...run, ...status, results: [...run.results.slice(0, since), ...results] };
   return results.length;
 }
-const startRun = guard(async () => {
+const startRun = guard(async (options = {}) => {
   const docs = state.runDocs.map((d) => d.id);
-  const { run_id: id } = await api("/api/runs", { json: { template_ids: state.templateIds, docs } });
-  state.run = { id, total: docs.length, done: 0, current: "", results: [], finished: false };
+  // 示範解析由伺服器固定用內附的示範範本，不佔正式解析紀錄
+  const body = options.demo ? { docs, demo: "run" } : { template_ids: state.templateIds, docs };
+  const { run_id: id } = await api("/api/runs", { json: body });
+  state.run = { id, total: docs.length, done: 0, current: "", results: [], finished: false, demo: !!options.demo };
   state.drawerOpen = true;
   renderLeft();
   while (!state.run.finished) {
@@ -1659,8 +1785,107 @@ const startRun = guard(async () => {
     if (added || state.run.finished) sendSync({ progress: true });
   }
   const pending = state.run.results.filter((r) => r.status !== "ok").length;
+  const flagged = state.run.results.find((r) => pendingLabel(r));
+  state.guide.batchHadAlerts = !!flagged;
+  if (options.demo && flagged) {
+    // 示範：直接切到有疑點的那一份，接著看示警
+    state.docId = flagged.doc_id;
+    state.page = 0;
+    state.focusRef = null;
+  }
   toast(pending ? `完成，${pending} 份有待檢查項目` : "完成，全部正常");
   renderAll();
+  sendSync({ reload: true });
+});
+
+/* ---------- 示範與導覽入口 ---------- */
+// 從歡迎畫面、說明選單或導覽列開始導覽。已有工作時先問，不直接蓋掉（未儲存的範本會收進草稿）
+function requestGuide(view, trigger, mode = view) {
+  const busy = view === "train" ? state.docs.length > 0 || hasUnsavedTemplate() : state.runDocs.length > 0;
+  if (!busy) { startDemo(mode); return; }
+  const demoWord = view === "train" ? "示範發票" : "示範文件";
+  const card = $("coachCard");
+  if (typeof closeSpotlight === "function") closeSpotlight();
+  showFloatCard(card, trigger, [
+    h("h2", {}, mode === "showcase" ? "要開啟觀摩範本嗎？" : "要怎麼開始導覽？"),
+    h("p", {}, view === "train"
+      ? `改用${demoWord}會關閉目前的檔案，未儲存的範本會留在草稿。`
+      : `改用${demoWord}會關閉目前的檔案與解析結果。`),
+    h("div", { class: "card-actions" },
+      mode === "showcase" ? h("button", { type: "button", class: "btn", onclick: () => hideFloatCard(card) }, "取消")
+        : h("button", {
+          type: "button", class: "btn", id: "guideContinueBtn",
+          onclick: () => { hideFloatCard(card, false); if (state.view !== view) setView(view); startGuide(view, false); },
+        }, view === "train" ? "在目前的 PDF 上繼續" : "在目前的檔案上繼續"),
+      h("button", {
+        type: "button", class: "btn primary", id: "guideDemoBtn",
+        onclick: () => { hideFloatCard(card, false); startDemo(mode); },
+      }, mode === "showcase" ? "開啟觀摩範本" : `改用${demoWord}`)),
+  ]);
+  positionFloatCard(card, trigger || $("helpBtn") || $("stage"), ["bottom", "right", "left", "top"]);
+}
+// 導覽完成時刪掉練習存的範本（伺服器只允許刪名稱以「（練習）」結尾的）
+const deletePracticeTemplate = guard(async () => {
+  const id = state.savedId;
+  if (!id || !window.confirm(`刪除練習範本「${T().name}」？刪除後無法復原。`)) return;
+  await api(`/api/templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+  state.templateIds = state.templateIds.filter((t) => t !== id);
+  state.savedTemplate = null;
+  state.savedId = null;
+  await loadTemplates();
+  // 練習已完成，收起導覽列；之後可從說明選單重看
+  state.guide.on.train = false;
+  state.onboarding.trainStep = null;
+  saveOnboardingPrefs();
+  renderAll();
+  toast("已刪除練習範本");
+});
+function startShowcase(trigger) { requestGuide("train", trigger, "showcase"); }
+async function closeDocs(view) {
+  const list = view === "train" ? state.docs : state.runDocs;
+  for (const doc of list) await api(`/api/docs/${doc.id}`, { method: "DELETE" }).catch(() => null);
+}
+// options.guide 為 false 時只載入示範檔，不開始新手關卡（從進階功能的「用示範發票看」進來）
+const startDemo = guard(async (mode, options = {}) => {
+  const withGuide = options.guide !== false;
+  const view = mode === "run" ? "run" : "train";
+  if (state.guide.loadingDemo) return;
+  if (state.run && !state.run.finished) { toast("解析進行中，完成後再開始示範", true); return; }
+  state.guide.loadingDemo = true;
+  if (state.view !== view) setView(view); else renderPage();
+  try {
+    const data = await api("/api/demo-samples", { json: { mode } });
+    await closeDocs(view);
+    const first = data.docs[0];
+    if (view === "train") {
+      parkTemplate();
+      Object.assign(state, {
+        template: blankTemplate(), savedTemplate: null, savedId: null, undo: [],
+        docs: data.docs, referenceId: first.id, tests: [], docId: first.id, page: 0, zoom: 1,
+        tool: "select", pending: null, selected: null, read: null, checkDraft: null, drawerOpen: false,
+        outputPanel: false, columnPreview: null, showcase: false,
+      });
+      state.guide.guideTemplate = data.guide || null;
+      if (mode === "showcase") {
+        // 觀摩範本唯讀：儲存時一律另存成新的範本，不會覆蓋示範範本
+        state.template = { ...blankTemplate(), ...data.template };
+        markSaved();
+        state.showcase = true;
+      }
+      renderAll();
+      if (mode === "train") startGuide("train", true);
+      else if (withGuide) startShowcaseTour();
+    } else {
+      Object.assign(state, { runDocs: data.docs, run: null, docId: first.id, page: 0, focusRef: null, drawerOpen: false });
+      if (withGuide) startGuide("run", true);
+      renderAll();
+      state.guide.loadingDemo = false;
+      await startRun({ demo: true });
+    }
+  } finally {
+    state.guide.loadingDemo = false;
+    if (!currentDoc()) renderPage();
+  }
 });
 
 /* ---------- 檔案 ---------- */
@@ -1716,11 +1941,12 @@ const channel = "BroadcastChannel" in window ? new BroadcastChannel("pdfmapper-p
 const POP_TEXT = { pdf: "PDF", table: "結果表格" };
 function popButton(mode) {
   if (!channel || state.view !== "run") return null;
+  const id = mode === "pdf" ? "popPdfBtn" : "popTableBtn";
   if (POPOUT === mode) {
-    return h("button", { class: "pop", title: "關閉這個視窗，回到主視窗", onclick: () => window.close() }, "收回到主視窗");
+    return h("button", { class: "pop", id, title: "關閉這個視窗，回到主視窗", onclick: () => window.close() }, "收回到主視窗");
   }
   if (POPOUT) return null;
-  return h("button", { class: "pop", title: `把${POP_TEXT[mode]}移到另一個視窗，方便對照`, onclick: () => popOut(mode) }, "在新視窗開啟");
+  return h("button", { class: "pop", id, title: `把${POP_TEXT[mode]}移到另一個視窗，方便對照`, onclick: () => popOut(mode) }, "在新視窗開啟");
 }
 function popOut(mode) {
   const size = mode === "pdf" ? "width=900,height=1000" : "width=1200,height=560";
@@ -1807,7 +2033,8 @@ async function loadTemplates() {
   state.templates = (await api("/api/templates")).templates;
 }
 function onKey(event) {
-  if (/^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;  // 輸入框的 Esc 交給輸入框（取消原地編輯）
+  if (event.key === "Escape" && !POPOUT && handleGuideEscape()) { event.preventDefault(); return; }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); undo(); return; }
   if (event.ctrlKey || event.metaKey) return;
   const tool = TOOLS.find(([, , key]) => key === event.key.toUpperCase());
@@ -1833,10 +2060,12 @@ async function main() {
     document.body.classList.remove("dropping");
     addFiles(e.dataTransfer.files);
   });
-  if (POPOUT) startPopout(); else loadDraft();
+  if (POPOUT) startPopout(); else { loadDraft(); restoreGuide(); }
   listenPopouts();
   renderAll();
   watchConnection();
+  watchGuideLayout();
+  setupHelpMenu();
   try {
     const status = await api("/api/status");
     state.reasons = status.reasons;
@@ -1847,6 +2076,7 @@ async function main() {
     await loadTemplates();
     renderAll();
     if (POPOUT) channel.postMessage({ type: "hello", from: POPOUT });
+    else loadWhatsNew(status.version);
   } catch (error) {
     toast(error.message, true);
   }

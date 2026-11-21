@@ -20,4 +20,5 @@ wheels/
 # 只保留合成範例
 *.pdf
 !app/samples/*.pdf
+!app/pdfmapper/demo/*.pdf
 .DS_Store

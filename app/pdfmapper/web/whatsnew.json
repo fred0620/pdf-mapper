@@ -1,0 +1,31 @@
+{
+  "versions": [
+    {
+      "version": "0.4.0",
+      "date": "未發布",
+      "items": [
+        {
+          "id": "0.4.0-help-menu",
+          "title": "說明選單",
+          "body": "頂列「說明」集中新手導覽、進階功能與手冊，關閉導覽後也找得到。",
+          "spotlight": "help-menu"
+        },
+        {
+          "id": "0.4.0-next-flagged",
+          "title": "跳到下一個待檢查",
+          "body": "結果表格右上角，跨頁跨檔依序跳轉。",
+          "tab": "run",
+          "spotlight": "run-next-flagged",
+          "needsDoc": true
+        },
+        {
+          "id": "0.4.0-demo",
+          "title": "用示範發票邊做邊學",
+          "body": "還沒開檔案時，可以跟著示範發票做範本，或練習核對與匯出。",
+          "tab": "train",
+          "spotlight": "welcome-demo"
+        }
+      ]
+    }
+  ]
+}

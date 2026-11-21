@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "template_id": "invoice_demo",
+  "name": "商業發票（示範）",
+  "fields": [
+    {
+      "id": "declaration_no",
+      "name": "發票號碼",
+      "kind": "key_value",
+      "page_rule": "first",
+      "ref_page": 0,
+      "label": {
+        "text": "發票號碼",
+        "box": [
+          0.1,
+          0.173,
+          0.2,
+          0.196
+        ],
+        "patch": "iVBORw0KGgoAAAANSUhEUgAAAHwAAAAoCAAAAAAZasGDAAAFOUlEQVRYCcXB+VNVZRgH8Of7nnPuZRNRUIYhQVDE0VTSEAltKhvcNRVyCffJVCyrUSyvW2UBibvgjlHiQqih2DiZqdkwueDCqOBeokM4kiIKdznv++T0J5xfzucDJvuAyT5gsg+Y7AMm+4DJPmCyD5jsAyb7wBREinXZ4AjhplZSIwVBigWBmaCISJMCPo01vnJ3KMAAs5AaQRErQ4IFyCJItb1eOsyBhzzLL6xcnkSy8hePARMCUkjl6Dy8VcUlXToHRvn0zUWr4El2br8klMETfn5mEEN1GRcohCBL4GOXMP4+np04Palq6uAL/QN+P8Z4frRHp4aD6W001WVUwLKLfXhfUV+BguwkqW8I33emvGc3vDOpe/yfTW/q8aOClQayBOY/8/qOd5kFQatWLpu06ZeSMPPfh1SXl/rWnay1naQjKrB5RexUpC5LgW9HSaGhhep8d6rrbaElLBmTfXddAHt0DSBL4JPXM551LArXmlbvj9ZWd9TktpwOqIkIa6rpGtBMW3qZi8VwZLnKy0JavGF43LEs+Hzm1gTmWAp56AsPnjmFTF0jS+Bp+S3HuzSx/aOnzfn7hmckh/DqmlXNmePSrmaUxF2ZuLeHLD0MhXk7HRPKGyaLA7d/pL1FWyIhXpk4qLBufmBoO9JA1uCP7Js3wyNezcs7jOdaSkX6Ilp/ekFTzuDU667V0VV53ydQs5tBIqvLiA3H4hJuJ3xOn56bjrjeiaPf+KF+rn9sFAhkDWrPJ7Uxfyra8/Grs49uLPE8i6HSfDK8EEpq0MO/6FS513SaHHeVqusicqI8rYO8vVpinsTlJweE1npjg2aMVdIBsgQml9WoG/ezPtuUePyrYqONn8SjJqk0KKEgonRxeVvpewEcfTHm451FQyl0mnFyyEdfHyjNH7Jw7Mrba4K8GusAWQKlhrWL9fOcj801bowI8y9uL5rXHdC9GgvWfKI0munEvEpDPPm0x0f1Jx4YEWnP3y+blXuopKBfWOgdTzzaLupGAmQJ+Gnqmj5Kr3rs1Njr17U1NbpNScQ6KwI5qK2+J4+f+M4tSE05Naa8a2+un68ic0pLNxyB0t2NsmxdsoROloCvvjs8hCKdOzr4RGW7wmguOM2KdSnYp0P3+S/pXHcfp/bvyZzDxetmjMkw6Oaup7llJR9ee73VraCj/Zds7MkayBKYD8obtAq5cOmYtMeTJmfqdO0+Nz3sTLNHpza7gx1a72AS2LUnb+5XZ2vyJqa9Vxujljd+W16cfLmfX4Ph/evS9m4gkCVQkkisuF5YvRB1r+U6dYKvMitpuV+fWbM2lGSMjGBSuntj1cSVBV8mfjh+0LTUwujFm8PkgIZU//sDyj85WLato9JAlkBRi+Ge0n3pne9KfOlzoyXqdx/qle1n9p07s/H41tDM3k4Tja4w9/ORrs19RvccsPRI6LIbH4jajcXV/4yo7bmman0bkCBLoHjnPlW9qqIiLr3dGrX2JezOnzMshGXfWdMMvvdN6yWBwnX2Qe7iSSdT5huu/Wb6Cjr+JE01nBna4g7c+uudqQu8TgGyBMz3qsz4yAuRURDPbsQHEbudutfpXZ+SLEn4oEu9+lZMl4vd7nbVJfk00gEmJmIwbl2OfNnfIIAsgSImkkonqZsGKxARFAkGQwmQJE2RdEglhMdBDFYaQwmfBtaU1EAMZiHIEih6gYUCvcBgMAlm0Atg+h8DCgwGGApExCAiFgoEJmJBFoHJPmCyD5jsAyb7gMk+YLIPmOwDJvuAyT5gsg+Y7AMm+/wHJnloH9XkFWsAAAAASUVORK5CYII=",
+        "text_center": [
+          0.1264296131749307,
+          0.18271434976355444
+        ]
+      },
+      "value_box": [
+        0.28,
+        0.17,
+        0.9,
+        0.21
+      ],
+      "required": true
+    },
+    {
+      "id": "tax_id",
+      "name": "開立日期",
+      "kind": "key_value",
+      "page_rule": "first",
+      "ref_page": 0,
+      "label": {
+        "text": "開立日期",
+        "box": [
+          0.1,
+          0.233,
+          0.2,
+          0.256
+        ],
+        "patch": "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",
+        "text_center": [
+          0.1264296131749307,
+          0.24274827028210938
+        ]
+      },
+      "value_box": [
+        0.28,
+        0.23,
+        0.9,
+        0.27
+      ],
+      "required": true,
+      "type": "date"
+    },
+    {
+      "id": "tax_total",
+      "name": "總金額",
+      "kind": "key_value",
+      "page_rule": "first",
+      "ref_page": 0,
+      "label": {
+        "text": "總金額",
+        "box": [
+          0.6,
+          0.858,
+          0.68,
+          0.881
+        ],
+        "patch": "iVBORw0KGgoAAAANSUhEUgAAAGMAAAApCAAAAAAEk8hDAAAEG0lEQVRYCbXB7U+VZRgA8Ou67+cc3uKdYw5oFBZCzWFv07BEnZqrhQqORcQCt9ZRiwSnHi0kTFDgKPImkRXKETETJbBlIEY4X0owCWG0Gghkx1OMGAQHeJ77vvrQX/B8eH4/JDAcEhgOCQyHBIZDAsMhgeGQwHBIYDgkEogSkQCFAkRcEpNcEqAwzXgKYEAIgksk4ASqCUE3JI27pTchgdMrAJiGCAiCq+pEoIIoFQFcVSY9zRIBQHIVGQedkAQ2/G4DgeJAiNUkGKgmIqFoTafKwgUil0ygWvTKszg9NIUokS3wA52QtMntgYdpvGvqw03xDCIeJU2RBHfe6Tm4zVMSl+yec7LE8pYiKgdQEJdVL4JOSLI1p9or+FZGhHQrPiNbdzGaM09d3ros7tjazMcZEhyqeVgjr/tpO+Z+/uhglOkhBXRCmtstd25O9ynNcY48/9gHMXsRoPNsXfy+6LqDQdkrfBkVmhNG4umQWHdtqC0xYOEqH9AJte5tha6jp+6WFOeCtWU8xiYHG2v+TNkTijPXinqXp7zKaqed/VnsUsjUydWo/BhebgGdcHZDd+hQZWJLfurFGdfH9bFZV9/lSwYjvEARfFzjN9YUm7/PI3Bad5TcOUnc3lNuAZ1Qc4xdVorC2gqsMdW3c79+Yq/r0mKLw2W6+WuGyl6Oa/df0mddmdVTnL+o+NzrnF3xqbCATkjixn5b83q3vcweHdChRNncPhJJisOOXslnPVCwm42To9MvZHseqtsg1a7Q0hDQCeVQ2kurSxctPvre4Aqati+30cSwW5kxH28/yYnLoEicc1/dPZX6dkRR+z5Qal2V80AnlJkNT/oqXkmVCDNmRhnJeGv/KAA5Xc9oCtG6PPmg4cLCpx2BRReqlwpz71PlwaATUitYLNPDseOKe8/2CAzw09z3W3El++SbZpisSY6MmLOdW5Xs11df1dxVwrG6p3Ie6IQ0YY+ijjf6+l05J/zez0mIVwi+qK9aUFjXM1fVXBsmsfN0Uxi5nqstvJ7LlBOjZSGgE1L3zsT+gKCOyH77+KdvXuQ2XyYHrJusB+p6f0vP2siZZPY/CnzsP9Wfr1U9p7zitgSATkinW9I+W994N6+mJGy40dl/JJpAK/inLP9M9+dXjnsDIRx5kK9UXHe4Gzq2lK9ICFZAJ6T01yKPVZzvTMlaGy5Obx6Ln+8Y5Ops4A8DKW7urVHqUir8dqO5zSPvbFNidkNxUqY/6IT0Zbz/X/Np0tT0iwRLpqccO3OPABhXESUiJC1THV9FseFHQm8nJyB8V7crFnRCIgAgYCCJEyAIBv8jBABCQHKKMPz7Xw8lhAFqo37eoBMSGA4JDIcEhkMCwyGB4ZDAcEhgOCQwHBIYDgkMhwSGQwLDIYHhkMBw/wE/LekQq61ODAAAAABJRU5ErkJggg==",
+        "text_center": [
+          0.6201796008694557,
+          0.8676119804654103
+        ]
+      },
+      "value_box": [
+        0.76,
+        0.855,
+        0.92,
+        0.89
+      ],
+      "required": true,
+      "type": "number"
+    }
+  ],
+  "anchors": [
+    {
+      "id": "title",
+      "text": "商業發票",
+      "box": [
+        0.08,
+        0.05,
+        0.34,
+        0.11
+      ],
+      "page_rule": "first",
+      "ref_page": 0,
+      "patch": "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",
+      "text_center": [
+        0.15466458412908737,
+        0.07005495303510838
+      ]
+    }
+  ],
+  "tables": [
+    {
+      "id": "items",
+      "name": "品項明細",
+      "key_column": "no",
+      "key_position": "middle",
+      "required": true,
+      "columns": [
+        {
+          "id": "no",
+          "name": "序號",
+          "band": 0
+        },
+        {
+          "id": "name",
+          "name": "品項",
+          "band": 1
+        },
+        {
+          "id": "qty",
+          "name": "數量",
+          "band": 2
+        },
+        {
+          "id": "amount",
+          "name": "金額",
+          "band": 3
+        }
+      ],
+      "regions": [
+        {
+          "page_rule": "first",
+          "ref_page": 0,
+          "box": [
+            0.08,
+            0.47,
+            0.92,
+            0.8
+          ],
+          "dividers": [
+            0.08,
+            0.18,
+            0.58,
+            0.76,
+            0.92
+          ]
+        }
+      ]
+    }
+  ],
+  "validations": [
+    {
+      "type": "sum_column",
+      "table": "items",
+      "column": "amount",
+      "equals": "tax_total",
+      "tolerance": 1
+    }
+  ]
+}

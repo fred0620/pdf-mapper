@@ -54,7 +54,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 ### 步驟
 
 1. 改 `app/pyproject.toml` 的 `version`，然後執行 `uv lock --project app` 讓 `uv.lock` 跟著更新。
-2. 在 `CHANGELOG.md` 最上面加一段 `## 版本號 - 日期`，用使用者看得懂的話條列改了什麼。
+2. 在 `CHANGELOG.md` 最上面加一段 `## 版本號 - 日期`，用使用者看得懂的話條列改了什麼。同時在 `app/pdfmapper/web/whatsnew.json` 加這一版的新功能導覽：只寫畫面上看得到的改變（標題 16 字、說明 40 字以內，`spotlight` 指向 `spotlights.js` 的步驟），沒有就寫 `"items": []`。`python3 scripts/check_whatsnew.py` 會檢查，沒寫不能發布。
 3. 跑測試和弱點檢查（`python3 scripts/audit.py`，要能連到 pypi.org），並依 [發版檢查清單](security-checklist.md) 勾選。
 4. 合併到 main 後打標籤：
 
