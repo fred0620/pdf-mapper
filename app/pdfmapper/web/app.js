@@ -1024,7 +1024,7 @@ function fieldPanel(field) {
           if (e.target.checked) startContinuation(field);
           else { snapshot(); delete field.continuation; state.continuing = null; setTool("select"); renderAll(); }
         },
-      }), "內容可能接到下一頁"),
+      }), "內容可能接到下一頁", helpHint("feat-pos-field", "續頁與取行規則")),
       field.continuation ? h("p", { class: "note" }, `接續範圍在第 ${field.continuation.ref_page + 1} 頁，接上時會標記給人確認。`) : null),
     h("details", {}, h("summary", {}, "進階設定"), h("div", { class: "form" },
       field.kind === "key_value" ? h("label", {}, "比對用的標題文字", h("input", {
@@ -1148,13 +1148,13 @@ function columnDetail(table, column) {
       onchange: (e) => { if (e.target.checked) column.row_required = true; else delete column.row_required; saveDraft(); },
     }), "每一列都一定有這欄"),
     h("p", { class: "note" }, "用來判斷跨頁：這欄沒抓到，代表這一列還沒結束。"),
-    h("label", {}, "這一欄怎麼取值", h("select", {
+    h("label", {}, h("span", { class: "label-line" }, "這一欄怎麼取值", helpHint("feat-cell-extract", "表格取值方式")), h("select", {
       "aria-label": "這一欄怎麼取值",
       onchange: (e) => { snapshot(); setValueMode(table, column, e.target.value); renderRight(); },
     }, VALUE_MODES.map(([value, label]) =>
       h("option", { value, selected: valueMode(column) === value }, label)))),
     valueOptions(column),
-    isReference() ? h("button", { class: "linkish", style: "text-align:left", onclick: () => previewColumn(table, column) }, "用基準範例試抓這一欄") : null,
+    isReference() ? h("button", { class: "linkish column-preview-btn", style: "text-align:left", onclick: () => previewColumn(table, column) }, "用基準範例試抓這一欄") : null,
     previewRows(column),
     h("div", { class: "row" },
       h("button", {
@@ -1229,7 +1229,7 @@ function placementTab(table) {
       },
       () => { snapshot(); delete region.header; renderAll(); })));
   return [
-    h("h3", {}, "每一頁的範圍"),
+    h("h3", { class: "label-line" }, "每一頁的範圍", helpHint("feat-cross-page", "跨頁表格、表頭與表尾")),
     regions,
     h("button", { class: "linkish", onclick: () => setTool("region") }, "在目前這一頁加範圍"),
     h("p", { class: "note" }, "明細接到下一頁時，切到那一頁再加。表格起始位置不固定時，框選表頭。"),
@@ -1393,7 +1393,7 @@ function outputPanel() {
   const fields = T().fields.map((f) => [f.id, f.name]);
   return [
     h("button", { class: "linkish", style: "margin-bottom:8px", onclick: () => { state.outputPanel = false; renderRight(); } }, "回到欄位清單"),
-    h("h2", {}, "輸出欄位"),
+    h("h2", { class: "label-line" }, "輸出欄位", helpHint("feat-output", "輸出整理")),
     h("p", { class: "note" }, "只影響「乾淨資料」，檢查用 Excel 維持完整內容。欄名留空就用原本的名稱。"),
     fields.length ? outputGroup("欄位", fields, () => T().output?.fields, (list) => { output().fields = list; }) : null,
     T().tables.map((table) => outputGroup(table.name, table.columns.map((c) => [c.id, c.name]),
@@ -1664,7 +1664,7 @@ function renderRightRun() {
       h("label", { class: "check-line" }, h("input", {
         type: "checkbox", checked: !!state.onlyConfirmed,
         onchange: (e) => { state.onlyConfirmed = e.target.checked; renderRight(); },
-      }), "乾淨資料只輸出已確認")));
+      }), "乾淨資料只輸出已確認", helpHint("run-clean-export", "只輸出已確認"))));
 }
 function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); scheduleGuide(); }
 
@@ -1842,7 +1842,9 @@ async function closeDocs(view) {
   const list = view === "train" ? state.docs : state.runDocs;
   for (const doc of list) await api(`/api/docs/${doc.id}`, { method: "DELETE" }).catch(() => null);
 }
-const startDemo = guard(async (mode) => {
+// options.guide 為 false 時只載入示範檔，不開始新手關卡（從進階功能的「用示範發票看」進來）
+const startDemo = guard(async (mode, options = {}) => {
+  const withGuide = options.guide !== false;
   const view = mode === "run" ? "run" : "train";
   if (state.guide.loadingDemo) return;
   if (state.run && !state.run.finished) { toast("解析進行中，完成後再開始示範", true); return; }
@@ -1869,10 +1871,10 @@ const startDemo = guard(async (mode) => {
       }
       renderAll();
       if (mode === "train") startGuide("train", true);
-      else if (typeof startShowcaseTour === "function") startShowcaseTour();
+      else if (withGuide) startShowcaseTour();
     } else {
       Object.assign(state, { runDocs: data.docs, run: null, docId: first.id, page: 0, focusRef: null, drawerOpen: false });
-      startGuide("run", true);
+      if (withGuide) startGuide("run", true);
       renderAll();
       state.guide.loadingDemo = false;
       await startRun({ demo: true });
@@ -2028,7 +2030,8 @@ async function loadTemplates() {
   state.templates = (await api("/api/templates")).templates;
 }
 function onKey(event) {
-  if (/^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;  // 輸入框的 Esc 交給輸入框（取消原地編輯）
+  if (event.key === "Escape" && !POPOUT && handleGuideEscape()) { event.preventDefault(); return; }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); undo(); return; }
   if (event.ctrlKey || event.metaKey) return;
   const tool = TOOLS.find(([, , key]) => key === event.key.toUpperCase());
@@ -2059,6 +2062,7 @@ async function main() {
   renderAll();
   watchConnection();
   watchGuideLayout();
+  setupHelpMenu();
   try {
     const status = await api("/api/status");
     state.reasons = status.reasons;

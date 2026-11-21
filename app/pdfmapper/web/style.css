@@ -576,6 +576,42 @@ details .form { margin-top: 10px; }
 .float-card .card-actions .spring { flex: 1; }
 .float-card .card-count { color: var(--text); font-size: 12.5px; }
 
+/* 說明選單（頂列） */
+.help-trigger {
+  position: relative; height: var(--button); padding: 0 8px; background: none; border: 0; border-radius: var(--radius-sm);
+  color: var(--text-strong); /* 藍色只留給狀態與主按鈕 */
+}
+.help-trigger:hover { background: var(--ink-2); text-decoration: none; }
+.help-dot {
+  position: absolute; top: 2px; right: -2px; width: 6px; height: 6px; border-radius: var(--radius-pill);
+  background: var(--accent); box-shadow: 0 0 0 2px var(--surface); animation: dotIn 600ms var(--settle) 1;
+}
+@keyframes dotIn { from { transform: scale(0); } to { transform: scale(1); } }
+.help-popover { width: 320px; padding: 12px 6px; }
+.help-popover > h2 { padding: 0 8px; }
+.help-section { padding: 6px 0; border-top: 1px solid var(--line); }
+.help-section:first-of-type { border-top: 0; }
+.help-section h3 { margin: 4px 8px 4px; font-size: 12.5px; font-weight: 600; color: var(--text-strong); }
+.help-section ul { margin: 0; padding: 0; list-style: none; }
+.help-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: var(--row);
+  padding: 4px 8px; background: none; border: 0; border-radius: var(--radius-sm); text-align: left; text-decoration: none;
+  font-size: 13px; color: var(--text-strong);
+}
+.help-row:hover { background: var(--ink-2); }
+.help-meta { flex: 0 0 auto; font-size: 12.5px; color: var(--text); }
+.help-meta.seen { color: var(--text-faint); }
+/* 右欄設定旁的 ? */
+.label-line { display: inline-flex; align-items: center; gap: 6px; }
+.help-hint {
+  display: inline-grid; place-items: center; width: 16px; height: 16px; padding: 0; flex: 0 0 auto;
+  border: 0; border-radius: var(--radius-pill); background: none; box-shadow: inset 0 0 0 1px currentColor;
+  color: var(--text-faint); font-size: 12.5px; font-weight: 600; line-height: 1;
+}
+.help-hint:hover { color: var(--icon); }
+.card-legend { margin-top: 8px; }
+.card-missing { margin-top: 6px !important; color: var(--text-strong); }
+
 @media (prefers-reduced-motion: reduce) {
   .mission-enter, .guide-pulse, .float-enter, .help-dot { animation: none !important; }
 }

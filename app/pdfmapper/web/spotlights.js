@@ -839,3 +839,310 @@ function watchHandledRecords(step) {
   }, { threshold: 0.5 });
   nodes.forEach((node) => handledObserver.observe(node));
 }
+
+/* ---------- 進階功能（說明選單與右欄 ? 共用） ----------
+ * needs：doc 要有 PDF、result 要有解析結果、table 要有表格。沒有時浮動卡改顯示「用示範發票看」。
+ */
+function selectFirstTable(tab, openColumn) {
+  const t0 = firstTable();
+  if (!t0) return;
+  state.selected = { type: "table", id: t0.id };
+  state.outputPanel = false;
+  state.tableTab = tab;
+  if (openColumn) state.openColumn = t0.columns[0]?.id || null;
+  renderRight();
+  renderOverlay();
+}
+function showList() { state.selected = null; state.outputPanel = false; renderRight(); renderOverlay(); }
+const FEATURE_SPOTLIGHTS = [
+  {
+    id: "feat-pos-field", tab: "train", title: "只有值的欄位、續頁與取行規則",
+    body: "沒有標題的值用「只有值的欄位」（P）框，靠定位點找位置。欄位設定可勾內容接到下一頁、只取第幾行。",
+    target: '[data-tool="pos"]',
+  },
+  {
+    id: "feat-cell-extract", tab: "train", title: "表格 6 種取值與一格拆多欄", needs: "table",
+    body: "一格有好幾個值時，可依第幾行、開頭文字、正規表達式、空格或字距取值，也能把同一格拆成多欄。",
+    setup: () => selectFirstTable("columns", true),
+    target: '#right select[aria-label="這一欄怎麼取值"]',
+  },
+  {
+    id: "feat-column-preview", tab: "train", title: "試抓這一欄（免全檔重跑）", needs: "table",
+    body: "改了取值方式後，用基準範例試抓這一欄，馬上看到前幾列的結果，不用整份重新測試。",
+    setup: () => selectFirstTable("columns", true),
+    target: "#right .column-preview-btn",
+  },
+  {
+    id: "feat-cross-page", tab: "train", title: "跨頁表格、表頭浮動、表尾結束", needs: "table",
+    body: "明細接到下一頁時切到那頁加範圍；起始位置不固定就框表頭；遇到「合計」這類文字就結束。",
+    setup: () => selectFirstTable("place", false),
+    target: "#right .region-card",
+  },
+  {
+    id: "feat-output", tab: "train", title: "輸出整理：乾淨資料與檢查用 Excel",
+    body: "設定乾淨資料要輸出哪些欄、欄名與順序；檢查用 Excel 一律保留完整內容給人核對。",
+    setup: showList,
+    target: "#outputBtn",
+  },
+];
+const RUN_SPOTLIGHTS = [
+  {
+    id: "run-alert-legend", tab: "run", title: "示警顏色速查",
+    body: "表格、PDF 上的框與 Excel 都照這個顏色規則。滑過色塊可看原因。",
+    legend: true,
+  },
+  {
+    id: "run-next-flagged", tab: "run", title: "跳到下一個待檢查", needs: "result",
+    body: "結果表格右上角，依檔案與頁面順序跨頁跨檔跳轉，處理完再按一次。",
+    target: "#nextFlaggedBtn",
+  },
+  {
+    id: "run-inline-edit", tab: "run", title: "結果表格就地修改", needs: "result",
+    body: "按兩下任一格就能改字，Shift+Enter 換行。改過的變藍色並保留原值，可以還原。",
+    target: "#drawer td[data-ref]",
+  },
+  {
+    id: "run-popout", tab: "run", title: "雙視窗核對", needs: "result",
+    body: "PDF 和結果表格都能移到新視窗，兩個螢幕對照，選取與修改會同步。",
+    target: "#popTableBtn",
+  },
+  {
+    id: "run-clean-export", tab: "run", title: "只輸出已確認的資料", needs: "result",
+    body: "勾選後，乾淨資料只輸出人確認或修改過的值；檢查用 Excel 仍保留全部給人核對。",
+    target: "#right .check-line",
+  },
+  {
+    id: "run-multi-template", tab: "run", title: "多個範本自動挑選",
+    body: "勾選多個範本時，每份 PDF 會比對定位點，自動用最符合的範本解析。",
+    target: "#left .template-picks",
+  },
+];
+// 觀摩做好的範本：一段 Spotlight 序列，不另寫邏輯
+const SHOWCASE_SPOTLIGHTS = [
+  {
+    id: "show-fields", tab: "train", title: "框好的欄位",
+    body: "觀摩範本已經框好 3 個欄位和 1 個表格，點清單裡任一項就能看它的設定。",
+    setup: showList,
+    target: "#right .items",
+  },
+  {
+    id: "show-table", tab: "train", title: "表格的直欄與判斷列",
+    body: "明細切成 4 個直欄，用「序號」判斷新的一列；在表格內點一下可以再切一欄。",
+    setup: () => selectFirstTable("columns", false),
+    target: "#keyColumn",
+  },
+  {
+    id: "show-check", tab: "train", title: "加總檢查",
+    body: "金額欄加總要等於總金額，對不上時結果會標記給人確認。",
+    setup: showList,
+    target: "#right .checks",
+  },
+  {
+    id: "show-save", tab: "train", title: "測試與另存",
+    body: "按測試看看結果。觀摩範本不會被改到，要自己用就按「另存成我的範本」。",
+    target: "#testBtn",
+  },
+];
+function startShowcaseTour() {
+  const ids = SHOWCASE_SPOTLIGHTS.map((s) => s.id);
+  openSpotlight(ids[0], { sequence: { index: 0, ids } });
+}
+
+function missingFor(step) {
+  if (step.needs === "doc" && !currentDoc()) return "需要先載入 PDF";
+  if (step.needs === "result" && !(state.view === "run" && activeResult())) return "需要先解析 PDF";
+  if (step.needs === "table" && !(state.view === "train" && isReference() && T().tables.length)) return "需要先有表格";
+  return null;
+}
+// 打開一個 Spotlight：切到對應分頁與右欄介面、框住目標、在旁邊開浮動卡。inPlace 時不切換畫面（右欄 ?）
+function openSpotlight(id, opts = {}) {
+  const step = findSpotlight(id);
+  if (!step) return;
+  closeHelp(false);
+  const g = state.guide;
+  if (!opts.inPlace && step.tab && state.view !== step.tab) setView(step.tab);
+  const missing = opts.inPlace ? null : missingFor(step);
+  if (!opts.inPlace && !missing) { try { step.setup?.(); } catch (_e) { /* 設定失敗不影響說明 */ } }
+  g.spotlight = { step, opts, missing };
+  const seen = state.onboarding.spotlightsSeen;
+  if (!seen.includes(id)) { seen.push(id); saveOnboardingPrefs(); }
+  const seq = opts.sequence;
+  const actions = [];
+  if (missing) {
+    actions.push(h("button", {
+      type: "button", class: "btn primary", id: "spotDemoBtn",
+      onclick: async () => {
+        closeSpotlight(false);
+        await startDemo(step.tab === "run" ? "run" : "showcase", { guide: false });
+        openSpotlight(id, opts);
+      },
+    }, "用示範發票看"));
+  }
+  if (seq) {
+    const last = seq.index >= seq.ids.length - 1;
+    actions.push(h("span", { class: "card-count" }, `${seq.index + 1} / ${seq.ids.length}`), h("span", { class: "spring" }));
+    if (!last) {
+      actions.push(h("button", {
+        type: "button", class: "btn primary", id: "spotNextBtn",
+        onclick: () => openSpotlight(seq.ids[seq.index + 1], { ...opts, sequence: { ...seq, index: seq.index + 1 } }),
+      }, "下一項"));
+    }
+    actions.push(h("button", { type: "button", class: "btn", id: "spotEndBtn", onclick: () => { closeSpotlight(); seq.onEnd?.(); } }, last ? "完成" : "結束"));
+  } else if (!missing) {
+    actions.push(h("span", { class: "spring" }), h("button", { type: "button", class: "btn", onclick: () => closeSpotlight() }, "知道了"));
+  } else {
+    actions.push(h("button", { type: "button", class: "btn", onclick: () => closeSpotlight() }, "關閉"));
+  }
+  const card = $("coachCard");
+  card.dataset.spotlight = id;
+  showFloatCard(card, opts.anchor || $("helpBtn"), [
+    h("h2", {}, step.title),
+    h("p", {}, step.body),
+    step.legend ? h("div", { class: "card-legend" }, alertLegendRow()) : null,
+    missing ? h("p", { class: "card-missing" }, `${missing}才能指給你看。`) : null,
+    h("div", { class: "card-actions" }, actions),
+  ]);
+  scheduleGuide();
+  requestAnimationFrame(() => {
+    const target = !opts.inPlace && !missing ? resolveTarget(step) : null;
+    if (target && visibility(target.el) !== "visible") target.el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    positionOpenCards();
+  });
+}
+function closeSpotlight(restoreFocus = true) {
+  const g = state.guide;
+  const card = $("coachCard");
+  g.spotlight = null;
+  delete card.dataset.spotlight;
+  hideFloatCard(card, restoreFocus);
+  setOutline(null);
+  scheduleGuide();
+}
+// 浮動卡跟著目標移動（捲動、右欄重畫後重新定位）
+function positionOpenCards() {
+  const g = state.guide;
+  const card = $("coachCard");
+  if (g.spotlight && !card.hidden) {
+    const { step, opts, missing } = g.spotlight;
+    const target = !opts.inPlace && !missing ? resolveTarget(step) : null;
+    const anchor = opts.anchor?.isConnected ? opts.anchor : target && visibility(target.el) === "visible" ? target.el : $("helpBtn");
+    positionFloatCard(card, anchor, anchor === $("helpBtn") ? ["bottom", "left"] : ["right", "bottom", "left", "top"]);
+  }
+  const help = $("helpPopover");
+  if (!help.hidden) positionFloatCard(help, $("helpBtn"), ["bottom", "left"]);
+}
+
+/* ---------- 說明選單（頂列，導覽關閉後也一直在） ---------- */
+function guideStatus(view) {
+  const prefs = state.onboarding;
+  const steps = missionsFor(view);
+  if (prefs[`${view}Done`]) return { text: "已完成 ✓", action: "重看" };
+  const index = steps.findIndex((s) => s.id === prefs[`${view}Step`]);
+  if (index >= 0) return { text: `進行到 ${index + 1}/${steps.length}`, action: "繼續" };
+  return { text: "未開始", action: "開始" };
+}
+function resumeOrStartGuide(view, trigger) {
+  closeHelp(false);
+  const prefs = state.onboarding;
+  const status = guideStatus(view);
+  if (status.action === "繼續") {
+    if (state.view !== view) setView(view);
+    prefs.dismissed = false;
+    state.guide.on[view] = true;
+    saveOnboardingPrefs();
+    scheduleGuide();
+    return;
+  }
+  if (state.view !== view) setView(view);
+  requestGuide(view, trigger);
+}
+function renderHelpPopover(section) {
+  const seen = state.onboarding.spotlightsSeen;
+  const here = state.view === "run" ? RUN_SPOTLIGHTS : FEATURE_SPOTLIGHTS;
+  const there = state.view === "run" ? FEATURE_SPOTLIGHTS : RUN_SPOTLIGHTS;
+  const guideRow = (view, label) => {
+    const status = guideStatus(view);
+    return h("li", {}, h("button", {
+      type: "button", class: "help-row", id: `helpGuide-${view}`,
+      onclick: (e) => resumeOrStartGuide(view, e.currentTarget),
+    }, h("span", {}, label), h("span", { class: "help-meta" }, status.text)));
+  };
+  const featureRow = (step) => h("li", {}, h("button", {
+    type: "button", class: "help-row", dataset: { spotlight: step.id },
+    onclick: () => openSpotlight(step.id),
+  }, h("span", {}, step.title), seen.includes(step.id) ? h("span", { class: "help-meta seen" }, "已看過") : null));
+  const whatsNew = typeof whatsNewHelpRow === "function" ? whatsNewHelpRow() : null;
+  return [
+    h("h2", {}, "說明"),
+    h("section", { class: "help-section", "aria-label": "新手導覽" },
+      h("h3", {}, "新手導覽"),
+      h("ul", {}, guideRow("train", "建立範本 8 步"), guideRow("run", "解析 PDF 6 步"))),
+    h("section", { class: "help-section", id: "helpAdvanced", "aria-label": "進階功能" },
+      h("h3", {}, "進階功能"),
+      h("ul", {}, here.map(featureRow), there.map(featureRow))),
+    whatsNew ? h("section", { class: "help-section" }, whatsNew) : null,
+    h("section", { class: "help-section" },
+      h("ul", {}, h("li", {}, h("a", { class: "help-row", href: "/manual", target: "_blank", rel: "noopener", id: "helpManual" },
+        h("span", {}, "使用手冊"), h("span", { class: "help-meta", "aria-hidden": "true" }, "↗"))))),
+  ];
+}
+function openHelp(section, trigger) {
+  closeSpotlight(false);
+  const pop = $("helpPopover");
+  state.guide.popoverOpen = true;
+  $("helpBtn").setAttribute("aria-expanded", "true");
+  pop.classList.toggle("help-history", section === "whatsnew");
+  const nodes = section === "whatsnew" && typeof renderWhatsNewHistory === "function" ? renderWhatsNewHistory() : renderHelpPopover(section);
+  showFloatCard(pop, trigger || $("helpBtn"), nodes);
+  positionFloatCard(pop, $("helpBtn"), ["bottom", "left"]);
+  if (section === "advanced") {
+    // 從導覽列的「功能點我看」進來：直接捲到進階功能
+    const block = $("helpAdvanced");
+    pop.scrollTop = block ? block.offsetTop - 12 : 0;
+    setTimeout(() => block?.querySelector("button")?.focus({ preventScroll: true }), 0);
+  }
+  scheduleGuide();
+}
+function closeHelp(restoreFocus = true) {
+  const pop = $("helpPopover");
+  if (pop.hidden) return;
+  state.guide.popoverOpen = false;
+  $("helpBtn").setAttribute("aria-expanded", "false");
+  hideFloatCard(pop, restoreFocus);
+  scheduleGuide();
+}
+// 右欄設定旁的 ?：開該項的說明卡，不切換畫面
+function helpHint(id, label) {
+  return h("button", {
+    type: "button", class: "help-hint", "aria-label": `說明：${label}`, title: `說明：${label}`, dataset: { spotlight: id },
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); openSpotlight(id, { inPlace: true, anchor: e.currentTarget }); },
+  }, "?");
+}
+
+/* Esc 依序關閉：說明選單 → 浮動教學卡 → 新功能小卡 → 浮標與外框。輸入框裡的 Esc 交給輸入框。 */
+function handleGuideEscape() {
+  const g = state.guide;
+  if (!$("helpPopover").hidden) { closeHelp(); return true; }
+  if (!$("coachCard").hidden) { closeSpotlight(); return true; }
+  const card = $("whatsNewCard");
+  if (card && !card.hidden && typeof dismissWhatsNewCard === "function") { dismissWhatsNewCard(); return true; }
+  if (!g.outlineHidden && (!$("missionPointer").hidden || document.querySelector(".guide-target"))) {
+    g.outlineHidden = true;
+    $("missionPointer").hidden = true;
+    setOutline(null);
+    return true;
+  }
+  return false;
+}
+function setupHelpMenu() {
+  if (POPOUT) return;
+  $("helpBtn").addEventListener("click", (e) => {
+    if ($("helpPopover").hidden) openHelp("all", e.currentTarget); else closeHelp();
+  });
+  // 點選單外面就收起（非 modal）
+  document.addEventListener("pointerdown", (e) => {
+    const pop = $("helpPopover");
+    if (!pop.hidden && !pop.contains(e.target) && !$("helpBtn").contains(e.target)
+      && !e.target.closest?.("#featureMenuBtn, #seeAdvancedBtn")) closeHelp(false);
+  });
+}
