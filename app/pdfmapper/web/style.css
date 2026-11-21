@@ -610,6 +610,22 @@ details .form { margin-top: 10px; }
 }
 .help-hint:hover { color: var(--icon); }
 .card-legend { margin-top: 8px; }
+/* 新功能小卡：頂列下方，不遮 PDF */
+.whatsnew-card { top: 56px; right: 16px; left: auto !important; width: 300px; }
+.whatsnew-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.whatsnew-head h2 { margin: 0; }
+.help-popover .whatsnew-head { padding: 0 8px 6px; }
+.whatsnew-close { width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--icon); font-size: 12.5px; }
+.whatsnew-close:hover { background: var(--ink-2); }
+.whatsnew-titles { margin-top: 6px !important; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.whatsnew-version { margin: 0; padding: 4px 0; border-top: 1px solid var(--line); }
+.whatsnew-version summary { display: flex; justify-content: space-between; padding: 4px 8px; font-size: 13px; font-weight: 500; color: var(--text-strong); }
+.whatsnew-version ul { margin: 0; padding: 0; list-style: none; }
+.whatsnew-item { align-items: flex-start; }
+.whatsnew-item strong { display: block; font-weight: 500; }
+.whatsnew-item small { display: block; font-size: 12.5px; color: var(--text); }
+.help-empty { margin: 4px 8px; font-size: 12.5px; color: var(--text); }
+.help-row-dot { display: inline-block; width: 6px; height: 6px; margin-left: 6px; vertical-align: middle; border-radius: var(--radius-pill); background: var(--accent); }
 .card-missing { margin-top: 6px !important; color: var(--text-strong); }
 
 @media (prefers-reduced-motion: reduce) {

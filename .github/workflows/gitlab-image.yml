@@ -33,6 +33,7 @@ jobs:
           uv venv /tmp/venv --python 3.12
           uv pip install --python /tmp/venv/bin/python --require-hashes -r /tmp/requirements-ci.txt
           /tmp/venv/bin/python -m pytest -q tests
+          python3 scripts/check_whatsnew.py
       - name: package（和 .gitlab-ci.yml 相同）
         shell: bash
         run: |

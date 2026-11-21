@@ -61,6 +61,7 @@ const state = {
   recovery: null,      // 上次關閉時未儲存的範本，等使用者決定要不要接著做
   showcase: false,     // 開著觀摩範本：唯讀，儲存時另存成自己的範本
   popped: { pdf: false, table: false },  // 主視窗：哪些畫面移到另一個視窗
+  whatsnew: null,      // 新功能：{ current, versions, pending }（whatsnew.json）
   onboarding: blankPrefs(),  // 導覽進度與偏好（spotlights.js），啟動時從 localStorage 讀
   guide: blankGuide(),       // 執行中的導覽狀態，不存檔
 };
@@ -2073,6 +2074,7 @@ async function main() {
     await loadTemplates();
     renderAll();
     if (POPOUT) channel.postMessage({ type: "hello", from: POPOUT });
+    else loadWhatsNew(status.version);
   } catch (error) {
     toast(error.message, true);
   }

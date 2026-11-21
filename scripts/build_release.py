@@ -10,7 +10,8 @@
 
 只打包明確列出的檔案，測試、腳本、開發文件和任何資料都不會進到發布包。
 離線套件下載後逐一比對 uv.lock 的 SHA256，不符就停止。
-版本號只寫在 app/pyproject.toml；CHANGELOG.md 一定要有這個版本的段落，否則不給發布。
+版本號只寫在 app/pyproject.toml；CHANGELOG.md 一定要有這個版本的段落，
+新功能導覽（app/pdfmapper/web/whatsnew.json）也要有這個版本的條目，否則不給發布。
 """
 from __future__ import annotations
 
@@ -56,6 +57,16 @@ def check_changelog(version: str) -> None:
         sys.exit(f"CHANGELOG.md 沒有 {version} 的段落，請先寫好這版改了什麼")
     if not any(line.strip().startswith("- ") for line in match.group(1).splitlines()):
         sys.exit(f"CHANGELOG.md 的 {version} 段落沒有任何條列")
+
+
+def check_whatsnew(version: str) -> None:
+    """新功能導覽要有這個版本的條目（items 可以是空的），每一項都指得到 spotlights.js 裡的步驟。"""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import check_whatsnew  # noqa: PLC0415  同資料夾的腳本，只用標準函式庫
+
+    errors = check_whatsnew.check(check_whatsnew.WEB / "whatsnew.json", version, check_whatsnew.WEB / "spotlights.js")
+    if errors:
+        sys.exit("新功能導覽檢查沒有通過：\n" + "\n".join(f"  - {e}" for e in errors))
 
 
 def check_tag(version: str) -> None:
@@ -159,6 +170,7 @@ def build(out: Path, wheels: bool) -> Path:
     version = read_version()
     check_tag(version)
     check_changelog(version)
+    check_whatsnew(version)
     stage = out / f"{NAME}-{version}"
     shutil.rmtree(out, ignore_errors=True)
     (stage / "app").mkdir(parents=True)

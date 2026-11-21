@@ -115,6 +115,7 @@ function allSpotlights() {
   const lists = [trainMissions(), runMissions()];
   if (typeof FEATURE_SPOTLIGHTS !== "undefined") lists.push(FEATURE_SPOTLIGHTS, RUN_SPOTLIGHTS);
   if (typeof SHOWCASE_SPOTLIGHTS !== "undefined") lists.push(SHOWCASE_SPOTLIGHTS);
+  if (typeof GENERAL_SPOTLIGHTS !== "undefined") lists.push(GENERAL_SPOTLIGHTS);
   return lists.flat();
 }
 const findSpotlight = (id) => allSpotlights().find((step) => step.id === id) || null;
@@ -498,7 +499,7 @@ function renderGhostGuides(layer) {
 
 /* ---------- 浮動卡（教學卡、說明選單、新功能小卡共用 .float-card） ---------- */
 const floatTriggers = new Map();  // 卡片 → 打開它的元素，關閉時焦點回去
-function showFloatCard(card, trigger, nodes) {
+function showFloatCard(card, trigger, nodes, focus = true) {
   fill(card, nodes);
   const wasHidden = card.hidden;
   card.hidden = false;
@@ -510,8 +511,8 @@ function showFloatCard(card, trigger, nodes) {
       card.classList.add("float-enter");
     }
   }
-  // 非 modal：焦點移到卡內第一個按鈕，Tab 不困在卡內
-  setTimeout(() => card.querySelector("button, a[href]")?.focus({ preventScroll: true }), 0);
+  // 非 modal：焦點移到卡內第一個按鈕，Tab 不困在卡內。自己跳出的卡（新功能）不搶焦點
+  if (focus) setTimeout(() => card.querySelector("button, a[href]")?.focus({ preventScroll: true }), 0);
 }
 function hideFloatCard(card, restoreFocus = true) {
   if (card.hidden) return;
@@ -1145,4 +1146,135 @@ function setupHelpMenu() {
     if (!pop.hidden && !pop.contains(e.target) && !$("helpBtn").contains(e.target)
       && !e.target.closest?.("#featureMenuBtn, #seeAdvancedBtn")) closeHelp(false);
   });
+}
+
+/* ---------- 新功能（whatsnew.json） ----------
+ * 第一次使用的人不跳新功能（他們走新手導覽），直接記成目前版本。
+ * 升級後：說明按鈕出現小點；1.2 秒後頂列下方滑出小卡（只出現一次）。新手導覽進行中只亮小點。
+ * 逐項導覽用同一份 Spotlight 資料；看完最後一項、按結束或打開新功能清單，就記成看過。
+ */
+const GENERAL_SPOTLIGHTS = [
+  {
+    id: "help-menu", title: "說明選單",
+    body: "新手導覽、進階功能、新功能與使用手冊都在這裡，關閉導覽後也找得到。",
+    target: "#helpBtn",
+  },
+  {
+    id: "welcome-demo", tab: "train", title: "用示範發票邊做邊學",
+    body: "還沒開檔案時，可以跟著示範發票一步步做出範本；解析 PDF 頁也能練習核對與匯出。",
+    target: "#demoStartBtn",
+  },
+];
+const WHATSNEW_TOUR_LIMIT = 5;
+function compareVersions(a, b) {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  }
+  return 0;
+}
+const shortVersion = (v) => String(v).split(".").slice(0, 2).join(".");
+function cleanVersions(data) {
+  const list = Array.isArray(data?.versions) ? data.versions : [];
+  return list.filter((v) => typeof v?.version === "string" && Array.isArray(v.items)).map((v) => ({
+    version: v.version,
+    date: typeof v.date === "string" ? v.date : "",
+    items: v.items.filter((i) => typeof i?.title === "string" && typeof i?.spotlight === "string"),
+  })).sort((a, b) => compareVersions(b.version, a.version));
+}
+async function loadWhatsNew(version) {
+  if (POPOUT || !version) return;
+  let data;
+  try {
+    const response = await fetch("/web/whatsnew.json", { cache: "no-cache" });  // 同源靜態檔
+    data = await response.json();
+  } catch (_e) { return; }
+  const prefs = state.onboarding;
+  const versions = cleanVersions(data).filter((v) => compareVersions(v.version, version) <= 0);
+  state.whatsnew = { current: version, versions, pending: [] };
+  if (!prefs.whatsnewSeen && onboardingFirstUse) {
+    prefs.whatsnewSeen = version;  // 第一次使用：走新手導覽，不跳新功能
+    saveOnboardingPrefs();
+    return;
+  }
+  const seen = prefs.whatsnewSeen;
+  const fresh = versions.filter((v) => (seen ? compareVersions(v.version, seen) > 0 : v.version === version));
+  const items = fresh.flatMap((v) => v.items);  // 新的在前
+  if (!items.length) {
+    if (!seen || compareVersions(version, seen) > 0) { prefs.whatsnewSeen = version; saveOnboardingPrefs(); }
+    return;
+  }
+  state.whatsnew.pending = items;
+  state.whatsnew.fresh = fresh;
+  renderWhatsNewDot();
+  const guideRunning = guideVisible("train") || guideVisible("run");
+  if (prefs.whatsnewCardShown !== version && !guideRunning) setTimeout(showWhatsNewCard, 1200);
+}
+function renderWhatsNewDot() {
+  const dot = document.querySelector("#helpBtn .help-dot");
+  if (dot) dot.hidden = !state.whatsnew?.pending.length;
+}
+function showWhatsNewCard() {
+  const wn = state.whatsnew;
+  if (!wn?.pending.length || guideVisible(state.view)) return;
+  state.onboarding.whatsnewCardShown = wn.current;  // 小卡只出現一次，重新整理後不再跳出
+  saveOnboardingPrefs();
+  const items = wn.pending;
+  const titles = items.slice(0, 2).map((i) => i.title).join("、") + (items.length > 2 ? "…" : "");
+  const card = $("whatsNewCard");
+  showFloatCard(card, document.activeElement, [
+    h("div", { class: "whatsnew-head" },
+      h("h2", {}, `${shortVersion(wn.current)} 更新了 ${items.length} 項`),
+      h("button", { type: "button", class: "whatsnew-close", "aria-label": "關閉", onclick: dismissWhatsNewCard }, "✕")),
+    h("p", { class: "whatsnew-titles" }, titles),
+    h("div", { class: "card-actions" },
+      h("button", { type: "button", class: "btn primary", id: "whatsNewTourBtn", onclick: startWhatsNewTour }, "看看"),
+      h("button", { type: "button", class: "btn ghost", id: "whatsNewLaterBtn", onclick: dismissWhatsNewCard }, "之後再說"),
+      items.length > WHATSNEW_TOUR_LIMIT ? h("button", { type: "button", class: "linkish", onclick: () => { dismissWhatsNewCard(); openHelp("whatsnew"); } }, "看全部") : null),
+  ], false);
+}
+// 之後再說：收起小卡，小點保留到在說明選單看過新功能為止
+function dismissWhatsNewCard() { hideFloatCard($("whatsNewCard"), false); }
+function markWhatsNewSeen() {
+  const wn = state.whatsnew;
+  if (!wn) return;
+  state.onboarding.whatsnewSeen = wn.current;
+  saveOnboardingPrefs();
+  wn.pending = [];
+  renderWhatsNewDot();
+}
+function startWhatsNewTour() {
+  dismissWhatsNewCard();
+  const items = (state.whatsnew?.pending || []).slice(0, WHATSNEW_TOUR_LIMIT);
+  const ids = items.map((i) => i.spotlight).filter((id) => findSpotlight(id));
+  if (!ids.length) { markWhatsNewSeen(); return; }
+  openSpotlight(ids[0], { sequence: { index: 0, ids, onEnd: markWhatsNewSeen } });
+}
+function whatsNewHelpRow() {
+  const wn = state.whatsnew;
+  if (!wn?.versions.length) return null;
+  const count = wn.pending.length || wn.versions[0].items.length;
+  const label = wn.pending.length ? `${shortVersion(wn.current)} 新增 ${count} 項` : `${shortVersion(wn.versions[0].version)} 有 ${count} 項`;
+  return h("ul", {}, h("li", {}, h("button", {
+    type: "button", class: "help-row", id: "helpWhatsNew", onclick: (e) => openHelp("whatsnew", e.currentTarget),
+  }, h("span", {}, "新功能"), h("span", { class: "help-meta" }, label,
+    wn.pending.length ? h("span", { class: "help-row-dot", "aria-label": "有還沒看的新功能" }) : null))));
+}
+// 新功能清單：所有版本由新到舊，每版可展開；每項可單獨導覽。打開就算看過
+function renderWhatsNewHistory() {
+  const wn = state.whatsnew;
+  markWhatsNewSeen();
+  return [
+    h("div", { class: "whatsnew-head" },
+      h("h2", {}, "新功能"),
+      h("button", { type: "button", class: "linkish", id: "whatsNewBack", onclick: (e) => openHelp("all", e.currentTarget) }, "‹ 說明")),
+    (wn?.versions || []).map((v, i) => h("details", { class: "whatsnew-version", open: i === 0 },
+      h("summary", {}, `${v.version}`, h("span", { class: "help-meta" }, `${v.date ? `${v.date}，` : ""}${v.items.length} 項`)),
+      v.items.length ? h("ul", {}, v.items.map((item) => h("li", {}, h("button", {
+        type: "button", class: "help-row whatsnew-item", dataset: { spotlight: item.spotlight },
+        onclick: () => openSpotlight(item.spotlight),
+      }, h("span", {}, h("strong", {}, item.title), h("small", {}, item.body))))))
+        : h("p", { class: "help-empty" }, "這版沒有畫面上的改變。"))),
+  ];
 }
