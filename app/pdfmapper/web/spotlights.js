@@ -135,6 +135,10 @@ function evaluateGuide(view) {
   const g = state.guide;
   const steps = missionsFor(view);
   const skipped = state.onboarding[`${view}Skipped`];
+  if (state.onboarding[`${view}Done`] && steps.length) {
+    // 完成後維持完成狀態，之後改了範本也不會被拉回某一步；要重看從說明選單開始
+    return { view, steps, done: steps.map(() => true), skipped, index: -1, step: null, complete: true };
+  }
   const done = steps.map((step) => stepDone(view, step));
   const firstOpen = steps.findIndex((step, i) => !done[i] && !skipped.includes(step.id));
   let index = steps.findIndex((step) => step.id === g.current[view]);
@@ -222,6 +226,8 @@ function renderGuide() {
     g.ghostKey = key;
     g.ghosts = ghosts;
     renderOverlay();
+    // 虛線靶框在畫面外時捲過去，使用者才看得到要框哪裡
+    document.querySelector("#overlay .guide-ghost, #overlay .guide-ghost-line")?.scrollIntoView({ block: "center", inline: "nearest" });
   }
   syncEmphasis(info?.step || null);
   if (typeof watchHandledRecords === "function") watchHandledRecords(info?.step || null);
@@ -383,6 +389,11 @@ function setOutline(el, key) {
     if (!reducedMotion()) el.classList.add("guide-pulse");
   }
 }
+// 目前指向的元素（不影響外觀，方便測試與輔助工具辨識）
+function markPointed(el) {
+  for (const node of document.querySelectorAll(".guide-pointed")) if (node !== el) node.classList.remove("guide-pointed");
+  el?.classList.add("guide-pointed");
+}
 function syncEmphasis(step) {
   const g = state.guide;
   const pointer = $("missionPointer");
@@ -391,19 +402,25 @@ function syncEmphasis(step) {
     // Spotlight 開著：只框它的目標，浮標退讓
     const target = resolveTarget(g.spotlight.step);
     setOutline(g.spotlight.opts.inPlace ? null : target?.el || null, `spot|${g.spotlight.step.id}`);
+    markPointed(null);
     pointer.hidden = true;
     return;
   }
   if (!step || cardOpen || ghostVisible()) {
+    markPointed(null);
     setOutline(null);
     pointer.hidden = true;
     return;
   }
   const target = resolveTarget(step);
+  markPointed(target?.el || null);
   if (!target) { setOutline(null); pointer.hidden = true; return; }
   const where = visibility(target.el);
-  setOutline(where === "visible" && !g.outlineHidden ? target.el : null, target.key);
-  positionPointerToTarget(target.el, target.label, where);
+  // 三者互斥（虛線 > 浮標 > 外框）：有浮標文字就只用浮標，沒有文字才用外框
+  const usePointer = !!target.label || where !== "visible";
+  setOutline(!usePointer && where === "visible" && !g.outlineHidden ? target.el : null, target.key);
+  if (usePointer && !g.outlineHidden) positionPointerToTarget(target.el, target.label || "在這裡", where);
+  else pointer.hidden = true;
   if (target.key !== g.pointerKey) {
     g.pointerKey = target.key;
     // 只在目標換了、而且使用者不在輸入時才捲動
@@ -552,4 +569,162 @@ function restoreGuide() {
     state.guide.on[view] = !prefs.dismissed && !!prefs[`${view}Step`] && !prefs[`${view}Done`];
     state.guide.current[view] = prefs[`${view}Step`];
   }
+}
+
+/* ---------- 建立範本 8 步 ----------
+ * 完成條件綁定真實的 state。示範模式（用示範發票）才畫虛線靶框與一鍵帶入；
+ * 在自己的 PDF 上做時只用浮標指按鈕，完成條件放寬（例如表格切 2 欄就算）。
+ */
+const demoMode = (view) => state.guide.demo[view];
+const guideField = (name) => state.guide.guideTemplate?.fields.find((f) => f.name === name) || null;
+const guideTable = () => state.guide.guideTemplate?.tables[0] || null;
+const hasFieldLike = (word) => T().fields.some((f) => f.name.includes(word) || (f.label?.text || "").includes(word));
+const firstTable = () => T().tables[0] || null;
+const editingReference = () => state.view === "train" && isReference();
+// 有標題欄位的虛線：先框標題，記下標題後切到值的位置
+function keyValueGhost(name) {
+  const f = guideField(name);
+  if (!f || !editingReference()) return [];
+  if (state.pending?.label) return [{ page: f.ref_page, box: f.value_box, label: "再框住它的值" }];
+  return [{ page: f.ref_page, box: f.label.box, label: `按 K，框住「${name}」` }];
+}
+const toolAssist = (tool, label) => () => (state.tool === tool || !editingReference() ? null : { label, run: () => setTool(tool) });
+// 定位點：欄位標題也算。至少 3 個，而且至少 2 個中心落在頁面不同象限（分散才對得準）
+function anchorSpread() {
+  const boxes = [...T().anchors.map((a) => a.box), ...T().fields.filter((f) => f.kind === "key_value").map((f) => f.label.box)];
+  const quadrants = new Set(boxes.map((b) => ((b[0] + b[2]) / 2 < 0.5 ? 0 : 1) + ((b[1] + b[3]) / 2 < 0.5 ? 0 : 2)));
+  return { count: boxes.length, quadrants: quadrants.size };
+}
+const rightShowsList = () => !state.selected && !state.outputPanel;
+const backToList = { sel: "#rightBackBtn", label: "回到欄位清單" };
+
+const TRAIN_MISSIONS = [
+  {
+    id: "train-1", tab: "train", title: "命名",
+    action: "在左欄輸入範本名稱",
+    tip: "名稱也是存檔的檔名，之後可以改。",
+    target: "#templateName", pointer: "輸入範本名稱",
+    assist: () => ({ label: "幫我填", run: () => { setTemplateName("商業發票（練習）"); renderLeft(); } }),
+    done: () => !!T().template_id,
+  },
+  {
+    id: "train-2", tab: "train", title: "框有標題的欄位",
+    action: "按 K，先框「發票號碼」標題",
+    tip: () => (state.pending?.label ? "標題記下了，再框住右邊的值，框大一點沒關係。" : "標題是每份都一樣的字，用來找到值的位置。"),
+    target: () => (state.tool !== "kv" && editingReference() ? { sel: '[data-tool="kv"]', label: "按 K 或點這裡" } : null),
+    ghost: () => keyValueGhost("發票號碼"),
+    assistAlways: toolAssist("kv", "切到有標題的欄位"),
+    done: () => T().fields.length >= 1,
+  },
+  {
+    id: "train-3", tab: "train", title: "設資料類型",
+    action: "框「開立日期」，類型改成日期",
+    tip: "日期格式不同沒關係，解析時會照原樣取值。",
+    target: () => {
+      if (document.querySelector('#right select[aria-label="資料類型"]')) return { sel: '#right select[aria-label="資料類型"]', label: "改選「日期」" };
+      if (T().fields.length >= 2 && state.tool === "select") return { sel: "#right .items li:last-child button", label: "打開欄位設定" };
+      return state.tool !== "kv" && editingReference() ? { sel: '[data-tool="kv"]', label: "按 K 或點這裡" } : null;
+    },
+    ghost: () => (hasFieldLike("開立日期") ? [] : keyValueGhost("開立日期")),
+    assistAlways: () => (hasFieldLike("開立日期") || !demoMode("train") ? null : toolAssist("kv", "切到有標題的欄位")()),
+    done: () => T().fields.some((f) => f.type === "date"),
+  },
+  {
+    id: "train-4", tab: "train", title: "表格與切直欄",
+    action: "按 T 框住明細，再點虛線切欄",
+    tip: () => (firstTable() ? "在表格內點一下就切出一條直欄，雙擊可刪。" : "框資料區就好，不含標題列。"),
+    target: () => {
+      const t0 = firstTable();
+      if (!t0) return state.tool !== "table" && editingReference() ? { sel: '[data-tool="table"]', label: "按 T 或點這裡" } : null;
+      if (state.selected?.type !== "table") return { sel: "#overlay .box.table", label: "點表格，再切直欄" };
+      return null;
+    },
+    ghost: () => {
+      const guide = guideTable();
+      if (!guide || !editingReference()) return [];
+      const region = guide.regions[0];
+      const t0 = firstTable();
+      if (!t0) return [{ page: region.ref_page, box: region.box, label: "按 T，框住明細" }];
+      if (state.selected?.type !== "table") return [];
+      const mine = t0.regions.find((r) => r.ref_page === state.page) || t0.regions[0];
+      // 每切一條就隱藏那一條虛線
+      return region.dividers.slice(1, -1)
+        .filter((x) => x > mine.box[0] && x < mine.box[2] && !mine.dividers.some((d) => Math.abs(d - x) < 0.02))
+        .map((x) => ({ page: mine.ref_page, line: [x, mine.box[1], mine.box[3]] }));
+    },
+    assistAlways: () => (firstTable() ? null : toolAssist("table", "切到表格")()),
+    done: () => {
+      const t0 = firstTable();
+      return !!t0 && (demoMode("train") ? t0.columns.length >= 4 : t0.columns.length >= 2);
+    },
+  },
+  {
+    id: "train-5", tab: "train", title: "判斷新的一列",
+    action: "選第 1 欄當判斷新列的欄",
+    tip: "通常是項次或序號，每一列都有、而且只出現一次。",
+    setup() {
+      const t0 = firstTable();
+      if (!t0) return;
+      state.selected = { type: "table", id: t0.id };
+      state.outputPanel = false;
+      state.tableTab = "columns";
+      renderRight();
+      renderOverlay();
+    },
+    target: () => (document.querySelector("#keyColumn") ? { sel: "#keyColumn", label: "選第 1 欄" }
+      : firstTable() ? { sel: "#overlay .box.table", label: "點表格打開設定" } : null),
+    done: () => T().tables.some((t) => !!t.key_column),
+  },
+  {
+    id: "train-6", tab: "train", title: "定位點",
+    action: "按「自動找」，刪掉會變的字",
+    tip: () => {
+      const { count, quadrants } = anchorSpread();
+      return count >= 3 && quadrants < 2 ? "定位點都擠在一角，再加一個在頁面另一側。" : "定位點要分散在頁面四周，對位才準。";
+    },
+    setup() { state.selected = null; state.outputPanel = false; renderRight(); renderOverlay(); },
+    target: () => (rightShowsList() ? { sel: "#suggestAnchorsBtn", label: "自動找定位點" } : backToList),
+    done: () => { const { count, quadrants } = anchorSpread(); return count >= 3 && quadrants >= 2; },
+  },
+  {
+    id: "train-7", tab: "train", title: "總金額與檢查",
+    action: "框總金額，加一條加總檢查",
+    tip: () => (state.checksOpen ? "選「表格某欄加總」，金額要等於總金額。" : "數字對不上時，結果會標記給人確認。"),
+    target: () => {
+      if (demoMode("train") && !hasFieldLike("總金額")) {
+        return state.tool !== "kv" && editingReference() ? { sel: '[data-tool="kv"]', label: "按 K 或點這裡" } : null;
+      }
+      if (!rightShowsList()) return backToList;
+      return state.checksOpen ? { sel: "#checkAddBtn", label: "選好後按加入檢查" } : { sel: "#checksDetails > summary", label: "展開新增檢查" };
+    },
+    ghost: () => (hasFieldLike("總金額") ? [] : keyValueGhost("總金額")),
+    done: () => T().validations.length > 0,
+  },
+  {
+    id: "train-8", tab: "train", title: "測試與儲存",
+    action: "按測試看結果，再按儲存",
+    tip: () => (state.tests.length ? "結果在下方表格，橘色是要檢查的值。" : "測試不會存檔，可以一直改一直測。"),
+    target: () => (!state.tests.length ? { sel: "#testBtn", label: "按測試看結果" } : { sel: "#saveButton", label: "按儲存範本" }),
+    done: () => state.tests.length > 0 && !!state.savedId && !hasUnsavedTemplate(),
+  },
+];
+
+// 完成狀態的按鈕：主要是下一步，刪除練習範本只在示範模式出現
+function completionActions(view) {
+  const actions = [];
+  if (view === "train") {
+    actions.push({ label: "帶著這個範本去解析 PDF", class: "btn primary", id: "goRunBtn", run: goRunWithTemplate });
+    if (demoMode("train") && state.savedId && T().name.endsWith("（練習）")) {
+      actions.push({ label: "刪除練習範本", class: "linkish", id: "deletePracticeBtn", run: deletePracticeTemplate });
+    }
+  }
+  if (typeof openHelp === "function") {
+    actions.push({ label: "看進階功能", class: "btn ghost", id: "seeAdvancedBtn", run: (e) => openHelp("advanced", e.currentTarget) });
+  }
+  return actions;
+}
+function goRunWithTemplate() {
+  const id = state.savedId;
+  if (id && !state.templateIds.includes(id)) state.templateIds.push(id);
+  setView("run");
 }

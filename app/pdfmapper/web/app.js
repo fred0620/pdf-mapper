@@ -644,7 +644,7 @@ function renderToolbar() {
   const doc = currentDoc();
   const editing = isReference();
   const tools = state.view === "train" ? TOOLS.map(([id, label, key]) => h("button", {
-    class: "tool", "aria-pressed": String(state.tool === id), disabled: !editing,
+    class: "tool", "aria-pressed": String(state.tool === id), disabled: !editing, dataset: { tool: id },
     onclick: () => setTool(id),
   }, label, h("kbd", {}, key))) : [];
   fill($("toolbar"), ...tools, POPOUT && doc ? h("span", { class: "toolbar-file" }, doc.name) : null, h("span", { class: "spring" }),
@@ -850,8 +850,8 @@ function renderLeftTrain() {
     recoveryNotice(),
     h("h2", {}, "範本名稱"),
     h("input", {
-      type: "text", value: T().name, autocomplete: "off", placeholder: "例如：進口報單", "aria-label": "範本名稱",
-      oninput: (e) => { T().name = e.target.value; T().template_id = e.target.value.trim().replace(/[^\p{L}\p{N}_-]+/gu, "_"); saveDraft(); renderRightActions(); },
+      type: "text", id: "templateName", value: T().name, autocomplete: "off", placeholder: "例如：進口報單", "aria-label": "範本名稱",
+      oninput: (e) => setTemplateName(e.target.value),
     }),
     h("h2", {}, "範例 PDF"),
     list.length ? [h("ul", { class: "docs" }, list), listActions(list.length)]
@@ -862,6 +862,13 @@ function renderLeftTrain() {
       state.templates.map((t) => h("option", { value: t.id }, t.name))),
     missingNote(),
     thumbs());
+}
+function setTemplateName(name) {
+  T().name = name;
+  T().template_id = name.trim().replace(/[^\p{L}\p{N}_-]+/gu, "_");
+  saveDraft();
+  renderRightActions();
+  scheduleGuide();
 }
 function missingNote() {
   const pages = missingPages();
@@ -976,7 +983,7 @@ function bind(item, key, label, extra = {}) {
   }));
 }
 function typeSelect(item) {
-  return h("select", { "aria-label": "資料類型", onchange: (e) => { item.type = e.target.value; saveDraft(); } },
+  return h("select", { "aria-label": "資料類型", onchange: (e) => { item.type = e.target.value; saveDraft(); scheduleGuide(); } },
     TYPE_OPTIONS.map(([value, label]) => h("option", { value, selected: (item.type || "text") === value }, label)));
 }
 function startContinuation(field) {
@@ -1198,7 +1205,7 @@ function columnsTab(table) {
   return [
     h("label", { class: "field-label" }, "用哪一欄判斷新的一列", h("select", {
       id: "keyColumn", "aria-label": "用哪一欄判斷新的一列",
-      onchange: (e) => { table.key_column = e.target.value || null; saveDraft(); renderRight(); },
+      onchange: (e) => { table.key_column = e.target.value || null; saveDraft(); renderRight(); renderOverlay(); },
     }, h("option", { value: "" }, "請選擇，通常是項次"),
     table.columns.map((c) => h("option", { value: c.id, selected: table.key_column === c.id }, c.name)))),
     h("p", { class: "note" }, "在頁面的表格內點一下，可以切出新的直欄。"),
@@ -1309,6 +1316,7 @@ function checksPanel() {
   const fieldOptions = fields.map((f) => h("option", { value: f.id }, f.name));
   const form = h("div", { class: "form" },
     h("label", {}, "檢查方式", h("select", {
+      id: "checkTypeSelect",
       onchange: (e) => { state.checkDraft = { type: e.target.value, fields: [] }; renderRight(); },
     }, [["sum_fields", "幾個欄位相加"], ["sum_column", "表格某欄加總"], ["page_count", "比對總頁數"]].map(([value, label]) =>
       h("option", { value, selected: draft.type === value }, label)))),
@@ -1317,14 +1325,16 @@ function checksPanel() {
       onchange: (e) => { draft.fields = [...e.target.selectedOptions].map((o) => o.value); },
     }, fieldOptions)) : null,
     draft.type === "sum_column" ? h("label", {}, "表格欄", h("select", {
+      id: "checkColSelect",
       onchange: (e) => { [draft.table, draft.column] = e.target.value.split("|"); },
     }, h("option", { value: "|" }, "選擇"), T().tables.flatMap((t) => t.columns.map((c) =>
       h("option", { value: `${t.id}|${c.id}` }, `${t.name}：${c.name}`))))) : null,
     h("label", {}, draft.type === "page_count" ? "寫著總頁數的欄位" : "要等於", h("select", {
+      id: "checkTargetSelect",
       onchange: (e) => { draft.target = e.target.value; },
     }, h("option", { value: "" }, "選擇"), fieldOptions.map((o) => o.cloneNode(true)))),
     h("button", {
-      class: "btn", onclick: () => {
+      class: "btn", id: "checkAddBtn", onclick: () => {
         if (!draft.target) { toast("請選擇要比對的欄位", true); return; }
         snapshot();
         const rule = draft.type === "page_count" ? { type: "page_count", field: draft.target }
@@ -1338,7 +1348,10 @@ function checksPanel() {
   return [
     h("ul", { class: "checks" }, T().validations.map((rule, i) => h("li", { class: "row note" }, h("span", {}, describe(rule)),
       h("button", { class: "linkish", style: "flex:0 0 auto", onclick: () => { snapshot(); T().validations.splice(i, 1); renderRight(); } }, "移除")))),
-    h("details", {}, h("summary", {}, "新增檢查"), form),
+    h("details", {
+      id: "checksDetails", open: !!state.checksOpen,
+      ontoggle: (e) => { state.checksOpen = e.target.open; scheduleGuide(); },
+    }, h("summary", {}, "新增檢查"), form),
   ];
 }
 /* 輸出設定：沒列在設定裡的欄位預設輸出，新增的欄位不會漏掉 */
@@ -1398,7 +1411,7 @@ function renderRightTrain() {
     body = outputPanel();
   } else if (item) {
     const panel = { field: fieldPanel, table: tablePanel, anchor: anchorPanel }[state.selected.type](item);
-    body = [h("button", { class: "linkish", onclick: () => { state.selected = null; renderAll(); } }, "回到欄位清單"), panel];
+    body = [h("button", { class: "linkish", id: "rightBackBtn", onclick: () => { state.selected = null; renderAll(); } }, "回到欄位清單"), panel];
     body[0].style.marginBottom = "8px";
   } else {
     const rows = orderedItems().map(({ type, item: entry }) => h("li", {},
@@ -1413,13 +1426,13 @@ function renderRightTrain() {
         : h("p", { class: "note" }, "還沒有欄位。選上方的工具，在頁面上框出要抓的資料。"),
       h("h2", {}, "定位點"),
       h("p", { class: "note" }, `目前 ${anchorCount} 個（欄位標題也算）。每一頁至少要有 3 個，每份都不變的文字最適合。`),
-      h("button", { class: "btn", disabled: !isReference(), onclick: suggestAnchors }, "自動找這一頁的定位點"),
+      h("button", { class: "btn", id: "suggestAnchorsBtn", disabled: !isReference(), onclick: suggestAnchors }, "自動找這一頁的定位點"),
       h("h2", {}, "數字檢查"),
       h("p", { class: "note" }, "對不上時，結果會標記給人確認。"),
       checksPanel(),
       h("h2", {}, "輸出"),
       h("p", { class: "note" }, "選擇乾淨資料要輸出哪些欄，以及欄名和順序。沒設定時全部輸出。"),
-      h("button", { class: "btn", onclick: () => { state.outputPanel = true; renderRight(); } }, "設定輸出欄位"),
+      h("button", { class: "btn", id: "outputBtn", onclick: () => { state.outputPanel = true; renderRight(); } }, "設定輸出欄位"),
       state.tests.length ? testSummary() : null,
     ];
   }
@@ -1454,7 +1467,7 @@ function testSummary() {
 function actionsBar() {
   return h("div", { class: "actions", id: "actions" },
     h("button", {
-      class: "btn primary wide", disabled: state.testing || !state.docs.length, onclick: testTemplate,
+      class: "btn primary wide", id: "testBtn", disabled: state.testing || !state.docs.length, onclick: testTemplate,
     }, state.testing ? "測試中" : `用 ${state.docs.length} 份範例測試`),
     h("button", { class: "btn wide", id: "saveButton", disabled: !T().template_id, onclick: saveTemplate },
       state.showcase ? "另存成我的範本" : T().template_id ? "儲存範本" : "先填範本名稱才能儲存"),
@@ -1503,6 +1516,7 @@ const saveTemplate = guard(async () => {
   toast(`範本「${T().name}」已儲存。要做下一個範本時，按「開始新範本」`);
   renderLeft();
   renderRightActions();
+  scheduleGuide();
 });
 
 /* ---------- 右欄：解析結果 ---------- */
@@ -1768,6 +1782,22 @@ function requestGuide(view, trigger, mode = view) {
   ]);
   positionFloatCard(card, trigger || $("helpBtn") || $("stage"), ["bottom", "right", "left", "top"]);
 }
+// 導覽完成時刪掉練習存的範本（伺服器只允許刪名稱以「（練習）」結尾的）
+const deletePracticeTemplate = guard(async () => {
+  const id = state.savedId;
+  if (!id || !window.confirm(`刪除練習範本「${T().name}」？刪除後無法復原。`)) return;
+  await api(`/api/templates/${encodeURIComponent(id)}`, { method: "DELETE" });
+  state.templateIds = state.templateIds.filter((t) => t !== id);
+  state.savedTemplate = null;
+  state.savedId = null;
+  await loadTemplates();
+  // 練習已完成，收起導覽列；之後可從說明選單重看
+  state.guide.on.train = false;
+  state.onboarding.trainStep = null;
+  saveOnboardingPrefs();
+  renderAll();
+  toast("已刪除練習範本");
+});
 function startShowcase(trigger) { requestGuide("train", trigger, "showcase"); }
 async function closeDocs(view) {
   const list = view === "train" ? state.docs : state.runDocs;
