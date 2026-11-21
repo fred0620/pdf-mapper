@@ -1427,6 +1427,8 @@ function renderRightTrain() {
         : h("p", { class: "note" }, "還沒有欄位。選上方的工具，在頁面上框出要抓的資料。"),
       h("h2", {}, "定位點"),
       h("p", { class: "note" }, `目前 ${anchorCount} 個（欄位標題也算）。每一頁至少要有 3 個，每份都不變的文字最適合。`),
+      // 導覽關閉後也保留的靜默提醒：有框了東西、定位點卻不到 3 個
+      hasDefinitions() && anchorCount < 3 ? h("p", { class: "guide-nudge" }, "定位點還不到 3 個，對位可能不準。按下方「自動找」補上。") : null,
       h("button", { class: "btn", id: "suggestAnchorsBtn", disabled: !isReference(), onclick: suggestAnchors }, "自動找這一頁的定位點"),
       h("h2", {}, "數字檢查"),
       h("p", { class: "note" }, "對不上時，結果會標記給人確認。"),

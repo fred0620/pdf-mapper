@@ -610,6 +610,8 @@ details .form { margin-top: 10px; }
 }
 .help-hint:hover { color: var(--icon); }
 .card-legend { margin-top: 8px; }
+/* 導覽關閉後也保留的提醒：細邊框卡片，不用左側粗色條 */
+.guide-nudge { margin: 4px 0 8px; padding: 8px 10px; border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--ink-4); font-size: 12.5px; color: var(--text-strong); }
 /* 新功能小卡：頂列下方，不遮 PDF */
 .whatsnew-card { top: 56px; right: 16px; left: auto !important; width: 300px; }
 .whatsnew-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }

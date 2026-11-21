@@ -2,9 +2,19 @@
 import json
 import re
 
+import pytest
 from playwright.sync_api import expect
 
 KEY = "pdfmapper.onboarding.v1"
+
+
+@pytest.fixture(autouse=True)
+def no_console_errors(context):
+    """頁面不能有任何 console error（瀏覽器自己要的 favicon 除外）。"""
+    errors: list[str] = []
+    context.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" and "favicon" not in msg.text else None)
+    yield
+    assert not errors, f"console error：{errors}"
 
 
 def current_version(page) -> str:

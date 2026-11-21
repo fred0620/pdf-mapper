@@ -2,6 +2,7 @@
 import json
 import re
 
+import pytest
 from playwright.sync_api import expect
 
 from helpers import click_at, draw_box, visible_emphasis
@@ -15,6 +16,15 @@ TOTAL = ([0.6, 0.858, 0.68, 0.881], [0.76, 0.855, 0.92, 0.89])
 ITEMS = [0.08, 0.47, 0.92, 0.8]
 ITEM_DIVIDERS = [0.18, 0.58, 0.76]
 TARGET = re.compile(r"\bguide-pointed\b")  # 浮標正指著的目標
+
+
+@pytest.fixture(autouse=True)
+def no_console_errors(context):
+    """頁面不能有任何 console error（瀏覽器自己要的 favicon 除外）。"""
+    errors: list[str] = []
+    context.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" and "favicon" not in msg.text else None)
+    yield
+    assert not errors, f"console error：{errors}"
 
 
 def strip(page):
