@@ -4,8 +4,9 @@
     uv run --project app --group ui python scripts/manual_shots.py anchors    # 只拍指定代號
 
 用電腦上的 Chrome（和 tests/ui 一樣用 Playwright 啟動本機服務，範本、上傳與輸出放暫存資料夾，不碰 workspace）。
-視窗固定 1001 x 720，剛好高於版面變窄的門檻，中間加右欄約 750px 寬，縮到 720px 寬。
-圖檔轉成少色的調色盤 PNG 並壓縮，因為截圖會內嵌進手冊 HTML，總體積要小。
+視窗固定 1440 x 900（device_scale_factor 1），和一般筆電寬度相同，導覽列與工具列都排得下。
+拍之前先把新手導覽設成「已關閉」，並確認導覽列、指令條、浮標都看不到（只有說明選單那張要拍說明選單）。
+圖檔縮到 1000px 寬，轉成少色的調色盤 PNG 並壓縮，因為截圖會內嵌進手冊 HTML，總體積要小。
 產生後執行 scripts/build_manual.py 才會進手冊。
 """
 from __future__ import annotations
@@ -22,9 +23,11 @@ from PIL import Image  # noqa: E402
 from playwright.sync_api import expect  # noqa: E402
 
 IMAGES = ROOT / "docs" / "images"
-WIDTH = 720
-COLORS = 40
-VIEWPORT = {"width": 1001, "height": 720}
+WIDTH = 1000
+COLORS = 48
+VIEWPORT = {"width": 1440, "height": 900}
+DISMISSED = '{"dismissed":true,"trainDone":true,"runDone":true,"whatsnewSeen":"99.0.0","whatsnewCardShown":"99.0.0"}'  # 和 spotlights.js 的 pdfmapper.onboarding.v1 同格式
+GUIDE_PARTS = ("#guideBar", "#missionStrip", "#missionPointer", "#whatsNewCard", "#toast")
 
 
 def png_name(code: str) -> Path:
@@ -32,7 +35,7 @@ def png_name(code: str) -> Path:
 
 
 def finish_image(source: Path, target: Path) -> None:
-    """縮到 720px 寬，轉成少色調色盤 PNG 並壓縮。"""
+    """縮到 WIDTH 寬，轉成少色調色盤 PNG 並壓縮。"""
     image = Image.open(source).convert("RGB")
     if image.width > WIDTH:
         image = image.resize((WIDTH, round(image.height * WIDTH / image.width)), Image.LANCZOS)
@@ -45,13 +48,17 @@ class Shooter:
         self.scratch = Path(tempfile.mkdtemp(prefix="manual-shots-"))
 
     def open(self, accept_downloads: bool = False):
-        context = self.browser.new_context(viewport=VIEWPORT, accept_downloads=accept_downloads)
+        context = self.browser.new_context(viewport=VIEWPORT, device_scale_factor=1, accept_downloads=accept_downloads)
+        context.add_init_script(f"localStorage.setItem('pdfmapper.onboarding.v1', '{DISMISSED}')")
         page = context.new_page()
         page.goto(self.url)
         page.wait_for_selector("#version:not(:empty)")
         return page
 
     def save(self, page, code: str, clip: dict) -> None:
+        if code != "help-menu":
+            for selector in GUIDE_PARTS:
+                expect(page.locator(selector)).to_be_hidden()  # 導覽的指令條與浮標不該出現在截圖裡
         raw = self.scratch / f"{code}.png"
         page.screenshot(path=str(raw), clip=clip)
         finish_image(raw, png_name(code))
@@ -82,6 +89,11 @@ def close_guide(page) -> None:
     """練習的導覽列、指令條與虛線靶框不屬於要截的畫面，用樣式藏起來（結束練習會把範本換回去，所以不關）。"""
     page.add_style_tag(content="#guideBar, #missionStrip, #missionPointer, .guide-ghost, .guide-ghost-line, "
                                ".guide-target { display: none !important; outline: none !important; box-shadow: none !important; }")
+
+
+def hide_actions(page) -> None:
+    """右欄底部固定的「測試／儲存」按鈕區會蓋到面板內容，拍面板時先藏起來。"""
+    page.add_style_tag(content="#actions { display: none !important; }")
 
 
 def select_table(page) -> None:
@@ -126,11 +138,15 @@ def shot_value_mode(s: Shooter) -> None:
     close_guide(page)
     select_table(page)
     page.locator('button.column-more[aria-label="Spec 的設定"]').click()
-    page.locator('#right select[aria-label="這一欄怎麼取值"]').select_option("regex")
-    page.locator("#right .column-detail input[type=text]").last.fill(r"Grade:\s*(\S+)")
+    page.locator('#right select[aria-label="這一欄怎麼取值"]').select_option("start")
+    page.locator('#right input[aria-label="開頭文字"]').fill("ECCN:")
+    page.locator('#right select[aria-label="值到哪裡結束"]').select_option("line")
     page.locator("#right .column-preview-btn").click()
-    page.wait_for_selector("#right .preview-list")
-    page.locator("#right .column-detail").scroll_into_view_if_needed()
+    page.wait_for_selector("#right .preview-list li")
+    values = page.locator("#right .preview-list li strong").all_inner_texts()
+    assert values[:2] == ["5A992", "4A003"], f"試抓結果不是預期的 ECCN：{values}"
+    hide_actions(page)
+    page.locator("#right .preview-list").evaluate("el => el.scrollIntoView({block: 'end'})")
     s.save_element(page, "value-mode", "#right")
 
 
@@ -182,13 +198,17 @@ def shot_anchors(s: Shooter) -> None:
 
 
 def shot_checks(s: Shooter) -> None:
+    """用「數字檢查」練習：勾 Subtotal 和 Tax、要等於 Total，拍到表單下方的白話說明（和手冊該節一致）。"""
     page = s.open()
-    page.locator("#showcaseBtn").click()
-    page.wait_for_selector("#coachCard:not([hidden])", timeout=30_000)
-    page.keyboard.press("Escape")
-    page.locator("#checksDetails summary").click()
-    page.locator("#checksDetails").scroll_into_view_if_needed()
-    page.locator("#checksDetails").evaluate("el => el.scrollIntoView({block: 'center'})")
+    start_lab(page, "feat-checks")
+    close_guide(page)
+    page.locator("#checksDetails > summary").click()
+    page.get_by_role("checkbox", name="相加 Subtotal").check()
+    page.get_by_role("checkbox", name="相加 Tax").check()
+    page.locator("#checkTargetSelect").select_option(label="Total")
+    expect(page.locator("#checkPreview")).to_contain_text("「Subtotal」 + 「Tax」 = Total")
+    hide_actions(page)
+    page.locator("#checkAddBtn").evaluate("el => el.scrollIntoView({block: 'end'})")
     s.save_element(page, "checks", "#right")
 
 
@@ -198,6 +218,9 @@ def run_demo(s: Shooter, accept_downloads: bool = False):
     page.click("#demoStartBtn")
     expect(page.locator(".docs .meta.warn, .docs .meta.good")).to_have_count(2, timeout=120_000)
     page.locator("#drawer td[data-ref]").first.wait_for()
+    if page.locator("#guideCloseBtn").is_visible():  # 示範解析會開導覽，關掉它
+        page.locator("#guideCloseBtn").click()
+    expect(page.locator("#toast")).to_be_hidden(timeout=10_000)  # 完成的提示條消失後再拍，不然會蓋到表格
     return page
 
 
