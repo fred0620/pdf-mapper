@@ -315,18 +315,21 @@ function stepContent(info) {
   const legend = step.legend ? alertLegendRow() : null;
   const tip = typeof step.tip === "function" ? safeCall(step.tip) : step.tip;
   const action = typeof step.action === "function" ? safeCall(step.action) : step.action;
+  const sub = step.sub ? safeCall(step.sub) : null;
   const nodes = [
-    h("span", { class: "mission-badge", "aria-hidden": "true" }, String(index + 1)),
+    h("span", { class: "mission-badge", "aria-hidden": "true" }, String(index + 1),
+      sub ? [" ", h("span", { class: "mission-sub" }, `${sub.index}/${sub.total}`)] : null),
     h("div", { class: "mission-text" },
       note ? h("p", { class: "mission-note" }, note) : null,
-      h("p", { class: "mission-action" }, h("span", { class: "sr-only" }, `第 ${index + 1} 步，`), action,
+      h("p", { class: "mission-action" }, h("span", { class: "sr-only" }, `第 ${index + 1} 步${sub ? `的 ${sub.index}/${sub.total}` : ""}，`), action,
         helper ? h("button", { type: "button", class: "btn ghost mission-assist", onclick: helper.run }, helper.label) : null),
-      legend || (tip ? h("p", { class: "mission-tip" }, tip) : null)),
+      legend || (tip ? h("p", { class: `mission-tip${sub?.wrong ? " wrong" : ""}` }, tip) : null)),
     h("div", { class: "mission-controls" },
       h("button", { type: "button", class: "btn ghost", disabled: index === 0, onclick: () => goToStep(view, steps[index - 1].id, true) }, "上一步"),
       h("button", { type: "button", class: "btn ghost", onclick: () => skipStep(view) }, "下一步")),
   ];
-  return { key: [step.id, action, tip, note, helper?.label || "", !!legend, index], nodes };
+  // 子步驟換了也算換步驟（指令條會脈衝一次）
+  return { key: [sub ? `${step.id}#${sub.index}` : step.id, action, tip, note, helper?.label || "", !!legend, index], nodes };
 }
 function completionContent(view) {
   const actions = typeof completionActions === "function" ? completionActions(view) : [];
@@ -689,16 +692,19 @@ const TRAIN_MISSIONS = [
   },
   {
     id: "train-7", tab: "train", title: "總金額與檢查",
-    action: "框總金額，加一條加總檢查",
-    tip: () => (state.checksOpen ? "選「表格某欄加總」，金額要等於總金額。" : "數字對不上時，結果會標記給人確認。"),
-    target: () => {
-      if (demoMode("train") && !hasFieldLike("總金額")) {
-        return state.tool !== "kv" && editingReference() ? { sel: '[data-tool="kv"]', label: "按 K 或點這裡" } : null;
-      }
-      if (!rightShowsList()) return backToList;
-      return state.checksOpen ? { sel: "#checkAddBtn", label: "選好後按加入檢查" } : { sel: "#checksDetails > summary", label: "展開新增檢查" };
-    },
+    // 子步驟由目前的 checkDraft 與 checksOpen 推算，不另外存狀態
+    sub: checkSubstep,
+    action: () => checkSubstep().action,
+    tip: () => checkSubstep().tip,
+    target: () => checkSubstep().target,
     ghost: () => (hasFieldLike("總金額") ? [] : keyValueGhost("總金額")),
+    assist: () => {
+      const want = expectedCheck();
+      const draft = state.checkDraft;
+      if (!want || (draft?.type === "sum_column" && draft.table === want.table.id && draft.column === want.column.id
+        && draft.target === want.field.id)) return null;
+      return { label: "幫我帶入", run: fillExpectedCheck };
+    },
     done: () => T().validations.length > 0,
   },
   {
@@ -709,6 +715,78 @@ const TRAIN_MISSIONS = [
     done: () => state.tests.length > 0 && !!state.savedId && !hasUnsavedTemplate(),
   },
 ];
+
+/* 第 7 步的子步驟：示範發票時框總金額 → 展開新增檢查 → 選檢查方式 → 選表格欄 → 選要等於 → 按加入。
+ * 每一步直接寫要選的選項名稱；選錯時提醒行說哪一格不對。自己的 PDF 不知道正確答案，只依序指出還沒選的格子。 */
+function expectedCheck() {
+  if (!demoMode("train")) return null;
+  const t0 = firstTable();
+  const field = T().fields.find((f) => f.name.includes("總金額") || (f.label?.text || "").includes("總金額"));
+  const guide = guideTable();
+  if (!t0 || !field || !guide) return null;
+  // 示範範本「金額」欄的中心，落在使用者切的哪一直欄
+  const g = guide.regions[0].dividers;
+  const band = guide.columns.find((c) => c.id === "amount")?.band ?? g.length - 2;
+  const x = (g[band] + g[band + 1]) / 2;
+  const region = t0.regions[0];
+  const mine = region.dividers.findIndex((d, i) => i < region.dividers.length - 1 && d <= x && x < region.dividers[i + 1]);
+  const column = t0.columns.find((c) => c.band === mine) || t0.columns[t0.columns.length - 1];
+  return { table: t0, column, field, colLabel: `${t0.name}：${column.name}` };
+}
+function fillExpectedCheck() {
+  const want = expectedCheck();
+  if (!want) return;
+  state.selected = null;
+  state.outputPanel = false;
+  state.checksOpen = true;
+  state.checkDraft = { type: "sum_column", fields: [], table: want.table.id, column: want.column.id, target: want.field.id };
+  renderRight();
+  renderOverlay();
+}
+function checkSubstep() {
+  const demo = demoMode("train");
+  const draft = state.checkDraft || { type: "sum_fields", fields: [] };
+  const total = demo ? 6 : 5;
+  const at = (n) => (demo ? n : n - 1);
+  const step = (n, action, tip, target, wrong = false) => ({ index: at(n), total, action, tip, target, wrong });
+  if (demo && !hasFieldLike("總金額")) {
+    return step(1, "按 K 框「總金額」", "先框標題，再框它右邊的值。",
+      state.tool !== "kv" && editingReference() ? { sel: '[data-tool="kv"]', label: "按 K 或點這裡" } : null);
+  }
+  if (!rightShowsList()) return step(2, "回到欄位清單", "數字檢查在欄位清單下方。", backToList);
+  if (!state.checksOpen) return step(2, "點「新增檢查」展開", "數字對不上時，結果會標記給人確認。", { sel: "#checksDetails > summary", label: "點這裡展開" });
+  const want = expectedCheck();
+  const typeTarget = { sel: "#checkTypeSelect", label: "選檢查方式" };
+  if (want) {
+    if (draft.type !== "sum_column") {
+      const wrong = draft.type === "page_count";
+      return step(3, "檢查方式選「表格某欄加總」", wrong ? "「比對總頁數」不對，明細金額要加總。" : "明細的金額要加起來，所以選表格某欄加總。",
+        { sel: "#checkTypeSelect", label: "選表格某欄加總" }, wrong);
+    }
+    if (!draft.column) return step(4, `表格欄選「${want.colLabel}」`, "要加總的是金額那一欄。", { sel: "#checkColSelect", label: `選${want.column.name}` });
+    if (draft.table !== want.table.id || draft.column !== want.column.id) {
+      const picked = T().tables.find((t) => t.id === draft.table)?.columns.find((c) => c.id === draft.column)?.name || "?";
+      return step(4, `表格欄選「${want.colLabel}」`, `表格欄選的是「${picked}」，要選「${want.column.name}」。`,
+        { sel: "#checkColSelect", label: `選${want.column.name}` }, true);
+    }
+    if (!draft.target) return step(5, `要等於選「${want.field.name}」`, "加總要和單據上的總金額一樣。", { sel: "#checkTargetSelect", label: `選${want.field.name}` });
+    if (draft.target !== want.field.id) {
+      const picked = T().fields.find((f) => f.id === draft.target)?.name || "?";
+      return step(5, `要等於選「${want.field.name}」`, `要等於選的是「${picked}」，要選「${want.field.name}」。`,
+        { sel: "#checkTargetSelect", label: `選${want.field.name}` }, true);
+    }
+    return step(6, "按「加入檢查」", "加入後下面會列出這條檢查。", { sel: "#checkAddBtn", label: "按加入檢查" });
+  }
+  // 自己的 PDF：依序指出還沒選的格子
+  const missing = checkDraftMissing(draft);
+  if (!state.checkTypeTouched && missing.length === checkDraftMissing({ type: draft.type, fields: [] }).length && draft.type === "sum_fields") {
+    return step(3, "選檢查方式", "表格欄加總、幾個欄位相加，或比對總頁數。", typeTarget);
+  }
+  if (missing.includes("表格欄")) return step(4, "選要加總的表格欄", "通常是金額那一欄。", { sel: "#checkColSelect", label: "選表格欄" });
+  if (missing.includes("要相加的欄位")) return step(4, "選要相加的欄位", "按住 Ctrl 或 Command 可以複選。", { sel: "#checkFieldsSelect", label: "選要相加的欄位" });
+  if (missing.length) return step(5, "選要等於哪個欄位", "通常是單據上的合計或總金額。", { sel: "#checkTargetSelect", label: "選要等於" });
+  return step(6, "按「加入檢查」", "加入後下面會列出這條檢查。", { sel: "#checkAddBtn", label: "按加入檢查" });
+}
 
 // 完成狀態的按鈕：主要是下一步，刪除練習範本只在示範模式出現
 function completionActions(view) {

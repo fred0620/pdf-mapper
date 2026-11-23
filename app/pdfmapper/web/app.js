@@ -1304,50 +1304,79 @@ const suggestAnchors = guard(async () => {
   toast(`加入 ${T().anchors.length - existing} 個定位點，刪掉會隨單據變動的項目`);
   renderAll();
 });
+// 數字檢查草稿缺哪幾格（加入按鈕停用的原因、預覽與導覽的子步驟共用）
+function checkDraftMissing(draft) {
+  const missing = [];
+  if (draft.type === "sum_fields" && !draft.fields?.length) missing.push("要相加的欄位");
+  if (draft.type === "sum_column" && !(draft.table && draft.column)) missing.push("表格欄");
+  if (!draft.target) missing.push(draft.type === "page_count" ? "寫著總頁數的欄位" : "要等於");
+  return missing;
+}
+// 這條檢查的白話說明：已加入的檢查清單與表單預覽共用
+function describeCheck(rule) {
+  const fields = T().fields;
+  const name = (id) => fields.find((f) => f.id === id)?.name || id;
+  if (rule.type === "page_count") return `PDF 總頁數 = 「${name(rule.field)}」寫的頁數`;
+  if (rule.type === "sum_fields") return `${rule.fields.map((id) => `「${name(id)}」`).join(" + ")} = ${name(rule.equals)}`;
+  const table = T().tables.find((t) => t.id === rule.table);
+  return `${table?.name || "表格"}「${table?.columns.find((c) => c.id === rule.column)?.name || "?"}」加總 = ${name(rule.equals)}`;
+}
+const draftRule = (draft) => (draft.type === "page_count" ? { type: "page_count", field: draft.target }
+  : draft.type === "sum_fields" ? { type: "sum_fields", fields: draft.fields || [], equals: draft.target, tolerance: 1 }
+    : { type: "sum_column", table: draft.table, column: draft.column, equals: draft.target, tolerance: 1 });
+// 選了下拉不重畫整個表單（焦點才不會跑掉），只更新預覽與加入按鈕
+function updateCheckForm() {
+  const draft = state.checkDraft;
+  const preview = $("checkPreview");
+  const button = $("checkAddBtn");
+  if (!draft || !preview || !button) return;
+  const missing = checkDraftMissing(draft);
+  const reason = missing.length ? `還缺：${missing.join("、")}` : "";
+  preview.textContent = missing.length ? reason
+    : `${describeCheck(draftRule(draft))}${draft.type === "page_count" ? "" : "（差 1 以內算通過）"}`;
+  preview.classList.toggle("incomplete", missing.length > 0);
+  button.disabled = missing.length > 0;
+  button.title = reason ? `${reason}，選好才能加入` : "";
+  scheduleGuide();
+}
+function addCheck() {
+  const draft = state.checkDraft;
+  if (!draft || checkDraftMissing(draft).length) return;
+  snapshot();
+  T().validations.push(draftRule(draft));
+  state.checkDraft = null;
+  renderRight();
+}
 function checksPanel() {
   const fields = T().fields;
-  const describe = (rule) => {
-    const name = (id) => fields.find((f) => f.id === id)?.name || id;
-    if (rule.type === "page_count") return `總頁數要等於「${name(rule.field)}」`;
-    if (rule.type === "sum_fields") return `${rule.fields.map(name).join(" + ")} = ${name(rule.equals)}`;
-    const table = T().tables.find((t) => t.id === rule.table);
-    return `${table?.name}「${table?.columns.find((c) => c.id === rule.column)?.name}」加總 = ${name(rule.equals)}`;
-  };
   const draft = state.checkDraft || (state.checkDraft = { type: "sum_fields", fields: [] });
-  const fieldOptions = fields.map((f) => h("option", { value: f.id }, f.name));
+  const fieldOptions = (selected) => fields.map((f) => h("option", { value: f.id, selected: selected(f.id) }, f.name));
+  const missing = checkDraftMissing(draft);
   const form = h("div", { class: "form" },
+    h("p", { class: "note check-intro" }, "解析時把左邊加起來和右邊比，對不上就標記給人看。"),
     h("label", {}, "檢查方式", h("select", {
       id: "checkTypeSelect",
-      onchange: (e) => { state.checkDraft = { type: e.target.value, fields: [] }; renderRight(); },
+      onchange: (e) => { state.checkDraft = { type: e.target.value, fields: [] }; state.checkTypeTouched = true; renderRight(); },
     }, [["sum_fields", "幾個欄位相加"], ["sum_column", "表格某欄加總"], ["page_count", "比對總頁數"]].map(([value, label]) =>
       h("option", { value, selected: draft.type === value }, label)))),
     draft.type === "sum_fields" ? h("label", {}, "要相加的欄位（按住 Ctrl 或 Command 複選）", h("select", {
-      multiple: true, size: Math.min(5, Math.max(2, fields.length)),
-      onchange: (e) => { draft.fields = [...e.target.selectedOptions].map((o) => o.value); },
-    }, fieldOptions)) : null,
+      id: "checkFieldsSelect", multiple: true, size: Math.min(5, Math.max(2, fields.length)),
+      onchange: (e) => { draft.fields = [...e.target.selectedOptions].map((o) => o.value); updateCheckForm(); },
+    }, fieldOptions((id) => (draft.fields || []).includes(id)))) : null,
     draft.type === "sum_column" ? h("label", {}, "表格欄", h("select", {
       id: "checkColSelect",
-      onchange: (e) => { [draft.table, draft.column] = e.target.value.split("|"); },
+      onchange: (e) => { [draft.table, draft.column] = e.target.value.split("|"); if (!draft.table) { delete draft.table; delete draft.column; } updateCheckForm(); },
     }, h("option", { value: "|" }, "選擇"), T().tables.flatMap((t) => t.columns.map((c) =>
-      h("option", { value: `${t.id}|${c.id}` }, `${t.name}：${c.name}`))))) : null,
+      h("option", { value: `${t.id}|${c.id}`, selected: draft.table === t.id && draft.column === c.id }, `${t.name}：${c.name}`))))) : null,
     h("label", {}, draft.type === "page_count" ? "寫著總頁數的欄位" : "要等於", h("select", {
       id: "checkTargetSelect",
-      onchange: (e) => { draft.target = e.target.value; },
-    }, h("option", { value: "" }, "選擇"), fieldOptions.map((o) => o.cloneNode(true)))),
-    h("button", {
-      class: "btn", id: "checkAddBtn", onclick: () => {
-        if (!draft.target) { toast("請選擇要比對的欄位", true); return; }
-        snapshot();
-        const rule = draft.type === "page_count" ? { type: "page_count", field: draft.target }
-          : draft.type === "sum_fields" ? { type: "sum_fields", fields: draft.fields, equals: draft.target, tolerance: 1 }
-            : { type: "sum_column", table: draft.table, column: draft.column, equals: draft.target, tolerance: 1 };
-        T().validations.push(rule);
-        state.checkDraft = null;
-        renderRight();
-      },
-    }, "加入檢查"));
+      onchange: (e) => { draft.target = e.target.value; updateCheckForm(); },
+    }, h("option", { value: "" }, "選擇"), fieldOptions((id) => draft.target === id))),
+    h("p", { class: `check-preview${missing.length ? " incomplete" : ""}`, id: "checkPreview", "aria-live": "polite" }),
+    h("button", { class: "btn", id: "checkAddBtn", onclick: addCheck }, "加入檢查"));
+  setTimeout(updateCheckForm, 0);  // 表單放進畫面後再填預覽與按鈕狀態
   return [
-    h("ul", { class: "checks" }, T().validations.map((rule, i) => h("li", { class: "row note" }, h("span", {}, describe(rule)),
+    h("ul", { class: "checks" }, T().validations.map((rule, i) => h("li", { class: "row note" }, h("span", {}, describeCheck(rule)),
       h("button", { class: "linkish", style: "flex:0 0 auto", onclick: () => { snapshot(); T().validations.splice(i, 1); renderRight(); } }, "移除")))),
     h("details", {
       id: "checksDetails", open: !!state.checksOpen,

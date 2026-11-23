@@ -22,7 +22,10 @@ TARGET = re.compile(r"\bguide-pointed\b")  # 浮標正指著的目標
 def no_console_errors(context):
     """頁面不能有任何 console error（瀏覽器自己要的 favicon 除外）。"""
     errors: list[str] = []
-    context.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" and "favicon" not in msg.text else None)
+    def collect(msg):
+        if msg.type == "error" and "favicon" not in (msg.location or {}).get("url", ""):
+            errors.append(f"{msg.text} {(msg.location or {}).get('url', '')}")
+    context.on("console", collect)
     yield
     assert not errors, f"console error：{errors}"
 
@@ -89,18 +92,42 @@ def test_train_journey_with_demo_invoice(page):
     page.locator("#suggestAnchorsBtn").click()
     expect_step(page, 7, "總金額")
 
+    # 第 7 步拆成子步驟，浮標逐一指到當下要動的控制項，行動句直接寫要選的選項
+    badge = strip(page).locator(".mission-badge")
+    expect(badge).to_have_text("7 1/6")
     page.keyboard.press("k")
     draw_box(page, TOTAL[0])
     expect(ghost.locator(".guide-ghost-tag")).to_contain_text("再框住它的值")
     draw_box(page, TOTAL[1])
+    expect(badge).to_have_text("7 2/6")
     expect(page.locator("#rightBackBtn")).to_have_class(TARGET)
     page.locator("#rightBackBtn").click()
+    expect_step(page, 7, "點「新增檢查」展開")
+    expect(page.locator("#checksDetails > summary")).to_have_class(TARGET)
     page.locator("#checksDetails > summary").click()
-    expect(page.locator("#checkAddBtn")).to_have_class(TARGET)
+    expect(badge).to_have_text("7 3/6")
+    expect_step(page, 7, "檢查方式選「表格某欄加總」")
+    expect(page.locator("#checkTypeSelect")).to_have_class(TARGET)
+    expect(page.locator("#checksDetails .check-intro")).to_have_text("解析時把左邊加起來和右邊比，對不上就標記給人看。")
+    page.locator("#checkTypeSelect").select_option("page_count")
+    expect(strip(page).locator(".mission-tip.wrong")).to_contain_text("「比對總頁數」不對")
     page.locator("#checkTypeSelect").select_option("sum_column")
-    page.locator("#checkColSelect").select_option(index=4)
-    page.locator("#checkTargetSelect").select_option(label="總金額")
-    page.locator("#checkAddBtn").click()
+    expect(badge).to_have_text("7 4/6")
+    expect_step(page, 7, "表格欄選「表格1：欄4」")
+    expect(page.locator("#checkColSelect")).to_have_class(TARGET)
+    add = page.locator("#checkAddBtn")
+    expect(add).to_be_disabled()  # 缺欄時不能按，title 說明原因
+    expect(add).to_have_attribute("title", re.compile("還缺：表格欄、要等於"))
+    expect(page.locator("#checkPreview")).to_have_text("還缺：表格欄、要等於")
+    page.locator("#checkColSelect").select_option(label="表格1：欄1")
+    expect(strip(page).locator(".mission-tip.wrong")).to_contain_text("表格欄選的是「欄1」，要選「欄4」")
+    strip(page).get_by_role("button", name="幫我帶入").click()
+    expect(badge).to_have_text("7 6/6")
+    expect(page.locator("#checkColSelect")).to_have_value(re.compile(r"\|c4$"))
+    expect(page.locator("#checkPreview")).to_have_text("表格1「欄4」加總 = 總金額（差 1 以內算通過）")
+    expect(add).to_be_enabled()
+    expect(add).to_have_class(TARGET)
+    add.click()
     expect_step(page, 8, "測試")
 
     page.locator("#testBtn").click()

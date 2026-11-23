@@ -12,7 +12,10 @@ KEY = "pdfmapper.onboarding.v1"
 def no_console_errors(context):
     """頁面不能有任何 console error（瀏覽器自己要的 favicon 除外）。"""
     errors: list[str] = []
-    context.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" and "favicon" not in msg.text else None)
+    def collect(msg):
+        if msg.type == "error" and "favicon" not in (msg.location or {}).get("url", ""):
+            errors.append(f"{msg.text} {(msg.location or {}).get('url', '')}")
+    context.on("console", collect)
     yield
     assert not errors, f"console error：{errors}"
 
