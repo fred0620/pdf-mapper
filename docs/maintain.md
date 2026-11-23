@@ -31,6 +31,7 @@ bash run.sh                                # 或 Windows 雙擊 run.bat，用使
 | 重建範例 PDF 與示範範本 | `uv run --project app python scripts/build_demo.py` |
 | 改了使用手冊的示意圖 | 改 `scripts/make_manual_figures.py` 後執行它 |
 | 改了使用手冊或換版說明後重建 HTML | `uv run --project app python scripts/build_manual.py` |
+| 手冊的截圖要更新（畫面改了、發版前） | `uv run --project app --group ui python scripts/manual_shots.py`，再重建 HTML |
 | 新增套件 | `uv add --project app 套件名稱` |
 | 試打包（不含離線套件） | `uv run --project app python scripts/build_release.py` |
 

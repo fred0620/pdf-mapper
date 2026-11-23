@@ -18,7 +18,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 # 畫面測試會走過的程式：前端、後端、測試本身。文件和 CI 設定改了不用重跑
 WATCHED = [ROOT / "app" / "pdfmapper", ROOT / "tests" / "ui", ROOT / "tests" / "conftest.py",
-           ROOT / "scripts" / "make_samples.py"]
+           ROOT / "scripts" / "make_samples.py",
+           ROOT / "app" / "manual.js", ROOT / "app" / "使用手冊.html"]
 STAMP = ROOT / ".pytest_cache" / "ui-check-passed"   # 已在 .gitignore
 TAIL_LINES = 60
 

@@ -57,7 +57,7 @@ app/                     發布時整包給使用者的內容
     web/                 前端，無外部相依
   examples/              示範範本與客製腳本範例，第一次啟動時複製到 workspace
   samples/               虛構範例 PDF
-  使用手冊.html           由 docs/使用手冊.md 產生
+  使用手冊.html           由 docs/使用手冊.md 產生（版面的搜尋與目錄在 manual.js）
   換版說明.html           由 docs/換版說明.md 產生
 docs/                    使用手冊、換版說明、範本格式、設計決策、維護手冊、發版檢查清單
 scripts/                 打包發布、重建範例與手冊
