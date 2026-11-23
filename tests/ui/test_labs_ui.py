@@ -100,6 +100,7 @@ def test_cell_extract_lab_wrong_then_right(page):
     page.locator('#right select[aria-label="這一欄怎麼取值"]').select_option("start")
     expect(action(page)).to_contain_text("ECCN:")
     page.locator('#right input[aria-label="開頭文字"]').fill("Origin:")  # 取錯值
+    page.locator('#right input[aria-label="開頭文字"]').press("Enter")  # 打字中不算完成，按 Enter 才算
     expect(action(page)).to_contain_text("用 1 份範例測試")
     page.locator("#testBtn").click()
     expect(tip(page)).to_contain_text("第 1 列抓到「TW」，預期「5A992」", timeout=30_000)
@@ -200,8 +201,13 @@ def test_format_check_lab_wrong_then_right(page):
     expect(action(page)).to_contain_text("進階設定")
     page.locator("#fieldAdvanced > summary").click()
     expect(action(page)).to_contain_text("格式檢查")
-    page.locator("#fieldPatternInput").fill(r"^\d{7}$")  # 7 碼的規則，少一碼的值也通過
+    page.locator("#fieldPatternInput").fill(r"^\d{7}$")  # 7 碼的規則，8 碼的值不通過，步驟不算完成
+    expect(action(page)).to_contain_text("格式檢查")
+    expect(tip(page)).to_contain_text("規則要讓 12345678 通過")
+    page.locator("#fieldPatternInput").fill(r"^\d{8}$")
     expect(action(page)).to_contain_text("用 1 份範例測試")
+    # 完成後又改成 7 碼的規則，試抓會說少一碼的值沒有被標記
+    page.locator("#fieldPatternInput").fill(r"^\d{7}$")
     page.locator("#testBtn").click()
     expect(tip(page)).to_contain_text("沒有被標記", timeout=30_000)
     expect(tip(page)).to_have_class(re.compile(r"\bwrong\b"))
@@ -323,6 +329,7 @@ def test_output_lab_preview_wrong_then_right(page):
     expect(page.locator("#outputPreview th")).to_have_text(["Invoice No", "Customer", "Amount"])  # 預覽即時更新
     expect(action(page)).to_contain_text("Doc No")
     page.get_by_label("Invoice No 的輸出欄名").fill("Doc Number")  # 欄名寫錯
+    page.get_by_label("Invoice No 的輸出欄名").press("Enter")
     expect(action(page)).to_contain_text("移到 Customer 前面")
     page.get_by_role("button", name="Amount 上移").click()
     expect(page.locator("#outputPreview th")).to_have_text(["Doc Number", "Amount", "Customer"])
@@ -389,3 +396,77 @@ def test_multi_template_lab_restores_the_parse_state(page, samples):
     expect(page.locator("#left .template-picks input:checked")).to_have_count(1)
     expect(page.locator("#drawer td[data-ref]").first).to_be_visible()
     expect(page.locator("#runStartBtn")).to_be_enabled()
+
+
+def test_verify_result_shows_without_extra_click(page):
+    """按「用 1 份範例測試」後，不用再點任何東西，✓ 或差在哪裡的提示就要自己出現（含 API 回得慢的情況）。"""
+    import time
+
+    def slow(route):
+        time.sleep(1.5)
+        route.continue_()
+    page.route("**/api/test", slow)
+    start_lab(page, "feat-pos-field")
+    page.locator('[data-tool="pos"]').click()
+    draw_box(page, [0.64, 0.05, 0.7, 0.076])  # 框太小
+    page.locator("#testBtn").click()
+    expect(tip(page)).to_contain_text("框得太小", timeout=30_000)  # 做錯：提示自己出現
+    page.locator("#right .items li button").last.click()
+    page.keyboard.press("Delete")
+    page.locator('[data-tool="pos"]').click()
+    draw_box(page, PO_BOX)
+    page.locator("#testBtn").click()
+    expect(page.locator("#labResult")).to_contain_text("PO-2026-0412", timeout=30_000)  # 做對：完成畫面自己出現
+
+
+def test_format_check_lab_waits_for_a_complete_rule(page):
+    """一個字一個字輸入規則：中途提示還在、步驟沒推進，規則完整才推進。"""
+    start_lab(page, "feat-format-check")
+    page.locator("#right .items li button").first.click()
+    page.locator("#fieldAdvanced > summary").click()
+    expect(action(page)).to_contain_text("格式檢查")
+    box = page.locator("#fieldPatternInput")
+    box.click()
+    for typed in (r"^", r"\d", r"{8}"):  # 打到 ^\d{8} 還缺 $，8 碼通過，但 9 碼也會通過
+        box.press_sequentially(typed)
+        expect(action(page)).to_contain_text("格式檢查")
+        expect(tip(page)).not_to_have_text("")
+    expect(tip(page)).to_contain_text("^ 和 $")  # 說明還差什麼
+    expect(action(page)).not_to_contain_text("用 1 份範例測試")
+    box.press_sequentially("$")
+    expect(action(page)).to_contain_text("用 1 份範例測試")
+
+
+def test_regex_lab_apply_step_waits_for_a_matching_rule(page):
+    start_lab(page, "feat-regex")
+    open_spec_column(page, "Ref")
+    page.locator('#right select[aria-label="這一欄怎麼取值"]').select_option("regex")
+    page.locator('#missionStrip .mission-controls button', has_text="下一步").click()  # 跳過試算，直接練習填規則
+    expect(action(page)).to_contain_text("套用到 Ref 欄")
+    box = page.locator('#right input[aria-label="正規表達式"]')
+    box.click()
+    for typed in ("INV", r"-\d{4}", "-", r"\d{3"):  # 中途有些寫法編譯不過、有些抓不到完整單號
+        box.press_sequentially(typed)
+        expect(action(page)).to_contain_text("套用到 Ref 欄")
+        expect(tip(page)).not_to_have_text("")
+    box.press_sequentially("}")
+    expect(action(page)).to_contain_text("套用到 Ref 欄")  # INV-\d{4}-\d{3} 只抓到 INV-2026-030
+    expect(tip(page)).to_contain_text("INV-2026-030")
+    box.press_sequentially(r"\d")
+    expect(action(page)).to_contain_text("用 1 份範例測試")
+
+
+def test_typing_text_step_waits_for_enter(page):
+    """填開頭文字：打字中不算完成，按 Enter 才算。"""
+    start_lab(page, "feat-cell-extract")
+    open_spec_column(page, "Spec")
+    page.locator('#right select[aria-label="這一欄怎麼取值"]').select_option("start")
+    box = page.locator('#right input[aria-label="開頭文字"]')
+    box.click()
+    box.press_sequentially("E")
+    expect(action(page)).to_contain_text("ECCN:")
+    expect(tip(page)).to_contain_text("按 Enter")
+    box.press_sequentially("CCN:")
+    expect(action(page)).to_contain_text("ECCN:")
+    box.press("Enter")
+    expect(action(page)).to_contain_text("用 1 份範例測試")

@@ -372,3 +372,17 @@ def test_demo_samples_rejects_bad_mode_and_foreign_origin(page, app_url):
     blocked = page.request.post(f"{app_url}/api/demo-samples", data={"mode": "run"},
                                 headers={"Origin": "https://evil.example"})
     assert blocked.status == 403
+
+
+def test_template_name_step_waits_until_typing_is_done(page):
+    page.click("#demoStartBtn")
+    expect(page.locator("#guideBar .guide-name")).to_be_visible(timeout=30_000)
+    name = page.locator("#templateName")
+    name.click()
+    name.press_sequentially("商")
+    expect_step(page, 1, "範本名稱")  # 打第一個字不能跳到第 2 步
+    expect(strip(page).locator(".mission-tip")).to_contain_text("按 Enter")
+    name.press_sequentially("業發票")
+    expect_step(page, 1, "範本名稱")
+    name.press("Enter")
+    expect(strip(page).locator(".mission-badge")).to_have_text(re.compile(r"^2(\s|$)"))
