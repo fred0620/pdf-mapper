@@ -1,0 +1,409 @@
+{
+  "pos-field": {
+    "title": "值旁邊沒有標題怎麼抓",
+    "spotlight": "feat-pos-field",
+    "pdf": "labs/lab_pos_field.pdf",
+    "doc_name": "練習_採購單.pdf",
+    "template": "labs/lab_pos_field.json",
+    "template_name": "實地練習：沒有標題的值",
+    "steps": [
+      "lab-pos-field-1",
+      "lab-pos-field-2",
+      "lab-pos-field-3"
+    ],
+    "verify": {
+      "kind": "new_field",
+      "expect": "PO-2026-0412"
+    },
+    "hints": [
+      {
+        "when": "empty",
+        "text": "框的位置沒有字。單號在頁面右上角，框住整個單號。"
+      },
+      {
+        "when": "partof",
+        "text": "框得太小，單號被切掉了。拖曳框的邊，把整個單號框進去。"
+      },
+      {
+        "when": "wider",
+        "text": "框太大，包到單號以外的字。拖曳框的邊，只留單號。"
+      },
+      {
+        "when": "other",
+        "text": "框到的不是單號。單號在頁面右上角，沒有標題。"
+      }
+    ],
+    "learned": "沒有標題的值，用 P 直接框住它就能抓到；工具靠分散的定位點對位，每頁記得留 3 個以上。",
+    "manual": "pos-field"
+  },
+  "cell-extract": {
+    "title": "一格有好幾個值，只取一個",
+    "spotlight": "feat-cell-extract",
+    "pdf": "labs/lab_cell_extract.pdf",
+    "doc_name": "練習_出口清單.pdf",
+    "template": "labs/lab_cell_extract.json",
+    "template_name": "實地練習：一格取一個值",
+    "steps": [
+      "lab-cell-extract-1",
+      "lab-cell-extract-2",
+      "lab-cell-extract-3",
+      "lab-cell-extract-4"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "spec",
+      "expect": [
+        "5A992",
+        "4A003",
+        "EAR99",
+        "3A001",
+        "5D002"
+      ]
+    },
+    "hints": [
+      {
+        "when": "contains:Origin",
+        "text": "這格還帶著 Origin。「值到哪裡結束」要選「這一行結束」，不然會一路取到下一個開頭文字。"
+      },
+      {
+        "when": "contains:ECCN",
+        "text": "整格內容都進來了。「這一欄怎麼取值」要選「開頭文字」，開頭文字填 ECCN:。"
+      },
+      {
+        "when": "empty",
+        "text": "沒取到值。開頭文字要和 PDF 上一樣，包含冒號：ECCN:"
+      },
+      {
+        "when": "other",
+        "text": "取到的不是 ECCN 的值。確認開頭文字是 ECCN:，值到哪裡結束選「這一行結束」。"
+      }
+    ],
+    "learned": "一格有好幾個值時，用「開頭文字」只取其中一個，再選好值到哪裡結束。",
+    "manual": "value-modes"
+  },
+  "regex": {
+    "title": "用規則抓特定格式的值",
+    "spotlight": "feat-regex",
+    "pdf": "labs/lab_regex.pdf",
+    "doc_name": "練習_發票清單.pdf",
+    "template": "labs/lab_regex.json",
+    "template_name": "實地練習：用規則抓格式",
+    "steps": [
+      "lab-regex-1",
+      "lab-regex-2",
+      "lab-regex-3",
+      "lab-regex-4"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "ref",
+      "expect": [
+        "INV-2026-0301",
+        "INV-2026-0302",
+        "INV-2026-0307",
+        "INV-2026-0311",
+        "INV-2026-0316"
+      ]
+    },
+    "hints": [
+      {
+        "when": "contains:Ref",
+        "text": "整格內容都進來了，規則沒有套上。「這一欄怎麼取值」要選「正規表達式」，再填規則。"
+      },
+      {
+        "when": "contains:rev",
+        "text": "規則多取到 rev 了。只描述單號的樣子：INV-、4 個數字、-、4 個數字。"
+      },
+      {
+        "when": "empty",
+        "text": "規則沒比對到，這格留空了。先在試算區試到抓出 INV-2026-0301，再套用。"
+      },
+      {
+        "when": "other",
+        "text": "抓到的和預期不同。回試算區調整規則，試到對再套用。"
+      }
+    ],
+    "learned": "值有固定格式、前後的字會變時，用規則描述它的樣子，只取符合的那一段。",
+    "manual": "regex"
+  },
+  "format-check": {
+    "title": "內容格式不對就標記",
+    "spotlight": "feat-format-check",
+    "pdf": "labs/lab_format_check.pdf",
+    "doc_name": "練習_公司資料.pdf",
+    "template": "labs/lab_format_check.json",
+    "template_name": "實地練習：格式檢查",
+    "steps": [
+      "lab-format-check-1",
+      "lab-format-check-2",
+      "lab-format-check-3",
+      "lab-format-check-4"
+    ],
+    "verify": {
+      "kind": "field_flag",
+      "field": "tax_id",
+      "value": "1234567",
+      "reason": "format_mismatch",
+      "done": "1234567 少一碼，已被標記為格式不符"
+    },
+    "hints": [
+      {
+        "when": "empty",
+        "text": "還沒有設格式檢查。到欄位的進階設定，在「格式檢查」填規則。"
+      },
+      {
+        "when": "contains:{7}",
+        "text": "規則寫成 7 碼了，1234567 剛好符合所以沒被標記。統一編號是 8 碼，改成 ^\\d{8}$。"
+      },
+      {
+        "when": "other",
+        "text": "這條規則讓 1234567 通過了。統一編號是 8 個數字，前後加 ^ 和 $：^\\d{8}$。"
+      }
+    ],
+    "learned": "值一定是固定格式時，用格式檢查：不符合的就標記給人看，不會改動抓到的值。",
+    "manual": "format-check"
+  },
+  "cross-page": {
+    "title": "明細接到下一頁",
+    "spotlight": "feat-cross-page",
+    "pdf": "labs/lab_next_page.pdf",
+    "doc_name": "練習_裝箱單.pdf",
+    "template": "labs/lab_next_page.json",
+    "template_name": "實地練習：明細接到下一頁",
+    "steps": [
+      "lab-cross-page-1",
+      "lab-cross-page-2",
+      "lab-cross-page-3",
+      "lab-cross-page-4"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "item",
+      "expect": [
+        "Bolt M6",
+        "Nut M6",
+        "Washer 6",
+        "Screw M4",
+        "Clip A2",
+        "Pin 8",
+        "Spacer 3"
+      ],
+      "rows_hint": "列數對不上，第 2 頁的列沒有全部接進來。確認第 2 頁的範圍框住所有資料列，套用頁面維持「第 2 頁起」。"
+    },
+    "hints": [
+      {
+        "when": "other",
+        "text": "這一列的內容對不上。確認第 2 頁的範圍框住表頭下面的資料，沒有包到標題。"
+      }
+    ],
+    "learned": "明細接到下一頁時，在第 2 頁也加一個資料範圍，跨頁的列會自動接成一張表。",
+    "manual": "table-place"
+  },
+  "header": {
+    "title": "表格開始的位置不固定",
+    "spotlight": "feat-header",
+    "pdf": "labs/lab_header_a.pdf",
+    "doc_name": "練習_出貨單_甲.pdf",
+    "pdfs": [
+      "labs/lab_header_a.pdf",
+      "labs/lab_header_b.pdf"
+    ],
+    "doc_names": [
+      "練習_出貨單_甲.pdf",
+      "練習_出貨單_乙.pdf"
+    ],
+    "template": "labs/lab_header.json",
+    "template_name": "實地練習：表格位置不固定",
+    "steps": [
+      "lab-header-1",
+      "lab-header-2",
+      "lab-header-3"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "item",
+      "per_doc": true,
+      "expect": [
+        [
+          "Bolt M6",
+          "Nut M6",
+          "Washer 6",
+          "Screw M4",
+          "Clip A2"
+        ],
+        [
+          "Washer 6",
+          "Screw M4",
+          "Clip A2",
+          "Pin 8"
+        ]
+      ],
+      "rows_hint": "表格的位置每份不同，範圍沒有跟著表頭移動。到「位置」分頁，在表頭那一列按「框選表頭」。"
+    },
+    "hints": [
+      {
+        "when": "other",
+        "text": "這一列的內容對不上，表格上緣沒有對到表頭。重新框選表頭，只框住「Line」這個字。"
+      }
+    ],
+    "learned": "表格位置每份不同時，框住每份都一樣的表頭字，表格上緣和分隔線會跟著表頭移動。",
+    "manual": "table-place"
+  },
+  "endmark": {
+    "title": "表格長度不固定",
+    "spotlight": "feat-endmark",
+    "pdf": "labs/lab_end_marker.pdf",
+    "doc_name": "練習_訂單明細.pdf",
+    "template": "labs/lab_end_marker.json",
+    "template_name": "實地練習：表格長度不固定",
+    "steps": [
+      "lab-endmark-1",
+      "lab-endmark-2",
+      "lab-endmark-3"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "amount",
+      "expect": [
+        "310",
+        "620",
+        "930",
+        "1,240",
+        "1,550"
+      ],
+      "rows_hint": "多抓或少抓了列。到「位置」分頁的表格結尾，框住表格結束後緊接著的「Total」。"
+    },
+    "hints": [
+      {
+        "when": "contains:7,750",
+        "text": "最後一列多帶到了合計的金額。框選表尾，框住表格結束後緊接著的「Total」，合計就不會算進明細。"
+      },
+      {
+        "when": "other",
+        "text": "這一列的金額對不上。表尾只框「Total」這個字，不要框到明細。"
+      }
+    ],
+    "learned": "明細列數不固定時，框住表格結束後緊接著的字（例如 Total），抓到那裡為止，合計不會混進明細。",
+    "manual": "table-place"
+  },
+  "sum-fields": {
+    "title": "幾個欄位相加，對不上就提醒",
+    "spotlight": "feat-checks",
+    "pdf": "labs/lab_sum_fields.pdf",
+    "doc_name": "練習_訂單摘要.pdf",
+    "template": "labs/lab_sum_fields.json",
+    "template_name": "實地練習：數字檢查",
+    "steps": [
+      "lab-sum-fields-1",
+      "lab-sum-fields-2",
+      "lab-sum-fields-3",
+      "lab-sum-fields-4",
+      "lab-sum-fields-5"
+    ],
+    "verify": {
+      "kind": "sum_check",
+      "fields": [
+        "subtotal",
+        "tax"
+      ],
+      "equals": "total",
+      "reason": "sum_mismatch",
+      "done": "Subtotal 加 Tax 是 4,725，Total 寫 4,800，已被標記為加總不符"
+    },
+    "hints": [
+      {
+        "when": "other",
+        "text": "按這條檢查旁的「移除」，再加一條對的：勾 Subtotal 和 Tax，要等於 Total。"
+      }
+    ],
+    "learned": "金額有加總關係時加一條數字檢查：左邊加起來對不上右邊，解析時就標記給人看。",
+    "manual": "checks"
+  },
+  "output": {
+    "title": "只輸出需要的欄位",
+    "spotlight": "feat-output",
+    "pdf": "labs/lab_output.pdf",
+    "doc_name": "練習_客戶發票.pdf",
+    "template": "labs/lab_output.json",
+    "template_name": "實地練習：輸出設定",
+    "steps": [
+      "lab-output-1",
+      "lab-output-2",
+      "lab-output-3",
+      "lab-output-4",
+      "lab-output-5"
+    ],
+    "verify": {
+      "kind": "output",
+      "expect": [
+        "Doc No",
+        "Amount",
+        "Customer"
+      ],
+      "done": "乾淨資料預覽的欄位依序是 Doc No、Amount、Customer，Internal Note 沒有輸出"
+    },
+    "hints": [
+      {
+        "when": "extra",
+        "text": "不需要的欄位還在輸出。取消勾選 Internal Note。"
+      },
+      {
+        "when": "name",
+        "text": "欄名不對。Invoice No 的輸出欄名要填 Doc No。"
+      },
+      {
+        "when": "order",
+        "text": "順序不對。用箭頭把 Amount 移到 Customer 前面。"
+      }
+    ],
+    "learned": "只影響乾淨資料：取消勾選的欄不輸出，輸出欄名和順序都能調，檢查用 Excel 維持完整。",
+    "manual": "output"
+  },
+  "multi-template": {
+    "title": "一次丟不同格式的 PDF",
+    "spotlight": "run-multi-template",
+    "view": "run",
+    "pdfs": [
+      "labs/lab_run_a.pdf",
+      "labs/lab_run_b.pdf"
+    ],
+    "doc_names": [
+      "練習_發票.pdf",
+      "練習_裝箱單.pdf"
+    ],
+    "templates": [
+      "labs/lab_run_a.json",
+      "labs/lab_run_b.json"
+    ],
+    "template_names": [
+      "練習範本：發票",
+      "練習範本：裝箱單"
+    ],
+    "steps": [
+      "lab-multi-template-1",
+      "lab-multi-template-2",
+      "lab-multi-template-3"
+    ],
+    "verify": {
+      "kind": "run_templates",
+      "expect": [
+        "lab_run_a",
+        "lab_run_b"
+      ],
+      "done": "發票用了「發票」範本，裝箱單用了「裝箱單」範本"
+    },
+    "hints": [
+      {
+        "when": "other",
+        "text": "兩種格式各有範本，兩個範本都要勾選，再按一次「開始解析」。"
+      }
+    ],
+    "learned": "一批裡混了不同版面時，把可能的範本都勾起來，每份 PDF 會自動用最符合的範本解析。",
+    "manual": "multi-template"
+  }
+}

@@ -1,0 +1,131 @@
+{
+ "schema_version": 1,
+ "template_id": "lab_output",
+ "name": "lab output",
+ "fields": [
+  {
+   "id": "invoice_no",
+   "name": "Invoice No",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Invoice No",
+    "box": [
+     0.1,
+     0.178,
+     0.255,
+     0.201
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.172,
+    0.9,
+    0.212
+   ],
+   "type": "text",
+   "required": true
+  },
+  {
+   "id": "customer",
+   "name": "Customer",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Customer",
+    "box": [
+     0.1,
+     0.238,
+     0.23,
+     0.261
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.232,
+    0.9,
+    0.272
+   ],
+   "type": "text",
+   "required": true
+  },
+  {
+   "id": "amount",
+   "name": "Amount",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Amount",
+    "box": [
+     0.1,
+     0.298,
+     0.205,
+     0.321
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.292,
+    0.9,
+    0.332
+   ],
+   "type": "number",
+   "required": true
+  },
+  {
+   "id": "note",
+   "name": "Internal Note",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Internal Note",
+    "box": [
+     0.1,
+     0.358,
+     0.293,
+     0.381
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.352,
+    0.9,
+    0.392
+   ],
+   "type": "text",
+   "required": true
+  }
+ ],
+ "tables": [],
+ "anchors": [
+  {
+   "id": "title",
+   "text": "Customer Invoice",
+   "box": [
+    0.08,
+    0.04,
+    0.42,
+    0.1
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  },
+  {
+   "id": "foot",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Confidential",
+   "box": [
+    0.6,
+    0.898,
+    0.78,
+    0.921
+   ]
+  }
+ ],
+ "validations": []
+}

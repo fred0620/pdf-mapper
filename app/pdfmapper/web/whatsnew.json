@@ -24,6 +24,13 @@
           "body": "第一次用時，畫面中間可以跟著示範發票做範本、練習核對。",
           "tab": "train",
           "spotlight": "welcome-demo"
+        },
+        {
+          "id": "0.4.0-labs",
+          "title": "進階功能可以實地練習",
+          "body": "在進階功能的說明卡按「實地練習」，用練習 PDF 邊做邊驗證。",
+          "tab": "train",
+          "spotlight": "feat-pos-field"
         }
       ]
     }

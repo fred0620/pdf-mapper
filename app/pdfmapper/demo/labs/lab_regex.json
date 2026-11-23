@@ -1,0 +1,89 @@
+{
+ "schema_version": 1,
+ "template_id": "lab_regex",
+ "name": "lab regex",
+ "fields": [],
+ "tables": [
+  {
+   "id": "items",
+   "name": "Invoices",
+   "columns": [
+    {
+     "id": "no",
+     "name": "No",
+     "band": 0
+    },
+    {
+     "id": "ref",
+     "name": "Ref",
+     "band": 1
+    },
+    {
+     "id": "amount",
+     "name": "Amount",
+     "band": 2
+    }
+   ],
+   "key_column": "no",
+   "key_position": "auto",
+   "required": true,
+   "regions": [
+    {
+     "page_rule": "first",
+     "ref_page": 0,
+     "box": [
+      0.08,
+      0.22,
+      0.92,
+      0.52
+     ],
+     "dividers": [
+      0.08,
+      0.16,
+      0.6,
+      0.92
+     ]
+    }
+   ]
+  }
+ ],
+ "anchors": [
+  {
+   "id": "title",
+   "text": "Invoice List",
+   "box": [
+    0.08,
+    0.04,
+    0.42,
+    0.1
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  },
+  {
+   "id": "h_ref",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Ref",
+   "box": [
+    0.168,
+    0.168,
+    0.218,
+    0.191
+   ]
+  },
+  {
+   "id": "h_amount",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Amount",
+   "box": [
+    0.608,
+    0.168,
+    0.698,
+    0.191
+   ]
+  }
+ ],
+ "validations": []
+}

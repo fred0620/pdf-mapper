@@ -1,0 +1,107 @@
+{
+ "schema_version": 1,
+ "template_id": "lab_sum_fields",
+ "name": "lab sum fields",
+ "fields": [
+  {
+   "id": "subtotal",
+   "name": "Subtotal",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Subtotal",
+    "box": [
+     0.1,
+     0.178,
+     0.23,
+     0.201
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.172,
+    0.9,
+    0.212
+   ],
+   "type": "number",
+   "required": true
+  },
+  {
+   "id": "tax",
+   "name": "Tax",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Tax",
+    "box": [
+     0.1,
+     0.238,
+     0.168,
+     0.261
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.232,
+    0.9,
+    0.272
+   ],
+   "type": "number",
+   "required": true
+  },
+  {
+   "id": "total",
+   "name": "Total",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Total",
+    "box": [
+     0.1,
+     0.298,
+     0.192,
+     0.321
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.292,
+    0.9,
+    0.332
+   ],
+   "type": "number",
+   "required": true
+  }
+ ],
+ "tables": [],
+ "anchors": [
+  {
+   "id": "title",
+   "text": "Order Summary",
+   "box": [
+    0.08,
+    0.04,
+    0.42,
+    0.1
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  },
+  {
+   "id": "foot",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Confidential",
+   "box": [
+    0.6,
+    0.898,
+    0.78,
+    0.921
+   ]
+  }
+ ],
+ "validations": []
+}

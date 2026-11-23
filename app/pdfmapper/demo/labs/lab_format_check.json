@@ -1,0 +1,71 @@
+{
+ "schema_version": 1,
+ "template_id": "lab_format_check",
+ "name": "lab format check",
+ "fields": [
+  {
+   "id": "tax_id",
+   "name": "Tax ID",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Tax ID",
+    "box": [
+     0.1,
+     0.238,
+     0.18,
+     0.261
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.232,
+    0.9,
+    0.272
+   ],
+   "type": "text",
+   "required": true
+  }
+ ],
+ "tables": [],
+ "anchors": [
+  {
+   "id": "title",
+   "text": "Company Profile",
+   "box": [
+    0.08,
+    0.04,
+    0.5,
+    0.1
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  },
+  {
+   "id": "phone",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Phone",
+   "box": [
+    0.1,
+    0.298,
+    0.18,
+    0.321
+   ]
+  },
+  {
+   "id": "conf",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Confidential",
+   "box": [
+    0.6,
+    0.898,
+    0.74,
+    0.921
+   ]
+  }
+ ],
+ "validations": []
+}

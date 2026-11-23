@@ -1,0 +1,89 @@
+{
+ "schema_version": 1,
+ "template_id": "lab_end_marker",
+ "name": "lab end marker",
+ "fields": [],
+ "tables": [
+  {
+   "id": "items",
+   "name": "Lines",
+   "columns": [
+    {
+     "id": "no",
+     "name": "Line",
+     "band": 0
+    },
+    {
+     "id": "item",
+     "name": "Item",
+     "band": 1
+    },
+    {
+     "id": "amount",
+     "name": "Amount",
+     "band": 2
+    }
+   ],
+   "key_column": "no",
+   "key_position": "auto",
+   "required": true,
+   "regions": [
+    {
+     "page_rule": "first",
+     "ref_page": 0,
+     "box": [
+      0.08,
+      0.22,
+      0.92,
+      0.85
+     ],
+     "dividers": [
+      0.08,
+      0.2,
+      0.6,
+      0.92
+     ]
+    }
+   ]
+  }
+ ],
+ "anchors": [
+  {
+   "id": "title",
+   "text": "Order Lines",
+   "box": [
+    0.08,
+    0.04,
+    0.42,
+    0.1
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  },
+  {
+   "id": "conf",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Confidential",
+   "box": [
+    0.6,
+    0.918,
+    0.74,
+    0.941
+   ]
+  },
+  {
+   "id": "acme",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Acme Corp",
+   "box": [
+    0.08,
+    0.918,
+    0.2,
+    0.941
+   ]
+  }
+ ],
+ "validations": []
+}

@@ -123,6 +123,8 @@ function undo() {
 // 也不自動套用：重開時先詢問，避免上一次的名稱和框線留在新範本裡。
 const DRAFT_KEY = "pdfmapper.draft";
 function saveDraft() {
+  scheduleGuide();  // 設定改了就重算導覽的完成條件（輸入框打字不會重畫）
+  if (state.guide.lab) return;  // 實地練習中：練習範本不存草稿，原本的草稿原封不動
   state.recovery = null;
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({ template: state.template, saved: state.savedTemplate }));
@@ -189,6 +191,7 @@ function resumeParked() {
   toast("已接回之前的範本");
 }
 function recoveryNotice() {
+  if (state.guide.lab) return null;
   const draft = state.recovery;
   const parked = !draft && state.view === "train" ? parkedTemplate() : null;
   if (parked) {
@@ -945,7 +948,9 @@ function renderLeftRun() {
     });
   });
   const running = state.run && !state.run.finished;
-  const picks = state.templates.map((t) => h("li", {}, h("label", {},
+  // 解析 PDF 的實地練習用練習範本（只存在這個畫面，不是 workspace 裡的範本）
+  const templates = state.guide.lab?.templates || state.templates;
+  const picks = templates.map((t) => h("li", {}, h("label", {},
     h("input", {
       type: "checkbox", checked: state.templateIds.includes(t.id),
       onchange: (e) => togglePick(t.id, e.target.checked),
@@ -954,7 +959,7 @@ function renderLeftRun() {
     h("h2", {}, "使用範本"),
     picks.length ? h("ul", { class: "template-picks" }, picks)
       : h("p", { class: "note" }, "還沒有範本，請先到「建立範本」。"),
-    state.templates.length > 1 ? h("p", { class: "note" }, "可以複選。選多個時，每份 PDF 會自動用最符合的範本。") : null,
+    templates.length > 1 ? h("p", { class: "note" }, "可以複選。選多個時，每份 PDF 會自動用最符合的範本。") : null,
     h("h2", {}, "要解析的 PDF"),
     list.length ? [h("ul", { class: "docs" }, list), listActions(list.length)]
       : h("button", { class: "drop", onclick: () => $("filePicker").click() }, "加入 PDF"),
@@ -963,7 +968,8 @@ function renderLeftRun() {
         class: "btn primary wide", id: "runStartBtn", disabled: !state.templateIds.length || !state.runDocs.length || running,
         onclick: () => startRun(),
       }, running ? "解析中" : "開始解析")),
-    state.run?.demo ? h("p", { class: "note" }, "示範解析用內附的「進口報單（示範）」範本，不佔解析紀錄，匯出檔名會加上「示範_」。") : null,
+    state.run?.lab ? h("p", { class: "note" }, "練習解析不佔解析紀錄。")
+      : state.run?.demo ? h("p", { class: "note" }, "示範解析用內附的「進口報單（示範）」範本，不佔解析紀錄，匯出檔名會加上「示範_」。") : null,
     running ? [h("div", { class: "progress" }, h("div", { style: `width:${state.run.done / state.run.total * 100}%` })),
       h("p", { class: "note" }, `${state.run.done}/${state.run.total}，${state.run.current}`)] : null,
     thumbs());
@@ -1030,7 +1036,7 @@ function fieldPanel(field) {
       }), "內容可能接到下一頁"),
       field.continuation ? h("p", { class: "note" }, `接續範圍在第 ${field.continuation.ref_page + 1} 頁，接上時會標記給人確認。`) : null),
     h("details", {
-      id: "fieldAdvanced", open: !!state.fieldAdvancedOpen, ontoggle: (e) => { state.fieldAdvancedOpen = e.target.open; },
+      id: "fieldAdvanced", open: !!state.fieldAdvancedOpen, ontoggle: (e) => { state.fieldAdvancedOpen = e.target.open; scheduleGuide(); },
     }, h("summary", { onclick: (e) => { state.fieldAdvancedOpen = !e.currentTarget.parentElement.open; } }, "進階設定"), h("div", { class: "form" },
       field.kind === "key_value" ? h("label", {}, "比對用的標題文字", h("input", {
         type: "text", value: field.label.text,
@@ -1397,10 +1403,17 @@ function checksPanel() {
       onchange: (e) => { state.checkDraft = { type: e.target.value, fields: [] }; state.checkTypeTouched = true; renderRight(); },
     }, [["sum_fields", "幾個欄位相加"], ["sum_column", "表格某欄加總"], ["page_count", "比對總頁數"]].map(([value, label]) =>
       h("option", { value, selected: draft.type === value }, label)))),
-    draft.type === "sum_fields" ? h("label", {}, "要相加的欄位（按住 Ctrl 或 Command 複選）", h("select", {
-      id: "checkFieldsSelect", multiple: true, size: Math.min(5, Math.max(2, fields.length)),
-      onchange: (e) => { draft.fields = [...e.target.selectedOptions].map((o) => o.value); updateCheckForm(); },
-    }, fieldOptions((id) => (draft.fields || []).includes(id)))) : null,
+    draft.type === "sum_fields" ? h("fieldset", { class: "check-fields", id: "checkFields" },
+      h("legend", {}, "要相加的欄位（勾選）"),
+      fields.length ? fields.map((f) => h("label", { class: "check-field" }, h("input", {
+        type: "checkbox", value: f.id, "aria-label": `相加 ${f.name}`, checked: (draft.fields || []).includes(f.id),
+        onchange: (e) => {
+          const picked = new Set(draft.fields || []);
+          if (e.target.checked) picked.add(f.id); else picked.delete(f.id);
+          draft.fields = fields.map((x) => x.id).filter((id) => picked.has(id));  // 依欄位清單的順序
+          updateCheckForm();
+        },
+      }), f.name)) : h("p", { class: "note" }, "還沒有欄位。")) : null,
     draft.type === "sum_column" ? h("label", {}, "表格欄", h("select", {
       id: "checkColSelect",
       onchange: (e) => { [draft.table, draft.column] = e.target.value.split("|"); if (!draft.table) { delete draft.table; delete draft.column; } updateCheckForm(); },
@@ -1432,10 +1445,59 @@ function outputList(saved, available) {
   for (const [id] of available) if (!list.some((entry) => entry.id === id)) list.push({ id, include: true, name: "" });
   return list;
 }
+// 乾淨資料實際輸出的欄（代號、欄名）：和伺服器的 clean.output_columns 同一套規則，預覽與練習驗證共用
+function outputColumns(saved, available) {
+  const names = new Map(available);
+  const listed = new Set();
+  const columns = [];
+  for (const entry of saved || []) {
+    if (!names.has(entry.id)) continue;
+    listed.add(entry.id);
+    if (entry.include !== false) columns.push([entry.id, (entry.name || "").trim() || names.get(entry.id)]);
+  }
+  for (const [id, name] of available) if (!listed.has(id)) columns.push([id, name]);
+  const seen = {};
+  return columns.map(([id, name]) => {
+    seen[name] = (seen[name] || 0) + 1;
+    return [id, seen[name] === 1 ? name : `${name}_${seen[name]}`];
+  });
+}
+// 乾淨資料預覽：用最近一次測試的結果，欄名與順序照目前的輸出設定
+function outputPreview() {
+  const result = state.tests.find((r) => r.doc_id === state.referenceId) || null;
+  const grid = (title, columns, rows) => h("div", { class: "output-preview-block" },
+    h("p", { class: "note" }, title),
+    h("div", { class: "output-preview-scroll" }, h("table", { class: "output-preview-table" },
+      h("thead", {}, h("tr", {}, columns.map(([, name]) => h("th", {}, name)))),
+      h("tbody", {}, rows.map((row) => h("tr", {}, columns.map(([id]) => h("td", {}, row[id] ?? "")))))))
+  );
+  const blocks = [];
+  const fields = outputColumns(T().output?.fields, T().fields.map((f) => [f.id, f.name]));
+  if (fields.length) {
+    const row = Object.fromEntries((result?.fields || []).map((f) => [f.id, f.value]));
+    blocks.push(grid("欄位", fields, [row]));
+  }
+  for (const table of T().tables) {
+    const columns = outputColumns(T().output?.tables?.[table.id], table.columns.map((c) => [c.id, c.name]));
+    const found = result?.tables.find((t) => t.id === table.id);
+    const rows = (found?.rows || []).slice(0, 3).map((row) => Object.fromEntries(Object.entries(row.cells).map(([id, cell]) => [id, cell.value])));
+    if (columns.length) blocks.push(grid(table.name, columns, rows));
+  }
+  return h("div", { class: "output-preview", id: "outputPreview" },
+    h("h3", {}, "乾淨資料預覽"),
+    result ? null : h("p", { class: "note" }, "按「測試」後會顯示範例的值。"),
+    blocks,
+    h("p", { class: "note" }, "實際檔案還會固定附上來源、頁碼和檢查狀態。"));
+}
 function outputGroup(title, available, read, write) {
   const names = new Map(available);
   const list = outputList(read(), available);
-  const commit = () => { write(list); saveDraft(); };
+  const commit = () => {
+    write(list);
+    saveDraft();
+    $("outputPreview")?.replaceWith(outputPreview());  // 預覽跟著設定即時更新（不重畫整個面板，輸入框的焦點才不會跑掉）
+    scheduleGuide();
+  };
   const move = (index, step) => {
     const target = index + step;
     if (target < 0 || target >= list.length) return;
@@ -1473,6 +1535,7 @@ function outputPanel() {
         output().tables[table.id] = list;
       })),
     !fields.length && !T().tables.length ? h("p", { class: "note" }, "還沒有欄位。") : null,
+    fields.length || T().tables.length ? outputPreview() : null,
   ];
 }
 function renderRightTrain() {
@@ -1542,10 +1605,10 @@ function actionsBar() {
     h("button", {
       class: "btn primary wide", id: "testBtn", disabled: state.testing || !state.docs.length, onclick: testTemplate,
     }, state.testing ? "測試中" : `用 ${state.docs.length} 份範例測試`),
-    h("button", { class: "btn wide", id: "saveButton", disabled: !T().template_id, onclick: saveTemplate },
+    h("button", { class: "btn wide", id: "saveButton", disabled: !T().template_id || !!state.guide.lab, onclick: saveTemplate },
       state.showcase ? "另存成我的範本" : T().template_id ? "儲存範本" : "先填範本名稱才能儲存"),
     h("button", {
-      class: "btn wide", id: "resetButton", disabled: templateIsEmpty() && !state.docs.length, onclick: resetTemplate,
+      class: "btn wide", id: "resetButton", disabled: (templateIsEmpty() && !state.docs.length) || !!state.guide.lab, onclick: resetTemplate,
     }, "開始新範本"));
 }
 function renderRightActions() {
@@ -1571,6 +1634,7 @@ const testTemplate = guard(async () => {
   }
 });
 const saveTemplate = guard(async () => {
+  if (state.guide.lab) { toast("練習範本不會存檔，回到我的工作後再儲存自己的範本", true); return; }
   if (state.showcase) {
     // 觀摩範本另存成自己的範本，示範範本保持原樣
     T().name = "商業發票（我的）";
@@ -1842,9 +1906,13 @@ async function fetchProgress() {
 const startRun = guard(async (options = {}) => {
   const docs = state.runDocs.map((d) => d.id);
   // 示範解析由伺服器固定用內附的示範範本，不佔正式解析紀錄
-  const body = options.demo ? { docs, demo: "run" } : { template_ids: state.templateIds, docs };
+  // 練習解析由伺服器端只從練習內附的範本挑，同樣不佔解析紀錄
+  const lab = state.guide.lab;
+  const body = options.demo ? { docs, demo: "run" }
+    : lab?.templates ? { docs, demo: "lab", lab: lab.id, template_ids: state.templateIds }
+      : { template_ids: state.templateIds, docs };
   const { run_id: id } = await api("/api/runs", { json: body });
-  state.run = { id, total: docs.length, done: 0, current: "", results: [], finished: false, demo: !!options.demo };
+  state.run = { id, total: docs.length, done: 0, current: "", results: [], finished: false, demo: !!options.demo, lab: !!lab?.templates };
   state.drawerOpen = true;
   renderLeft();
   while (!state.run.finished) {
@@ -1919,6 +1987,7 @@ async function closeDocs(view) {
 const startDemo = guard(async (mode, options = {}) => {
   const withGuide = options.guide !== false;
   const view = mode === "run" ? "run" : "train";
+  if (state.guide.lab) await exitLab();  // 先把練習前的文件與範本接回來
   if (state.guide.loadingDemo) return;
   if (state.run && !state.run.finished) { toast("解析進行中，完成後再開始示範", true); return; }
   state.guide.loadingDemo = true;

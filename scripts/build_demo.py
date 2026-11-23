@@ -32,4 +32,5 @@ for name in ("sample_1_standard.pdf", "sample_5_errors.pdf", "sample_6_invoice.p
     shutil.copy2(APP / "samples" / name, DEMO / name)
 for name in ("invoice_demo.json", "customs_demo.json"):
     shutil.copy2(APP / "examples" / "templates" / name, DEMO / name)
+make_samples.build_labs(DEMO / "labs")  # 實地練習的 PDF 與練習範本
 print("完成")

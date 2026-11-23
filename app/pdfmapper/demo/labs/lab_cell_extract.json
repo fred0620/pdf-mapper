@@ -1,0 +1,95 @@
+{
+ "schema_version": 1,
+ "template_id": "lab_cell_extract",
+ "name": "lab cell extract",
+ "fields": [],
+ "tables": [
+  {
+   "id": "items",
+   "name": "Items",
+   "columns": [
+    {
+     "id": "no",
+     "name": "No",
+     "band": 0
+    },
+    {
+     "id": "item",
+     "name": "Item",
+     "band": 1
+    },
+    {
+     "id": "spec",
+     "name": "Spec",
+     "band": 2
+    },
+    {
+     "id": "qty",
+     "name": "Qty",
+     "band": 3
+    }
+   ],
+   "key_column": "no",
+   "key_position": "auto",
+   "required": true,
+   "regions": [
+    {
+     "page_rule": "first",
+     "ref_page": 0,
+     "box": [
+      0.08,
+      0.22,
+      0.92,
+      0.6
+     ],
+     "dividers": [
+      0.08,
+      0.16,
+      0.5,
+      0.76,
+      0.92
+     ]
+    }
+   ]
+  }
+ ],
+ "anchors": [
+  {
+   "id": "title",
+   "text": "Export Items",
+   "box": [
+    0.08,
+    0.04,
+    0.42,
+    0.1
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  },
+  {
+   "id": "h_spec",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Spec",
+   "box": [
+    0.508,
+    0.168,
+    0.578,
+    0.191
+   ]
+  },
+  {
+   "id": "h_qty",
+   "page_rule": "first",
+   "ref_page": 0,
+   "text": "Qty",
+   "box": [
+    0.768,
+    0.168,
+    0.818,
+    0.191
+   ]
+  }
+ ],
+ "validations": []
+}

@@ -43,6 +43,9 @@ DEMO_SETS = {
     "showcase": {"docs": [("sample_6_invoice.pdf", "示範發票.pdf")], "template": "invoice_demo.json", "guide": None},
 }
 DEMO_RUN_TEMPLATE = "customs_demo.json"
+# 進階功能的實地練習：練習 PDF、練習範本與驗證用的預期值。id（labs.json 的鍵）就是白名單
+LABS = json.loads((DEMO / "labs.json").read_text(encoding="utf-8"))
+LAB_PUBLIC = ("title", "spotlight", "view", "steps", "verify", "hints", "learned", "manual")
 PRACTICE_SUFFIX = "（練習）"   # 導覽練習存的範本名稱結尾，只有這種範本可以從導覽刪除
 UPLOADS = paths.UPLOADS
 TEMPLATES = paths.TEMPLATES
@@ -485,11 +488,61 @@ def _demo_template(name: str) -> dict:
     return data
 
 
+def _lab_samples(lab_id):
+    """實地練習：只認 labs.json 的 id。練習範本只回傳給頁面，不寫入 workspace/templates。"""
+    if not isinstance(lab_id, str) or lab_id not in LABS:
+        raise ValueError("不認得的練習")
+    lab = LABS[lab_id]
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    # 一個練習可以有好幾份 PDF（pdfs 與 doc_names 成對）；第一份是基準範例
+    pdfs = lab.get("pdfs") or [lab["pdf"]]
+    names = lab.get("doc_names") or [lab["doc_name"]]
+    docs, targets = [], []
+    try:
+        for pdf, name in zip(pdfs, names):
+            doc_id = uuid.uuid4().hex
+            target = UPLOADS / f"{doc_id}__{name}"
+            shutil.copyfile(DEMO / pdf, target)
+            targets.append(target)
+            docs.append({**_describe(doc_id, name), "demo": True})
+    except Exception:
+        for target in targets:
+            target.unlink(missing_ok=True)
+        raise
+    response = {"docs": docs, "demo": True, "recommended_template_id": None,
+                "lab": {"id": lab_id, **{key: lab[key] for key in LAB_PUBLIC if key in lab}}}
+    if lab.get("templates"):
+        # 解析 PDF 的練習：只回傳範本代號與名稱，解析時由伺服器端從 app 內附的檔案讀取
+        response["templates"] = [{"id": t["template_id"], "name": name}
+                                 for t, name in zip(_lab_run_templates(lab_id), lab["template_names"])]
+    else:
+        template = _demo_template(lab["template"])
+        template["name"] = lab["template_name"]
+        response["template"] = template
+    log.info("載入練習 lab=%s docs=%d", lab_id, len(docs))
+    return jsonify(response)
+
+
+def _lab_run_templates(lab_id: str) -> list[dict]:
+    """解析 PDF 的練習用的範本：用各自的練習 PDF 補齊影像圖塊，名稱依 labs.json。只在伺服器端用，不寫入 workspace。"""
+    lab = LABS[lab_id]
+    templates = []
+    for file, pdf, name in zip(lab["templates"], lab["pdfs"], lab["template_names"]):
+        template = tpl.load(DEMO / file)
+        with Document(DEMO / pdf) as reference:
+            tpl.finalize(template, reference)
+        template["name"] = name
+        templates.append(template)
+    return templates
+
+
 @app.post("/api/demo-samples")
 def demo_samples():
     """新手導覽：把 app 內附的示範 PDF 複製進上傳暫存，和一般上傳一樣檢查頁數與損壞。"""
     body = _json_body()
     mode = body.get("mode")
+    if mode == "lab":
+        return _lab_samples(body.get("lab"))
     if not isinstance(mode, str) or mode not in DEMO_SETS:
         raise ValueError("不認得的示範模式")
     spec = DEMO_SETS[mode]
@@ -585,7 +638,11 @@ def _forget_old_runs(demo: bool = False) -> None:
 def start_run():
     body = _json_body()
     # 示範解析：伺服器端固定用 app 內附的示範範本，不接受頁面傳來的範本內容
-    demo = body.get("demo") == "run"
+    lab_id = body.get("lab")
+    lab_run = body.get("demo") == "lab"
+    if lab_run and not (isinstance(lab_id, str) and LABS.get(lab_id, {}).get("templates")):
+        raise ValueError("不認得的練習")
+    demo = body.get("demo") == "run" or lab_run
     if not demo and not body.get("template_ids"):
         return _error("請先選擇範本")
     if not body.get("docs"):
@@ -595,7 +652,15 @@ def start_run():
     docs = list(dict.fromkeys(body["docs"]))
     for doc_id in docs:
         _doc_path(doc_id)  # 先確認檔案都在，避免背景工作中途才失敗
-    if demo:
+    if lab_run:
+        # 練習解析：範本只能從這個練習內附的幾個挑，不接受頁面傳來的內容
+        picked = body.get("template_ids")
+        if not isinstance(picked, list) or not picked or not all(isinstance(t, str) for t in picked):
+            return _error("請先選擇範本")
+        templates = [t for t in _lab_run_templates(lab_id) if t["template_id"] in picked]
+        if len(templates) != len(set(picked)):
+            raise ValueError("不認得的練習範本")
+    elif demo:
         templates = [tpl.load(DEMO / DEMO_RUN_TEMPLATE)]
     else:
         templates = [tpl.load(_template_path(template_id)) for template_id in body["template_ids"]]

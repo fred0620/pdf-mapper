@@ -1,0 +1,71 @@
+{
+ "schema_version": 1,
+ "template_id": "lab_pos_field",
+ "name": "lab pos field",
+ "fields": [
+  {
+   "id": "f1",
+   "name": "Supplier",
+   "kind": "key_value",
+   "page_rule": "first",
+   "ref_page": 0,
+   "label": {
+    "text": "Supplier",
+    "box": [
+     0.1,
+     0.178,
+     0.2,
+     0.201
+    ]
+   },
+   "value_box": [
+    0.28,
+    0.172,
+    0.9,
+    0.212
+   ],
+   "type": "text",
+   "required": true
+  }
+ ],
+ "tables": [],
+ "anchors": [
+  {
+   "id": "title",
+   "text": "Purchase Order",
+   "box": [
+    0.08,
+    0.04,
+    0.42,
+    0.1
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  },
+  {
+   "id": "ship",
+   "text": "Ship To",
+   "box": [
+    0.1,
+    0.238,
+    0.19,
+    0.261
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  },
+  {
+   "id": "total",
+   "text": "Total",
+   "box": [
+    0.6,
+    0.858,
+    0.66,
+    0.881
+   ],
+   "page_rule": "first",
+   "ref_page": 0
+  }
+ ],
+ "validations": []
+}

@@ -161,6 +161,23 @@
 - 測試用的範例掃描檔要畫中文，CI 映像檔沒有中文字型。專案內附 Noto Sans CJK TC 的子集（`tests/fonts`，OFL 授權，只含範例與測試用到的字，約 190 KB），每台電腦和 CI 畫出來的範例都一樣。不打包進發布包。
 - 沒有鏡像時的退路：在自己的電腦打包，手動建立 Release。
 
+## 進階功能的實地練習（labs）
+- 入口：進階功能說明卡的主要按鈕「實地練習」，原「帶我去設定」降為次要。沒有文件也能練。
+- 引擎與新手關卡共用：步驟資料、指令條、浮標、虛線靶框、推關規則都是同一套，導覽的 view 叫 `lab`（`guideView()`）。步驟放 `web/labs.js`，練習 PDF、練習範本、步驟 id、驗證方式與預期值放 `demo/labs.json`。
+- 最後一步不是自己宣告完成：呼叫既有的「用範例測試」，把試抓結果和 labs.json 的預期值比對（比對前 `\r\n` 轉 `\n`）。錯了指出哪一列差在哪裡，提示依 labs.json 的 `hints` 順序挑第一個符合的。最後一步不能跳過。
+- 練習不碰使用者的工作：開始前把文件、範本、undo、選取等整組收起來（記憶體，不是草稿），回到我的工作時原樣放回。練習中 `saveDraft` 不寫 localStorage，所以原本的草稿不會被蓋掉；練習範本不能存檔，不寫入 workspace/templates，不做正式解析，所以不佔紀錄。
+- `/api/demo-samples` 加 `mode: "lab"` 與 `lab`，id 以 labs.json 的鍵為白名單，未知 id 回 400，Host、Sec-Fetch-Site、Origin 檢查沿用。
+- 進度只在畫面上，不存檔；只有「做完過」的 id 記在 `prefs.labsDone`，說明選單顯示「練習過 ✓」。
+- 練習 PDF 用 `scripts/make_samples.py` 的 `build_labs()` 產生，只用英數字標題（字型子集缺字），底圖用灰階 PNG，十份合計要在 300 KB 內。
+- 批次 B（練習 4 到 7）的驗證方式：`labs.json` 的 `verify.kind` 新增 `field_flag`（欄位值要被標上指定原因，用在格式檢查），`column` 可加 `per_doc: true`（`expect` 改成每份一組，位置不固定的練習用）與 `rows_hint`（列數不符時的專屬提示）。`pdfs` 與 `doc_names` 成對時一個練習可載入多份 PDF，第一份是基準範例；`verify.done` 可自訂完成畫面的結果文字。
+- 表頭只讓表格上緣與分隔線跟著移動，範圍下緣不動，所以位置不固定的練習範本把範圍下緣拉到頁面底部；沒框表頭時第 2 份的表格會偏掉。
+- 練習 PDF 要用 `.gitignore` 的例外（`!app/pdfmapper/demo/labs/*.pdf`）才會進版控，批次 A 漏了這行，這次一併補上。
+- 批次 C（練習 8 到 10）：`verify.kind` 新增 `sum_check`（範本要有指定的「幾個欄位相加」檢查，且試抓後等號右邊的欄位被標上 `sum_mismatch`）、`output`（用 `outputColumns()` 算出的輸出欄名與順序要等於預期）、`run_templates`（解析結果每份用到預期的範本代號）。練習 8 的單據故意把 Total 寫錯（4,500 + 225 不等於 4,800），這樣才看得到檢查標出東西。
+- 輸出設定原本沒有預覽，批次 C 在面板下方加「乾淨資料預覽」：`outputColumns()` 是伺服器 `clean.output_columns` 的前端版本，規則相同（沒列出的欄預設輸出、欄名留空用原名、重名加 `_2`），練習 9 的驗證與預覽共用它。預覽只列資料欄，來源、頁碼與檢查狀態固定附上。
+- 數字檢查的「要相加的欄位」由複選 select 改成 checkbox 組（`#checkFields`），欄位順序依欄位清單，不依勾選先後。
+- 解析 PDF 的練習在解析分頁進行：`labs.json` 的 `view` 為 `run`（前端在 `LAB_RUN_VIEW`），`guideView()` 與 `guideVisible()` 改用 `labView()` 判斷練習所在的分頁。練習範本不是 workspace 的範本：`/api/demo-samples` 只回傳範本代號與名稱，`/api/runs` 加 `demo: "lab"` 與 `lab`，範本只能從該練習 `templates` 挑（用各自的練習 PDF 補圖塊），不接受頁面傳來的內容，不佔解析紀錄、匯出檔名加「示範_」。左邊範本清單在練習中換成練習範本，結束時 `runDocs`、`run`、`templateIds` 與其他狀態一起放回。
+- 取捨：練習 2 的標準做法是選「開頭文字」填 `ECCN:`，值到哪裡結束維持預設「這一行結束」；選做的「同一格拆成多欄」這一批沒做。
+
 ## 治理
 - 負責人、備援人、處理的資料與出問題時的做法記在 `OWNER.md`。
 - 刻意只留大架構：工具卡、發版檢查清單、維護手冊。不寫各公司不同的政策或登記流程，公司另有規定時以公司為準。
