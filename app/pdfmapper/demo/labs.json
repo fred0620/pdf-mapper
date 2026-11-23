@@ -290,5 +290,120 @@
     ],
     "learned": "明細列數不固定時，框住表格結束後緊接著的字（例如 Total），抓到那裡為止，合計不會混進明細。",
     "manual": "table-place"
+  },
+  "sum-fields": {
+    "title": "幾個欄位相加，對不上就提醒",
+    "spotlight": "feat-checks",
+    "pdf": "labs/lab_sum_fields.pdf",
+    "doc_name": "練習_訂單摘要.pdf",
+    "template": "labs/lab_sum_fields.json",
+    "template_name": "實地練習：數字檢查",
+    "steps": [
+      "lab-sum-fields-1",
+      "lab-sum-fields-2",
+      "lab-sum-fields-3",
+      "lab-sum-fields-4",
+      "lab-sum-fields-5"
+    ],
+    "verify": {
+      "kind": "sum_check",
+      "fields": [
+        "subtotal",
+        "tax"
+      ],
+      "equals": "total",
+      "reason": "sum_mismatch",
+      "done": "Subtotal 加 Tax 是 4,725，Total 寫 4,800，已被標記為加總不符"
+    },
+    "hints": [
+      {
+        "when": "other",
+        "text": "按這條檢查旁的「移除」，再加一條對的：勾 Subtotal 和 Tax，要等於 Total。"
+      }
+    ],
+    "learned": "金額有加總關係時加一條數字檢查：左邊加起來對不上右邊，解析時就標記給人看。",
+    "manual": "checks"
+  },
+  "output": {
+    "title": "只輸出需要的欄位",
+    "spotlight": "feat-output",
+    "pdf": "labs/lab_output.pdf",
+    "doc_name": "練習_客戶發票.pdf",
+    "template": "labs/lab_output.json",
+    "template_name": "實地練習：輸出設定",
+    "steps": [
+      "lab-output-1",
+      "lab-output-2",
+      "lab-output-3",
+      "lab-output-4",
+      "lab-output-5"
+    ],
+    "verify": {
+      "kind": "output",
+      "expect": [
+        "Doc No",
+        "Amount",
+        "Customer"
+      ],
+      "done": "乾淨資料預覽的欄位依序是 Doc No、Amount、Customer，Internal Note 沒有輸出"
+    },
+    "hints": [
+      {
+        "when": "extra",
+        "text": "不需要的欄位還在輸出。取消勾選 Internal Note。"
+      },
+      {
+        "when": "name",
+        "text": "欄名不對。Invoice No 的輸出欄名要填 Doc No。"
+      },
+      {
+        "when": "order",
+        "text": "順序不對。用箭頭把 Amount 移到 Customer 前面。"
+      }
+    ],
+    "learned": "只影響乾淨資料：取消勾選的欄不輸出，輸出欄名和順序都能調，檢查用 Excel 維持完整。",
+    "manual": "output"
+  },
+  "multi-template": {
+    "title": "一次丟不同格式的 PDF",
+    "spotlight": "run-multi-template",
+    "view": "run",
+    "pdfs": [
+      "labs/lab_run_a.pdf",
+      "labs/lab_run_b.pdf"
+    ],
+    "doc_names": [
+      "練習_發票.pdf",
+      "練習_裝箱單.pdf"
+    ],
+    "templates": [
+      "labs/lab_run_a.json",
+      "labs/lab_run_b.json"
+    ],
+    "template_names": [
+      "練習範本：發票",
+      "練習範本：裝箱單"
+    ],
+    "steps": [
+      "lab-multi-template-1",
+      "lab-multi-template-2",
+      "lab-multi-template-3"
+    ],
+    "verify": {
+      "kind": "run_templates",
+      "expect": [
+        "lab_run_a",
+        "lab_run_b"
+      ],
+      "done": "發票用了「發票」範本，裝箱單用了「裝箱單」範本"
+    },
+    "hints": [
+      {
+        "when": "other",
+        "text": "兩種格式各有範本，兩個範本都要勾選，再按一次「開始解析」。"
+      }
+    ],
+    "learned": "一批裡混了不同版面時，把可能的範本都勾起來，每份 PDF 會自動用最符合的範本解析。",
+    "manual": "multi-template"
   }
 }

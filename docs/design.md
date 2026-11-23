@@ -172,6 +172,10 @@
 - 批次 B（練習 4 到 7）的驗證方式：`labs.json` 的 `verify.kind` 新增 `field_flag`（欄位值要被標上指定原因，用在格式檢查），`column` 可加 `per_doc: true`（`expect` 改成每份一組，位置不固定的練習用）與 `rows_hint`（列數不符時的專屬提示）。`pdfs` 與 `doc_names` 成對時一個練習可載入多份 PDF，第一份是基準範例；`verify.done` 可自訂完成畫面的結果文字。
 - 表頭只讓表格上緣與分隔線跟著移動，範圍下緣不動，所以位置不固定的練習範本把範圍下緣拉到頁面底部；沒框表頭時第 2 份的表格會偏掉。
 - 練習 PDF 要用 `.gitignore` 的例外（`!app/pdfmapper/demo/labs/*.pdf`）才會進版控，批次 A 漏了這行，這次一併補上。
+- 批次 C（練習 8 到 10）：`verify.kind` 新增 `sum_check`（範本要有指定的「幾個欄位相加」檢查，且試抓後等號右邊的欄位被標上 `sum_mismatch`）、`output`（用 `outputColumns()` 算出的輸出欄名與順序要等於預期）、`run_templates`（解析結果每份用到預期的範本代號）。練習 8 的單據故意把 Total 寫錯（4,500 + 225 不等於 4,800），這樣才看得到檢查標出東西。
+- 輸出設定原本沒有預覽，批次 C 在面板下方加「乾淨資料預覽」：`outputColumns()` 是伺服器 `clean.output_columns` 的前端版本，規則相同（沒列出的欄預設輸出、欄名留空用原名、重名加 `_2`），練習 9 的驗證與預覽共用它。預覽只列資料欄，來源、頁碼與檢查狀態固定附上。
+- 數字檢查的「要相加的欄位」由複選 select 改成 checkbox 組（`#checkFields`），欄位順序依欄位清單，不依勾選先後。
+- 解析 PDF 的練習在解析分頁進行：`labs.json` 的 `view` 為 `run`（前端在 `LAB_RUN_VIEW`），`guideView()` 與 `guideVisible()` 改用 `labView()` 判斷練習所在的分頁。練習範本不是 workspace 的範本：`/api/demo-samples` 只回傳範本代號與名稱，`/api/runs` 加 `demo: "lab"` 與 `lab`，範本只能從該練習 `templates` 挑（用各自的練習 PDF 補圖塊），不接受頁面傳來的內容，不佔解析紀錄、匯出檔名加「示範_」。左邊範本清單在練習中換成練習範本，結束時 `runDocs`、`run`、`templateIds` 與其他狀態一起放回。
 - 取捨：練習 2 的標準做法是選「開頭文字」填 `ECCN:`，值到哪裡結束維持預設「這一行結束」；選做的「同一格拆成多欄」這一批沒做。
 
 ## 治理

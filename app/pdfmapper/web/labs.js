@@ -13,7 +13,13 @@ const LAB_STASH_KEYS = [
   "docs", "referenceId", "docId", "page", "zoom", "tool", "pending", "selected", "template", "undo",
   "savedTemplate", "savedId", "tests", "read", "checkDraft", "drawerOpen", "outputPanel", "columnPreview",
   "showcase", "tableTab", "openColumn", "fieldAdvancedOpen", "checksOpen", "recovery", "focusRef",
+  "runDocs", "run", "templateIds",
 ];
+// 練習在哪個分頁進行：多數在建立範本，解析 PDF 的練習在解析分頁（結果列在那裡）
+const LAB_RUN_VIEW = ["multi-template"];
+const labViewOf = (id) => (LAB_RUN_VIEW.includes(id) ? "run" : "train");
+const labView = () => labViewOf(state.guide.lab?.id);
+const labDocs = () => (labView() === "run" ? state.runDocs : state.docs);
 const labStash = () => ({
   view: state.view,
   state: Object.fromEntries(LAB_STASH_KEYS.map((key) => [key, state[key]])),
@@ -63,16 +69,56 @@ function labFieldFlag(v, result) {
   const hint = labHint(state.guide.lab.data.hints, pattern, v.value);
   return { status: "wrong", message: `${field.name} 抓到${labShow(field.value)}，沒有被標記。${hint}改好後再按一次測試。` };
 }
+/* 數字檢查：要有一條「幾個欄位相加」，欄位與要等於的對象都對，而且試抓後那個欄位真的被標記 */
+function labSumCheck(v, result) {
+  const names = (ids) => ids.map((id) => T().fields.find((f) => f.id === id)?.name || id).join(" 和 ");
+  const rule = T().validations.find((r) => r.type === "sum_fields");
+  if (!rule) return { status: "wrong", message: "還沒有加入「幾個欄位相加」的檢查。到「新增檢查」設定後再測試。" };
+  const same = rule.fields.length === v.fields.length && v.fields.every((id) => rule.fields.includes(id)) && rule.equals === v.equals;
+  if (!same) {
+    return { status: "wrong", message: `現在的檢查是 ${names(rule.fields)} = ${names([rule.equals])}。要相加的是 ${names(v.fields)}，要等於 ${names([v.equals])}。${labHint(state.guide.lab.data.hints, "x", "y")}` };
+  }
+  const field = result.fields.find((f) => f.id === v.equals);
+  if (field && (field.reasons || []).includes(v.reason)) return { status: "ok", values: [labNorm(field.value)] };
+  return { status: "stale", message: "檢查改過了，再按一次測試。" };
+}
+// 輸出設定：乾淨資料預覽的欄位（和實際輸出相同的規則）要依序等於預期
+function labOutput(v) {
+  const got = outputColumns(T().output?.fields, T().fields.map((f) => [f.id, f.name])).map((c) => c[1]);
+  if (got.join("\n") === v.expect.join("\n")) return { status: "ok", values: got };
+  // 找原因：多輸出了不要的欄、欄名不對、順序不對（欄名一樣只差順序）
+  const extra = got.some((name) => name === "Internal Note");
+  const sameSet = got.length === v.expect.length && v.expect.every((name) => got.includes(name));
+  const why = extra ? "extra" : sameSet ? "order" : "name";
+  const hint = (state.guide.lab.data.hints || []).find((h) => h.when === why)?.text || "";
+  return { status: "wrong", message: `預覽的欄位是 ${got.join("、") || "（空的）"}，預期 ${v.expect.join("、")}。${hint}改好後再按一次測試。` };
+}
+// 解析 PDF：每份 PDF 用的範本要是它自己的
+function labRunTemplates(v) {
+  const run = state.run;
+  if (!run?.finished || run.results.length < state.runDocs.length) return { status: "none" };
+  const names = Object.fromEntries((state.guide.lab.templates || []).map((t) => [t.id, t.name]));
+  for (let i = 0; i < state.runDocs.length; i += 1) {
+    const result = run.results.find((r) => r.doc_id === state.runDocs[i].id);
+    if (result?.template_id === v.expect[i]) continue;
+    const used = names[result?.template_id] || "沒有範本";
+    return { status: "wrong", message: `第 ${i + 1} 份（${state.runDocs[i].name}）用了「${used}」，預期「${names[v.expect[i]]}」。${labHint(state.guide.lab.data.hints, "x", "y")}` };
+  }
+  return { status: "ok", values: v.expect };
+}
 /* 用實際的試抓結果驗證：none 還沒試抓、stale 結果對不上現在的設定、wrong 有差異、ok 全對。
  * 比對前 \r\n 一律轉成 \n（Windows 與其他系統的換行不同）。 */
 function labCheck() {
   const L = state.guide.lab;
   if (!L) return null;
   const v = L.data.verify;
+  if (v.kind === "run_templates") return labRunTemplates(v);
   const docs = v.per_doc ? state.docs : state.docs.filter((d) => d.id === state.referenceId);
   const results = docs.map((d) => state.tests.find((r) => r.doc_id === d.id));
   if (!results.length || results.some((r) => !r)) return { status: "none" };
   if (v.kind === "field_flag") return labFieldFlag(v, results[0]);
+  if (v.kind === "sum_check") return labSumCheck(v, results[0]);
+  if (v.kind === "output") return labOutput(v);
   if (v.kind === "new_field") {
     const mine = labNewFields();
     if (!mine.length) return { status: "wrong", message: "還沒有你新增的欄位。用 P 在頁面右上角框住單號，再按測試。" };
@@ -132,6 +178,12 @@ function labColumnTarget(columnId, name, sel, label) {
 const labOpened = (columnId) => state.selected?.type === "table" && state.openColumn === columnId;
 // 最後一步：按測試，結果錯了就指回去改
 function labTestTarget() {
+  const kind = state.guide.lab?.data.verify.kind;
+  if (kind === "output") {  // 輸出設定的面板開著就直接在那裡改；關掉了才指回按鈕
+    if (labWrong()) return state.outputPanel || !rightShowsList() ? null : { sel: "#outputBtn", label: "回去改輸出設定" };
+    return state.selected ? null : { sel: "#testBtn", label: "按這裡試抓" };
+  }
+  if (kind === "sum_check" && labWrong()) return state.checksOpen || !rightShowsList() ? null : { sel: "#checksDetails > summary", label: "回去改檢查" };
   const back = state.guide.lab?.data.verify.kind === "field_flag" ? "first-child" : "last-child";  // 欄位排在清單最前面，表格最後面
   if (labWrong() && rightShowsList()) return { sel: `#right .items li:${back} button`, label: "回去改設定" };
   return state.selected ? null : { sel: "#testBtn", label: "按這裡試抓" };
@@ -142,6 +194,15 @@ function labVerifyStep(id, tip) {
     tip: () => labVerifyTip(tip), wrong: labWrong, target: labTestTarget, sticky: true, done: labVerified,
   };
 }
+// 數字檢查草稿勾了 Subtotal 和 Tax（或已加入檢查）
+const labDraftFields = () => {
+  const picked = state.checkDraft?.type === "sum_fields" ? state.checkDraft.fields || [] : [];
+  return (picked.length === 2 && picked.includes("subtotal") && picked.includes("tax")) || T().validations.length > 0;
+};
+const labOutputList = () => outputList(T().output?.fields, T().fields.map((f) => [f.id, f.name]));
+const labOutputEntry = (id) => labOutputList().find((e) => e.id === id);
+const labOutputIndex = (id) => labOutputList().findIndex((e) => e.id === id);
+const labPicked = () => (state.guide.lab?.templates || []).every((t) => state.templateIds.includes(t.id));
 const LAB_PO_BOX = [0.64, 0.05, 0.82, 0.076];   // 練習 PDF 右上角的單號
 
 const LAB_NEXT_BOX = [0.08, 0.22, 0.92, 0.6];     // 練習 PDF 第 2 頁的資料區
@@ -310,6 +371,99 @@ const LAB_STEPS = {
     },
     labVerifyStep("lab-header-3", "兩份的明細都要抓完整，結果分兩份列在下面。"),
   ],
+  "sum-fields": [
+    {
+      id: "lab-sum-fields-1", tab: "train", title: "展開「新增檢查」",
+      action: "點「新增檢查」展開", tip: "Subtotal 加 Tax 應該等於 Total，這份單據的 Total 是故意寫錯的。",
+      setup: () => { state.selected = null; state.outputPanel = false; renderRight(); renderOverlay(); },
+      target: () => (!rightShowsList() ? { sel: "#rightBackBtn", label: "回到欄位清單" } : state.checksOpen ? null : { sel: "#checksDetails > summary", label: "點這裡展開" }),
+      sticky: true, done: () => !!state.checksOpen,
+    },
+    {
+      id: "lab-sum-fields-2", tab: "train", title: "勾選要相加的欄位",
+      action: "「檢查方式」維持「幾個欄位相加」，勾 Subtotal 和 Tax", tip: "只勾要加起來的兩個，Total 是要比對的對象。",
+      target: () => (state.checksOpen ? { sel: "#checkFields", label: "勾 Subtotal 和 Tax" } : { sel: "#checksDetails > summary", label: "點這裡展開" }),
+      assist: () => ({
+        label: "幫我勾",
+        run: () => {
+          state.checksOpen = true;
+          state.checkDraft = { ...(state.checkDraft || {}), type: "sum_fields", fields: ["subtotal", "tax"] };
+          renderRight();
+        },
+      }),
+      sticky: true, done: () => labDraftFields(),
+    },
+    {
+      id: "lab-sum-fields-3", tab: "train", title: "選要等於哪一欄",
+      action: "「要等於」選 Total", tip: "加起來的結果要和單據上的 Total 比。",
+      target: () => (state.checksOpen ? { sel: "#checkTargetSelect", label: "選 Total" } : { sel: "#checksDetails > summary", label: "點這裡展開" }),
+      assist: () => ({
+        label: "幫我選",
+        run: () => {
+          state.checksOpen = true;
+          state.checkDraft = { ...(state.checkDraft || { type: "sum_fields", fields: [] }), target: "total" };
+          renderRight();
+        },
+      }),
+      sticky: true, done: () => state.checkDraft?.target === "total" || T().validations.length > 0,
+    },
+    {
+      id: "lab-sum-fields-4", tab: "train", title: "加入檢查",
+      action: "按「加入檢查」", tip: "加入後下面會列出這條檢查。",
+      target: () => (state.checksOpen ? { sel: "#checkAddBtn", label: "按加入檢查" } : { sel: "#checksDetails > summary", label: "點這裡展開" }),
+      sticky: true, done: () => T().validations.length > 0,
+    },
+    labVerifyStep("lab-sum-fields-5", "加總對不上的 Total 會被標記，結果列在下面。"),
+  ],
+  output: [
+    {
+      id: "lab-output-1", tab: "train", title: "打開輸出設定",
+      action: "按「設定輸出欄位」", tip: "輸出設定只影響乾淨資料，檢查用 Excel 維持完整。",
+      setup: () => { state.selected = null; state.outputPanel = false; renderRight(); renderOverlay(); },
+      target: () => (state.outputPanel ? null : { sel: "#outputBtn", label: "按這裡" }),
+      sticky: true, done: () => !!state.outputPanel,
+    },
+    {
+      id: "lab-output-2", tab: "train", title: "取消不需要的欄位",
+      action: "取消勾選 Internal Note", tip: "內部備註不用交給後續流程。",
+      target: () => (state.outputPanel ? { sel: 'input[aria-label="輸出 Internal Note"]', label: "取消勾選" } : { sel: "#outputBtn", label: "按這裡" }),
+      sticky: true, done: () => labOutputEntry("note")?.include === false,
+    },
+    {
+      id: "lab-output-3", tab: "train", title: "改輸出欄名",
+      action: "Invoice No 的輸出欄名填 Doc No", tip: "欄名留空就用原本的名稱。",
+      target: () => (state.outputPanel ? { sel: 'input[aria-label="Invoice No 的輸出欄名"]', label: "填 Doc No" } : { sel: "#outputBtn", label: "按這裡" }),
+      sticky: true, done: () => !!(labOutputEntry("invoice_no")?.name || "").trim(),
+    },
+    {
+      id: "lab-output-4", tab: "train", title: "調整順序",
+      action: "用箭頭把 Amount 移到 Customer 前面", tip: "按 Amount 旁的 ↑。",
+      target: () => (state.outputPanel ? { sel: 'button[aria-label="Amount 上移"]', label: "按 ↑" } : { sel: "#outputBtn", label: "按這裡" }),
+      sticky: true, done: () => labOutputIndex("amount") < labOutputIndex("customer"),
+    },
+    labVerifyStep("lab-output-5", "按測試後，面板下方的預覽就是乾淨資料的欄位。"),
+  ],
+  "multi-template": [
+    {
+      id: "lab-multi-template-1", tab: "run", title: "勾選兩個範本",
+      action: "把「練習範本：發票」和「練習範本：裝箱單」都勾起來", tip: "左邊兩份 PDF 的版面不一樣，各有一個範本。",
+      target: () => (labPicked() ? null : { sel: "#left .template-picks input:not(:checked)", label: "勾起來" }),
+      sticky: true, done: labPicked,
+    },
+    {
+      id: "lab-multi-template-2", tab: "run", title: "開始解析",
+      action: "按「開始解析」", tip: "每份 PDF 會比對定位點，自動用最符合的範本。",
+      target: () => (state.run ? null : { sel: "#runStartBtn", label: "按這裡" }),
+      sticky: true, done: () => !!state.run?.finished,
+    },
+    {
+      id: "lab-multi-template-3", tab: "run", title: "看每份用了哪個範本",
+      action: "看左邊每份 PDF 用的範本",
+      wrong: labWrong, tip: () => labVerifyTip("每份 PDF 下面會寫它用的範本。"),
+      target: () => (labWrong() ? { sel: labPicked() ? "#runStartBtn" : "#left .template-picks input:not(:checked)", label: labPicked() ? "再按一次開始解析" : "勾起來" } : null),
+      sticky: true, done: labVerified,
+    },
+  ],
   endmark: [
     labPlaceStep("lab-endmark-1"),
     {
@@ -362,13 +516,15 @@ function labCompletion() {
 /* ---------- 開始與離開 ---------- */
 // 有已載入的文件或未儲存的範本時先問（沿用新手導覽的作法），練習中再開另一個練習不用再問
 function requestLab(id, trigger) {
-  const busy = !state.guide.lab && (state.docs.length > 0 || hasUnsavedTemplate());
+  const run = labViewOf(id) === "run";
+  const busy = !state.guide.lab && (run ? state.runDocs.length > 0 : state.docs.length > 0 || hasUnsavedTemplate());
   if (!busy) { startLab(id); return; }
   const card = $("coachCard");
   if (typeof closeSpotlight === "function") closeSpotlight(false);
   showFloatCard(card, trigger, [
     h("h2", {}, "要開始實地練習嗎？"),
-    h("p", {}, "練習會暫時換成練習用的 PDF 與範本。按「回到我的工作」後，目前的檔案與範本（含還沒儲存的修改）會原樣接回來。"),
+    h("p", {}, run ? "練習會暫時換成練習用的 PDF 與範本。按「回到我的工作」後，目前的檔案與解析結果會原樣接回來。"
+      : "練習會暫時換成練習用的 PDF 與範本。按「回到我的工作」後，目前的檔案與範本（含還沒儲存的修改）會原樣接回來。"),
     h("div", { class: "card-actions" },
       h("button", { type: "button", class: "btn", id: "labCancelBtn", onclick: () => hideFloatCard(card) }, "取消"),
       h("button", {
@@ -391,19 +547,28 @@ async function startLabNow(id) {
     closeSpotlight(false);
     const previous = g.lab;
     // 再練一次：先收掉上一輪的練習 PDF；第一次練習才記下目前的工作
-    if (previous) for (const doc of state.docs) await api(`/api/docs/${doc.id}`, { method: "DELETE" }).catch(() => null);
+    if (previous) for (const doc of labDocs()) await api(`/api/docs/${doc.id}`, { method: "DELETE" }).catch(() => null);
     const stash = previous ? previous.stash : labStash();
-    if (state.view !== "train") setView("train");
+    const view = labViewOf(id);
+    if (state.view !== view) setView(view);
     const first = data.docs[0];
-    Object.assign(state, {
-      template: { ...blankTemplate(), ...data.template }, savedTemplate: null, savedId: null, undo: [],
-      docs: data.docs, referenceId: first.id, docId: first.id, page: 0, zoom: 1, tests: [],
-      tool: "select", pending: null, selected: null, read: null, checkDraft: null, drawerOpen: false,
-      outputPanel: false, columnPreview: null, showcase: false, openColumn: null, tableTab: "columns",
-      fieldAdvancedOpen: false, checksOpen: false, recovery: null, focusRef: null,
-    });
-    state.savedTemplate = comparable(T());  // 練習範本一開始不算「未儲存」
-    g.lab = { id, data: data.lab, stash, flags: {}, baseFieldIds: T().fields.map((f) => f.id), okValues: null };
+    if (view === "run") {
+      // 解析 PDF 的練習：練習用的 PDF 放在解析分頁的清單，範本選單換成練習範本（不寫入 workspace）
+      Object.assign(state, {
+        runDocs: data.docs, run: null, templateIds: [], docId: first.id, page: 0, zoom: 1, selected: null,
+        focusRef: null, drawerOpen: false,
+      });
+    } else {
+      Object.assign(state, {
+        template: { ...blankTemplate(), ...data.template }, savedTemplate: null, savedId: null, undo: [],
+        docs: data.docs, referenceId: first.id, docId: first.id, page: 0, zoom: 1, tests: [],
+        tool: "select", pending: null, selected: null, read: null, checkDraft: null, drawerOpen: false,
+        outputPanel: false, columnPreview: null, showcase: false, openColumn: null, tableTab: "columns",
+        fieldAdvancedOpen: false, checksOpen: false, recovery: null, focusRef: null,
+      });
+      state.savedTemplate = comparable(T());  // 練習範本一開始不算「未儲存」
+    }
+    g.lab = { id, data: data.lab, stash, flags: {}, baseFieldIds: T().fields.map((f) => f.id), okValues: null, templates: data.templates || null };
     Object.assign(state.onboarding, { labStep: null, labSkipped: [], labDone: false });
     Object.assign(g, { pinned: false, stripKey: "", stripStep: "", barKey: "", ghostKey: "[]", ghosts: [] });
     g.on.lab = true;
@@ -423,7 +588,7 @@ async function exitLabNow() {
   if (!lab) return;
   closeHelp(false);
   closeSpotlight(false);
-  for (const doc of state.docs) await api(`/api/docs/${doc.id}`, { method: "DELETE" }).catch(() => null);
+  for (const doc of labDocs()) await api(`/api/docs/${doc.id}`, { method: "DELETE" }).catch(() => null);
   g.lab = null;
   g.on.lab = false;
   g.demo.lab = false;

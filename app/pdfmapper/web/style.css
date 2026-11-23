@@ -682,3 +682,11 @@ details .form { margin-top: 10px; }
   .mission-enter, .guide-pulse, .float-enter, .help-dot { animation: none !important; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.check-fields { border: 0; margin: 0; padding: 0; display: grid; gap: 4px; }
+.check-fields legend { padding: 0; margin-bottom: 4px; font-size: 12px; color: var(--text-muted, inherit); }
+.check-field { display: flex; align-items: center; gap: 6px; }
+.output-preview { margin-top: 12px; }
+.output-preview-scroll { overflow-x: auto; }
+.output-preview-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.output-preview-table th, .output-preview-table td { border-bottom: 1px solid var(--border, #ddd); padding: 3px 6px; text-align: left; white-space: nowrap; }
+.output-preview-table td { min-height: 1em; }

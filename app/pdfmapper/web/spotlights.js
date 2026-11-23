@@ -118,8 +118,8 @@ function trainMissions() { return typeof TRAIN_MISSIONS === "undefined" ? [] : T
 function runMissions() { return typeof RUN_MISSIONS === "undefined" ? [] : RUN_MISSIONS; }
 const labMissions = () => (typeof LAB_STEPS === "undefined" || !state.guide.lab ? [] : LAB_STEPS[state.guide.lab.id] || []);
 const missionsFor = (view) => (view === "lab" ? labMissions() : view === "train" ? trainMissions() : runMissions());
-// 練習中而且在建立範本頁，導覽列與指令條用練習的步驟；離開建立範本頁就不顯示
-const guideView = () => (state.guide.lab && state.view === "train" ? "lab" : state.view);
+// 練習中而且在練習所在的分頁（多數是建立範本，解析 PDF 的練習在解析），導覽列與指令條用練習的步驟；離開那一頁就不顯示
+const guideView = () => (state.guide.lab && state.view === labView() ? "lab" : state.view);
 function allSpotlights() {
   const lists = [trainMissions(), runMissions()];
   if (typeof FEATURE_SPOTLIGHTS !== "undefined") lists.push(FEATURE_SPOTLIGHTS, RUN_SPOTLIGHTS);
@@ -132,7 +132,7 @@ const findSpotlight = (id) => allSpotlights().find((step) => step.id === id) || 
 /* ---------- 推關 ---------- */
 function guideVisible(view) {
   if (POPOUT) return false;
-  if (view === "lab") return !!state.guide.lab && state.guide.on.lab && state.view === "train";
+  if (view === "lab") return !!state.guide.lab && state.guide.on.lab && state.view === labView();
   return !state.onboarding.dismissed && state.guide.on[view];
 }
 function stepDone(view, step) {
@@ -313,7 +313,7 @@ function renderMissionStrip(info) {
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 function stepContent(info) {
   const { step, index, steps, view } = info;
-  if (view === "lab" && !state.docs.length) return labMissingDoc(step, index);
+  if (view === "lab" && !labDocs().length) return labMissingDoc(step, index);
   if (view === "train" && !state.docs.length) {
     // 重新整理後範例 PDF 不在了：先請使用者加入，或改用示範發票
     return {
@@ -864,7 +864,7 @@ function checkSubstep() {
     return step(4, "選要加總的表格欄", unnamed ? "通常是金額那一欄；欄1 是最左邊那欄，依序往右。" : "通常是金額那一欄。",
       { sel: "#checkColSelect", label: "選表格欄" });
   }
-  if (missing.includes("要相加的欄位")) return step(4, "選要相加的欄位", "按住 Ctrl 或 Command 可以複選。", { sel: "#checkFieldsSelect", label: "選要相加的欄位" });
+  if (missing.includes("要相加的欄位")) return step(4, "選要相加的欄位", "每個要加起來的欄位都勾起來。", { sel: "#checkFields", label: "勾選要相加的欄位" });
   if (missing.length) return step(5, "選要等於哪個欄位", "通常是單據上的合計或總金額。", { sel: "#checkTargetSelect", label: "選要等於" });
   return step(6, "按「加入檢查」", "加入後下面會列出這條檢查。", { sel: "#checkAddBtn", label: "按加入檢查" });
 }
@@ -1136,7 +1136,7 @@ const FEATURE_SPOTLIGHTS = [
       { raw: "1,200 + 3,500", rule: "= 總金額 4,700", value: "相符" },
       { raw: "1,200 + 3,500", rule: "= 總金額 4,800", value: "標記給人看" },
     ],
-    manual: "checks",
+    manual: "checks", lab: "sum-fields",
     setup: showList,
     target: "#checksDetails > summary",
   },
@@ -1144,7 +1144,7 @@ const FEATURE_SPOTLIGHTS = [
     id: "feat-output", tab: "train", group: "檢查與輸出", title: "只輸出需要的欄位、改欄名",
     when: "後續流程只要部分欄位，或欄名要對上其他系統。",
     body: "勾選要輸出的欄、改輸出欄名、調整順序；只影響乾淨資料，檢查用 Excel 維持完整。",
-    manual: "output",
+    manual: "output", lab: "output",
     setup: showList,
     target: "#outputBtn",
   },
@@ -1213,7 +1213,7 @@ const RUN_SPOTLIGHTS = [
     id: "run-multi-template", tab: "run", group: "瀏覽", title: "一次丟不同格式的 PDF",
     when: "一批裡混了報單和發票這類不同版面的單據。",
     body: "把可能的範本都勾起來，每份 PDF 會比對定位點，自動用最符合的範本解析。",
-    manual: "multi-template",
+    manual: "multi-template", lab: "multi-template",
     target: "#left .template-picks",
   },
   {

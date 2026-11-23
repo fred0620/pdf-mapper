@@ -682,12 +682,64 @@ def build_lab_end_marker(folder: Path, font_path=None):
     return _lab_table_template("lab_end_marker", anchors, [("first", 0, [0.08, 0.22, 0.92, 0.85])])
 
 
+# ---------- Batch C: summing fields, output settings, parsing two formats at once ----------
+def _lab_kv_field(field_id, name, y, number=False):
+    """A labelled value on a row whose label sits at (0.1, y) and whose value sits at x=0.3."""
+    return {"id": field_id, "name": name, "kind": "key_value", "page_rule": "first", "ref_page": 0,
+            "label": _lab_label(name, 0.1, y, round(0.0125 * len(name) + 0.03, 3)),
+            "value_box": [0.28, round(y - 0.008, 4), 0.9, round(y + 0.032, 4)],
+            "type": "number" if number else "text", "required": True}
+
+
+def _lab_form(path, title, rows, footer, font_path=None):
+    """A one page form: rows [(label, value)] one per 0.06 starting at y=0.18, footer text bottom right."""
+    titles = [(title, 0.08, 0.04, True), (footer, 0.6, 0.9, False)] + [(label, 0.1, 0.18 + i * 0.06, False) for i, (label, _v) in enumerate(rows)]
+    rules = [(0.08, 0.16 + i * 0.06, 0.92, 0.16 + i * 0.06) for i in range(len(rows) + 1)]
+    values = [(value, 0.3, 0.18 + i * 0.06 + 0.008) for i, (_l, value) in enumerate(rows)]
+    _lab_pdf(path, titles, rules, values, font_path)
+    anchors = [{"id": "title", "text": title, "box": [0.08, 0.04, 0.42, 0.1], "page_rule": "first", "ref_page": 0},
+               _lab_anchor("foot", footer, 0.6, 0.9, round(0.0125 * len(footer) + 0.03, 3))]
+    return anchors
+
+
+def build_lab_sum_fields(folder: Path, font_path=None):
+    rows = [("Subtotal", "4,500"), ("Tax", "225"), ("Total", "4,800")]  # 4,500 + 225 = 4,725, so the total is wrong on purpose
+    anchors = _lab_form(folder / "lab_sum_fields.pdf", "Order Summary", rows, "Confidential", font_path)
+    fields = [_lab_kv_field("subtotal", "Subtotal", 0.18, True), _lab_kv_field("tax", "Tax", 0.24, True),
+              _lab_kv_field("total", "Total", 0.30, True)]
+    return _lab_base("lab_sum_fields", "lab sum fields", anchors, fields=fields)
+
+
+def build_lab_output(folder: Path, font_path=None):
+    rows = [("Invoice No", "INV-2026-0501"), ("Customer", "Acme Trading Ltd"), ("Amount", "1,250"), ("Internal Note", "Handle with care")]
+    anchors = _lab_form(folder / "lab_output.pdf", "Customer Invoice", rows, "Confidential", font_path)
+    fields = [_lab_kv_field("invoice_no", "Invoice No", 0.18), _lab_kv_field("customer", "Customer", 0.24),
+              _lab_kv_field("amount", "Amount", 0.30, True), _lab_kv_field("note", "Internal Note", 0.36)]
+    return _lab_base("lab_output", "lab output", anchors, fields=fields)
+
+
+def build_lab_run_a(folder: Path, font_path=None):
+    rows = [("Invoice No", "INV-2026-0501"), ("Total Due", "4,725"), ("Bill To", "Acme Trading Ltd")]
+    anchors = _lab_form(folder / "lab_run_a.pdf", "Invoice", rows, "Thank you", font_path)
+    anchors.append(_lab_anchor("bill", "Bill To", 0.1, 0.30, 0.1))
+    fields = [_lab_kv_field("invoice_no", "Invoice No", 0.18), _lab_kv_field("total", "Total Due", 0.24, True)]
+    return _lab_base("lab_run_a", "lab run a", anchors, fields=fields)
+
+
+def build_lab_run_b(folder: Path, font_path=None):
+    titles, rules, values, right = _lab_table_page("Packing List", 0.17, 0.24, LAB_PARTS[:4], 1)
+    _lab_pdf(folder / "lab_run_b.pdf", titles, rules, values, font_path, right)
+    anchors = [{"id": "title", "text": "Packing List", "box": [0.08, 0.04, 0.42, 0.1], "page_rule": "first", "ref_page": 0},
+               _lab_anchor("conf", "Confidential", 0.6, 0.92, 0.14), _lab_anchor("acme", "Acme Corp", 0.08, 0.92, 0.12)]
+    return _lab_table_template("lab_run_b", anchors, [("first", 0, LAB_NEXT_BOX)])
+
+
 def build_labs(folder: Path, font_path=None) -> None:
-    """Write the lab PDFs and templates into app/pdfmapper/demo/labs/ (batches A and B); later labs are added here."""
+    """Write the lab PDFs and templates into app/pdfmapper/demo/labs/ (batches A, B and C)."""
     import json
     folder.mkdir(parents=True, exist_ok=True)
     for build in (build_lab_pos_field, build_lab_cell_extract, build_lab_regex, build_lab_format_check, build_lab_next_page,
-                  build_lab_header, build_lab_end_marker):
+                  build_lab_header, build_lab_end_marker, build_lab_sum_fields, build_lab_output, build_lab_run_a, build_lab_run_b):
         template = build(folder, font_path)
         name = template["template_id"]
         (folder / f"{name}.json").write_text(json.dumps(template, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

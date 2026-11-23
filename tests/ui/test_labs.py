@@ -281,3 +281,111 @@ def test_endmark_lab_total_row_not_counted(page):
     expect(page.locator("#right .marker-row", has_text="表尾標記：")).to_be_visible()
     page.locator("#testBtn").click()
     finish(page, "310、620、930、1,240、1,550")
+
+
+def test_sum_fields_lab_checkbox_wrong_then_right(page):
+    start_lab(page, "feat-checks")
+    expect(page.locator("#templateName")).to_have_value("實地練習：數字檢查")
+    expect(action(page)).to_contain_text("新增檢查")
+    page.locator("#checksDetails > summary").click()
+    expect(action(page)).to_contain_text("勾 Subtotal 和 Tax")
+    expect(page.locator("#checkFields input[type=checkbox]")).to_have_count(3)  # 一組 checkbox，不是複選清單
+    expect(page.locator("#checkFields")).to_have_class(re.compile(r"\bguide-pointed\b"))
+    page.get_by_role("checkbox", name="相加 Subtotal").check()  # 只勾一個就加入：做錯
+    page.locator("#checkTargetSelect").select_option(label="Total")
+    page.locator("#checkAddBtn").click()
+    expect(action(page)).to_contain_text("用 1 份範例測試")
+    page.locator("#testBtn").click()
+    expect(tip(page)).to_contain_text("現在的檢查是 Subtotal = Total", timeout=30_000)
+    expect(tip(page)).to_contain_text("要相加的是 Subtotal 和 Tax")
+    expect(tip(page)).to_have_class(re.compile(r"\bwrong\b"))
+    page.locator("#right .checks li button", has_text="移除").click()  # 移除後重做
+    page.locator("#checksDetails > summary").click() if not page.locator("#checkFields").is_visible() else None
+    page.get_by_role("checkbox", name="相加 Subtotal").check()
+    page.get_by_role("checkbox", name="相加 Tax").check()
+    page.locator("#checkTargetSelect").select_option(label="Total")
+    expect(page.locator("#checkPreview")).to_contain_text("「Subtotal」 + 「Tax」 = Total")
+    page.locator("#checkAddBtn").click()
+    page.locator("#testBtn").click()
+    finish(page, "Total 寫 4,800，已被標記為加總不符")
+    assert not [p for p in server.TEMPLATES.glob("*.json") if "lab" in p.name]
+
+
+def test_output_lab_preview_wrong_then_right(page):
+    start_lab(page, "feat-output")
+    expect(page.locator("#templateName")).to_have_value("實地練習：輸出設定")
+    expect(action(page)).to_contain_text("設定輸出欄位")
+    page.locator("#outputBtn").click()
+    expect(page.locator("#outputPreview")).to_be_visible()
+    expect(page.locator("#outputPreview")).to_contain_text("按「測試」後會顯示範例的值")
+    expect(action(page)).to_contain_text("取消勾選 Internal Note")
+    page.get_by_role("checkbox", name="輸出 Internal Note").uncheck()
+    expect(page.locator("#outputPreview th")).to_have_text(["Invoice No", "Customer", "Amount"])  # 預覽即時更新
+    expect(action(page)).to_contain_text("Doc No")
+    page.get_by_label("Invoice No 的輸出欄名").fill("Doc Number")  # 欄名寫錯
+    expect(action(page)).to_contain_text("移到 Customer 前面")
+    page.get_by_role("button", name="Amount 上移").click()
+    expect(page.locator("#outputPreview th")).to_have_text(["Doc Number", "Amount", "Customer"])
+    expect(action(page)).to_contain_text("用 1 份範例測試")
+    page.locator("#testBtn").click()
+    expect(tip(page)).to_contain_text("預期 Doc No、Amount、Customer", timeout=30_000)
+    expect(tip(page)).to_contain_text("欄名不對")
+    expect(tip(page)).to_have_class(re.compile(r"\bwrong\b"))
+    expect(page.locator("#outputPreview td")).to_have_text(["INV-2026-0501", "1,250", "Acme Trading Ltd"])
+    page.get_by_label("Invoice No 的輸出欄名").fill("Doc No")
+    page.locator("#testBtn").click()
+    finish(page, "Doc No、Amount、Customer，Internal Note 沒有輸出")
+    expect(page.locator("#outputPreview th")).to_have_text(["Doc No", "Amount", "Customer"])
+
+
+def test_multi_template_lab_in_run_view(page):
+    start_lab(page, "run-multi-template")
+    expect(page.locator("#tabRun")).to_have_attribute("aria-current", "page")
+    expect(page.locator("#guideBar .guide-name")).to_have_text("實地練習")
+    picks = page.locator("#left .template-picks label")
+    expect(picks).to_have_text(["練習範本：發票", "練習範本：裝箱單"])  # 只有練習範本，不是 workspace 裡的
+    expect(page.locator("#left .docs li")).to_have_count(2)
+    expect(action(page)).to_contain_text("都勾起來")
+    picks.nth(0).locator("input").check()
+    picks.nth(1).locator("input").check()
+    expect(action(page)).to_contain_text("開始解析")
+    picks.nth(1).locator("input").uncheck()  # 少勾一個：裝箱單會被硬套發票範本
+    page.locator("#runStartBtn").click()
+    expect(tip(page)).to_contain_text("第 2 份（練習_裝箱單.pdf）用了「練習範本：發票」", timeout=60_000)
+    expect(tip(page)).to_have_class(re.compile(r"\bwrong\b"))
+    expect(page.locator("#left")).to_contain_text("練習解析不佔解析紀錄")
+    picks.nth(1).locator("input").check()
+    expect(page.locator("#runStartBtn")).to_be_enabled(timeout=60_000)
+    page.locator("#runStartBtn").click()
+    finish(page, "發票用了「發票」範本，裝箱單用了「裝箱單」範本")
+    assert not [p for p in server.TEMPLATES.glob("*.json") if "lab" in p.name]
+    page.locator("#labBackBtn").click()
+    expect(page.locator("#guideBar")).to_be_hidden()
+    expect(page.locator("#tabTrain")).to_have_attribute("aria-current", "page")  # 回到練習前的分頁
+    page.locator("#helpBtn").click()
+    expect(page.locator('#helpPopover [data-spotlight="run-multi-template"]')).to_contain_text("練習過 ✓")
+
+
+def test_multi_template_lab_restores_the_parse_state(page, samples):
+    from helpers import run_parse
+
+    run_parse(page, samples, ["sample_1_standard.pdf"])
+    before = page.locator("#left .docs li").inner_text()
+    checked = page.locator("#left .template-picks input:checked").count()
+    assert checked == 1
+    page.locator("#helpBtn").click()
+    page.locator('#helpPopover [data-spotlight="run-multi-template"]').click()
+    page.locator("#spotLabBtn").click()
+    expect(page.locator("#labConfirmBtn")).to_be_visible()  # 有已載入的文件，先詢問
+    page.locator("#labConfirmBtn").click()
+    expect(page.locator("#guideBar .guide-name")).to_have_text("實地練習", timeout=30_000)
+    expect(page.locator("#left .docs li")).to_have_count(2)
+    expect(page.locator("#left .template-picks input:checked")).to_have_count(0)
+    page.locator("#labExitBtn").click()
+    expect(page.locator("#guideBar")).to_be_hidden()
+    expect(page.locator("#tabRun")).to_have_attribute("aria-current", "page")
+    expect(page.locator("#left .docs li")).to_have_count(1)
+    assert page.locator("#left .docs li").inner_text() == before  # 原本的解析結果還在
+    expect(page.locator("#left .template-picks input:checked")).to_have_count(1)
+    expect(page.locator("#drawer td[data-ref]").first).to_be_visible()
+    expect(page.locator("#runStartBtn")).to_be_enabled()
