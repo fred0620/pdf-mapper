@@ -248,8 +248,7 @@ def test_second_launch_answer_no(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda _prompt="": "n")
     opened: list[str] = []
     monkeypatch.setattr(server.webbrowser, "open", opened.append)
-    shutdown_called = False
-    monkeypatch.setattr(server, "_request_shutdown", lambda *_args: (shutdown_called := True))  # noqa: F841
+    monkeypatch.setattr(server, "_request_shutdown", lambda *_args: pytest.fail("回答 N 不應呼叫 shutdown"))
 
     proceed = server._handle_running(8765, {"app": "pdfmapper", "version": "0.4.0", "build": "old"}, True)
     assert proceed is False
