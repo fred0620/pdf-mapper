@@ -1029,7 +1029,7 @@ function fieldPanel(field) {
       field.continuation ? h("p", { class: "note" }, `接續範圍在第 ${field.continuation.ref_page + 1} 頁，接上時會標記給人確認。`) : null),
     h("details", {
       id: "fieldAdvanced", open: !!state.fieldAdvancedOpen, ontoggle: (e) => { state.fieldAdvancedOpen = e.target.open; },
-    }, h("summary", {}, "進階設定"), h("div", { class: "form" },
+    }, h("summary", { onclick: (e) => { state.fieldAdvancedOpen = !e.currentTarget.parentElement.open; } }, "進階設定"), h("div", { class: "form" },
       field.kind === "key_value" ? h("label", {}, "比對用的標題文字", h("input", {
         type: "text", value: field.label.text,
         oninput: (e) => { field.label.text = e.target.value; delete field.label.text_center; saveDraft(); },
@@ -1417,7 +1417,10 @@ function checksPanel() {
     h("details", {
       id: "checksDetails", open: !!state.checksOpen,
       ontoggle: (e) => { state.checksOpen = e.target.open; scheduleGuide(); },
-    }, h("summary", {}, "新增檢查"), form),
+    }, h("summary", {
+      // toggle 事件是非同步的；點下去就先記住，避免事件送達前右欄重畫時又收起來
+      onclick: (e) => { state.checksOpen = !e.currentTarget.parentElement.open; },
+    }, "新增檢查"), form),
   ];
 }
 /* 輸出設定：沒列在設定裡的欄位預設輸出，新增的欄位不會漏掉 */
