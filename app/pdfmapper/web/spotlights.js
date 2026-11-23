@@ -221,6 +221,8 @@ function renderGuide() {
   if (guideVisible(view)) info = evaluateGuide(view);
   renderGuideBar(info);
   renderMissionStrip(info);
+  // 導覽指令條顯示時收起工具列的提示列，避免兩條藍色說明疊在一起
+  $("hint").classList.toggle("covered", !$("missionStrip").hidden);
   const ghosts = info?.step?.ghost && g.demo[view] ? safeGhosts(info.step) : [];
   const key = JSON.stringify(ghosts);
   if (key !== g.ghostKey) {
@@ -469,18 +471,22 @@ function positionPointerToTarget(el, label, where = visibility(el)) {
     dir = where;
     left = r.left + r.width / 2 - w / 2;
     top = where === "up" ? Math.max(parent.top, 0) + 8 : Math.min(parent.bottom, innerHeight) - ph - 8;
-  } else if (r.right + POINTER_GAP + w < innerWidth - 8 && (innerWidth - r.right >= r.left || r.left - POINTER_GAP - w < 8)) {
-    dir = "left";
-    left = r.right + POINTER_GAP;
-    top = r.top + r.height / 2 - ph / 2;
-  } else if (r.left - POINTER_GAP - w > 8) {
-    dir = "right";
-    left = r.left - POINTER_GAP - w;
-    top = r.top + r.height / 2 - ph / 2;
   } else {
-    dir = "down";
-    left = r.left + r.width / 2 - w / 2;
-    top = r.top - ph - 10;
+    // 依序試右、左、下、上，選第一個放得下、又不蓋到導覽列與指令條的位置
+    const mid = r.top + r.height / 2 - ph / 2;
+    const center = r.left + r.width / 2 - w / 2;
+    const options = [
+      { dir: "left", left: r.right + POINTER_GAP, top: mid },
+      { dir: "right", left: r.left - POINTER_GAP - w, top: mid },
+      { dir: "up", left: center, top: r.bottom + 10 },
+      { dir: "down", left: center, top: r.top - ph - 10 },
+    ].map((o) => ({ ...o, left: clamp(o.left, 8, innerWidth - w - 8) }));
+    const avoid = ["guideBar", "missionStrip"].map((id) => $(id)).filter((el) => el && !el.hidden).map((el) => el.getBoundingClientRect());
+    const overlaps = (o) => avoid.some((a) => o.left < a.right && o.left + w > a.left && o.top < a.bottom && o.top + ph > a.top);
+    const fits = (o) => o.top >= 8 && o.top + ph <= innerHeight - 8
+      && (o.dir !== "left" || r.right + POINTER_GAP + w <= innerWidth - 8) && (o.dir !== "right" || r.left - POINTER_GAP - w >= 8);
+    const pick = options.find((o) => fits(o) && !overlaps(o)) || options.find(fits) || options[0];
+    ({ dir, left, top } = pick);
   }
   pointer.dataset.dir = dir;
   pointer.style.left = `${clamp(left, 8, innerWidth - w - 8)}px`;
@@ -599,6 +605,46 @@ function keyValueGhost(name) {
   if (state.pending?.label) return [{ page: f.ref_page, box: f.value_box, label: "再框住它的值" }];
   return [{ page: f.ref_page, box: f.label.box, label: `按 K，框住「${name}」` }];
 }
+/* 示範發票的表格命名：表格叫「明細」，切好的直欄用 PDF 上對應的標題命名（序號、品項、數量、金額）。
+ * 對應方式是看直欄的中心落在示範範本哪一欄；示範發票的「品項」標題印在序號欄上方，直接讀標題列文字
+ * 會把序號欄叫成品項，所以用示範範本裡已核對過的欄名。對不到、或一個標題對到兩欄時保留「欄N」。
+ * 只改還是「欄N」或之前自動命名的欄，使用者自己改過的名字不動。非示範模式完全不經過這裡。 */
+const autoNamedColumns = new WeakSet();
+function demoTableName() {
+  return demoMode("train") && !T().tables.some((t) => t.name === "明細") ? "明細" : null;
+}
+function nameColumnsFromGuide(table) {
+  const guide = guideTable();
+  if (!guide || !demoMode("train")) return;
+  const g = guide.regions[0].dividers;
+  const region = table.regions[0];
+  const used = new Set();
+  for (let band = 0; band < region.dividers.length - 1; band += 1) {
+    const columns = table.columns.filter((c) => c.band === band);
+    if (columns.length !== 1) continue;
+    const column = columns[0];
+    const renamable = /^欄\d+$/.test(column.name) || autoNamedColumns.has(column);
+    if (!renamable) continue;
+    const x = (region.dividers[band] + region.dividers[band + 1]) / 2;
+    const guideBand = g.findIndex((d, i) => i < g.length - 1 && d <= x && x < g[i + 1]);
+    const name = guide.columns.find((c) => c.band === guideBand)?.name;
+    if (!name || used.has(guideBand)) {
+      if (autoNamedColumns.has(column)) { column.name = `欄${band + 1}`; autoNamedColumns.delete(column); }
+      continue;
+    }
+    used.add(guideBand);
+    column.name = name;
+    autoNamedColumns.add(column);
+  }
+}
+// 欄名還是「欄N」時，指令加上位置說明，例如「欄4」（最右邊那欄）
+function columnPlace(table, column) {
+  if (!/^欄\d+$/.test(column.name)) return "";
+  const last = table.regions[0].dividers.length - 2;
+  if (column.band === 0) return "（最左邊那欄）";
+  if (column.band === last) return "（最右邊那欄）";
+  return `（左邊數來第 ${column.band + 1} 欄）`;
+}
 const toolAssist = (tool, label) => () => (state.tool === tool || !editingReference() ? null : { label, run: () => setTool(tool) });
 // 定位點：欄位標題也算。至少 3 個，而且至少 2 個中心落在頁面不同象限（分散才對得準）
 function anchorSpread() {
@@ -671,7 +717,10 @@ const TRAIN_MISSIONS = [
   },
   {
     id: "train-5", tab: "train", title: "判斷新的一列",
-    action: "選第 1 欄當判斷新列的欄",
+    action: () => {
+      const first = firstTable()?.columns[0];
+      return first && !/^欄\d+$/.test(first.name) ? `選「${first.name}」當判斷新列的欄` : "選第 1 欄當判斷新列的欄";
+    },
     tip: "通常是項次或序號，每一列都有、而且只出現一次。",
     setup() {
       const t0 = firstTable();
@@ -682,7 +731,7 @@ const TRAIN_MISSIONS = [
       renderRight();
       renderOverlay();
     },
-    target: () => (document.querySelector("#keyColumn") ? { sel: "#keyColumn", label: "選第 1 欄" }
+    target: () => (document.querySelector("#keyColumn") ? { sel: "#keyColumn", label: `選${firstTable()?.columns[0]?.name || "第 1 欄"}` }
       : firstTable() ? { sel: "#overlay .box.table", label: "點表格打開設定" } : null),
     done: () => T().tables.some((t) => !!t.key_column),
   },
@@ -738,7 +787,7 @@ function expectedCheck() {
   const region = t0.regions[0];
   const mine = region.dividers.findIndex((d, i) => i < region.dividers.length - 1 && d <= x && x < region.dividers[i + 1]);
   const column = t0.columns.find((c) => c.band === mine) || t0.columns[t0.columns.length - 1];
-  return { table: t0, column, field, colLabel: `${t0.name}：${column.name}` };
+  return { table: t0, column, field, colLabel: `${t0.name}：${column.name}`, place: columnPlace(t0, column) };
 }
 function fillExpectedCheck() {
   const want = expectedCheck();
@@ -770,10 +819,10 @@ function checkSubstep() {
       return step(3, "檢查方式選「表格某欄加總」", wrong ? "「比對總頁數」不對，明細金額要加總。" : "明細的金額要加起來，所以選表格某欄加總。",
         { sel: "#checkTypeSelect", label: "選表格某欄加總" }, wrong);
     }
-    if (!draft.column) return step(4, `表格欄選「${want.colLabel}」`, "要加總的是金額那一欄。", { sel: "#checkColSelect", label: `選${want.column.name}` });
+    if (!draft.column) return step(4, `表格欄選「${want.colLabel}」${want.place}`, "要加總的是金額那一欄。", { sel: "#checkColSelect", label: `選${want.column.name}` });
     if (draft.table !== want.table.id || draft.column !== want.column.id) {
       const picked = T().tables.find((t) => t.id === draft.table)?.columns.find((c) => c.id === draft.column)?.name || "?";
-      return step(4, `表格欄選「${want.colLabel}」`, `表格欄選的是「${picked}」，要選「${want.column.name}」。`,
+      return step(4, `表格欄選「${want.colLabel}」${want.place}`, `表格欄選的是「${picked}」，要選「${want.column.name}」${want.place}。`,
         { sel: "#checkColSelect", label: `選${want.column.name}` }, true);
     }
     if (!draft.target) return step(5, `要等於選「${want.field.name}」`, "加總要和單據上的總金額一樣。", { sel: "#checkTargetSelect", label: `選${want.field.name}` });
@@ -789,7 +838,11 @@ function checkSubstep() {
   if (!state.checkTypeTouched && missing.length === checkDraftMissing({ type: draft.type, fields: [] }).length && draft.type === "sum_fields") {
     return step(3, "選檢查方式", "表格欄加總、幾個欄位相加，或比對總頁數。", typeTarget);
   }
-  if (missing.includes("表格欄")) return step(4, "選要加總的表格欄", "通常是金額那一欄。", { sel: "#checkColSelect", label: "選表格欄" });
+  if (missing.includes("表格欄")) {
+    const unnamed = T().tables.some((t) => t.columns.some((c) => /^欄\d+$/.test(c.name)));
+    return step(4, "選要加總的表格欄", unnamed ? "通常是金額那一欄；欄1 是最左邊那欄，依序往右。" : "通常是金額那一欄。",
+      { sel: "#checkColSelect", label: "選表格欄" });
+  }
   if (missing.includes("要相加的欄位")) return step(4, "選要相加的欄位", "按住 Ctrl 或 Command 可以複選。", { sel: "#checkFieldsSelect", label: "選要相加的欄位" });
   if (missing.length) return step(5, "選要等於哪個欄位", "通常是單據上的合計或總金額。", { sel: "#checkTargetSelect", label: "選要等於" });
   return step(6, "按「加入檢查」", "加入後下面會列出這條檢查。", { sel: "#checkAddBtn", label: "按加入檢查" });

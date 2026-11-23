@@ -256,7 +256,8 @@ const onBox = guard(async (box) => {
   if (tool === "table") {
     snapshot();
     const table = {
-      id: nextId("t", T().tables), name: `表格${T().tables.length + 1}`,
+      // 示範發票：表格直接叫「明細」，看得懂是哪一塊；一般模式維持原本的命名
+      id: nextId("t", T().tables), name: demoTableName() || `表格${T().tables.length + 1}`,
       columns: [{ id: "c1", name: "欄1", band: 0 }], key_column: null, key_position: "auto", required: true,
       regions: [{ page_rule: defaultRule(), ref_page: state.page, box, dividers: [box[0], box[2]] }],
     };
@@ -361,6 +362,7 @@ function addDivider(table, region, x) {
   for (const column of table.columns) if (column.band >= index) column.band += 1;
   table.columns.push({ id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band: index });
   table.columns.sort((a, b) => a.band - b.band);
+  if (state.guide.demo.train) nameColumnsFromGuide(table);  // 只在示範發票：直欄用 PDF 上的標題命名
   renderAll();
 }
 function removeDivider(table, index) {
@@ -666,7 +668,7 @@ function renderHint() {
     if (!isReference()) text = "這份是測試範例。切回基準範例才能標注。";
     else if (state.tool === "kv") text = state.pending
       ? `已記下「${state.pending.label.text || "標題"}」。再框住它的數值範圍，框大一點沒關係。按 Esc 取消。`
-      : "先框住欄位名稱，例如「報單號碼」。";
+      : state.guide.demo.train ? "先框住欄位名稱，例如「發票號碼」。" : "先框住欄位名稱，也就是值旁邊每份都一樣的標題。";
     else if (state.tool === "pos") text = "框住數值的範圍。這類欄位沒有標題，靠定位點找位置。";
     else if (state.tool === "table") text = "框住表格的資料區，不含標題列。";
     else if (state.tool === "region") text = `框住這一頁的資料區，第 ${state.page + 1} 頁起會用這個範圍。`;

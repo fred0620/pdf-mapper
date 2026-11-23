@@ -30,6 +30,10 @@ def no_console_errors(context):
     assert not errors, f"console error：{errors}"
 
 
+def overlaps(a, b) -> bool:
+    return a["x"] < b["x"] + b["width"] and b["x"] < a["x"] + a["width"] and a["y"] < b["y"] + b["height"] and b["y"] < a["y"] + a["height"]
+
+
 def strip(page):
     return page.locator("#missionStrip")
 
@@ -47,6 +51,9 @@ def test_train_journey_with_demo_invoice(page):
     expect_step(page, 1, "在左欄輸入範本名稱")
     expect(page.locator("#missionPointer")).to_be_visible()
     expect(page.locator("#templateName")).to_have_class(TARGET)
+    pointer = page.locator("#missionPointer").bounding_box()
+    for area in ("#guideBar", "#missionStrip"):  # 浮標不蓋到導覽列與指令條
+        assert not overlaps(pointer, page.locator(area).bounding_box()), area
 
     strip(page).get_by_role("button", name="幫我填").click()
     expect(page.locator("#templateName")).to_have_value("商業發票（練習）")
@@ -59,6 +66,8 @@ def test_train_journey_with_demo_invoice(page):
     assert visible_emphasis(page) <= 1
 
     page.keyboard.press("k")
+    expect(page.locator("#hint")).to_be_hidden()  # 指令條顯示時，工具列的提示列收起來，不疊兩條說明
+    assert "例如「發票號碼」" in page.locator("#hint").text_content()  # 示範模式舉發票的欄位
     draw_box(page, INVOICE_NO[0])
     expect(ghost.locator(".guide-ghost-tag")).to_contain_text("再框住它的值")  # 記下標題後切到值框
     rect = ghost.bounding_box()
@@ -83,7 +92,11 @@ def test_train_journey_with_demo_invoice(page):
     for remaining, x in zip((2, 1, 0), ITEM_DIVIDERS):
         click_at(page, x, 0.6)
         expect(lines).to_have_count(remaining)  # 每切一條就隱藏那一條
-    expect_step(page, 5, "判斷新列")
+    expect_step(page, 5, "選「序號」當判斷新列的欄")
+    # 示範發票：表格叫「明細」，直欄用 PDF 上的標題命名
+    expect(page.locator("#itemName")).to_have_value("明細")
+    names = page.locator("#right .column-row input").evaluate_all("nodes => nodes.map(n => n.value)")
+    assert names == ["序號", "品項", "數量", "金額"], names
     expect(page.locator("#keyColumn")).to_have_class(TARGET)
     assert visible_emphasis(page) <= 1
 
@@ -110,21 +123,24 @@ def test_train_journey_with_demo_invoice(page):
     expect(page.locator("#checkTypeSelect")).to_have_class(TARGET)
     expect(page.locator("#checksDetails .check-intro")).to_have_text("解析時把左邊加起來和右邊比，對不上就標記給人看。")
     page.locator("#checkTypeSelect").select_option("page_count")
-    expect(strip(page).locator(".mission-tip.wrong")).to_contain_text("「比對總頁數」不對")
+    wrong = strip(page).locator(".mission-tip.wrong")
+    expect(wrong).to_contain_text("「比對總頁數」不對")
+    color = wrong.evaluate("n => getComputedStyle(n).color")
+    assert color == "rgb(180, 83, 9)", color  # 選錯用警告色，不用代表缺值的紅色
     page.locator("#checkTypeSelect").select_option("sum_column")
     expect(badge).to_have_text("7 4/6")
-    expect_step(page, 7, "表格欄選「表格1：欄4」")
+    expect_step(page, 7, "表格欄選「明細：金額」")
     expect(page.locator("#checkColSelect")).to_have_class(TARGET)
     add = page.locator("#checkAddBtn")
     expect(add).to_be_disabled()  # 缺欄時不能按，title 說明原因
     expect(add).to_have_attribute("title", re.compile("還缺：表格欄、要等於"))
     expect(page.locator("#checkPreview")).to_have_text("還缺：表格欄、要等於")
-    page.locator("#checkColSelect").select_option(label="表格1：欄1")
-    expect(strip(page).locator(".mission-tip.wrong")).to_contain_text("表格欄選的是「欄1」，要選「欄4」")
+    page.locator("#checkColSelect").select_option(label="明細：序號")
+    expect(strip(page).locator(".mission-tip.wrong")).to_contain_text("表格欄選的是「序號」，要選「金額」")
     strip(page).get_by_role("button", name="幫我帶入").click()
     expect(badge).to_have_text("7 6/6")
     expect(page.locator("#checkColSelect")).to_have_value(re.compile(r"\|c4$"))
-    expect(page.locator("#checkPreview")).to_have_text("表格1「欄4」加總 = 總金額（差 1 以內算通過）")
+    expect(page.locator("#checkPreview")).to_have_text("明細「金額」加總 = 總金額（差 1 以內算通過）")
     expect(add).to_be_enabled()
     expect(add).to_have_class(TARGET)
     add.click()

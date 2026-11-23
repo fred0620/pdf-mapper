@@ -135,7 +135,7 @@ button { cursor: pointer; }
   background: var(--accent-soft); color: var(--accent-text); font-size: 13px; font-weight: 500;
   border-bottom: 1px solid var(--line);
 }
-.hint:empty { display: none; }
+.hint:empty, .hint.covered { display: none; }
 
 /* 文件 */
 .stage { flex: 1; min-height: 0; overflow: auto; padding: 24px; position: relative; }
@@ -526,7 +526,9 @@ details .form { margin-top: 10px; }
 .mission-text p { margin: 0; }
 .mission-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-strong); }
 .mission-tip, .mission-note { font-size: 12.5px; font-weight: 400; color: var(--text-strong); }
-.mission-tip.wrong { color: var(--danger-text); }
+/* 選錯提示用警告色（紅色在這個工具代表缺值） */
+.mission-tip.wrong { color: var(--warning-text); }
+.mission-tip.wrong::before { content: "⚠ "; }
 .mission-assist { min-height: 24px; padding: 0 8px; font-size: 12.5px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--mission-ring); }
 .mission-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .mission-controls .btn { font-size: 12.5px; }

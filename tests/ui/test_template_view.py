@@ -48,3 +48,22 @@ def test_check_form_explains_previews_and_blocks_incomplete(page, samples):
     add.click()
     expect(page.locator("#right .checks li")).to_have_count(before + 1)
     expect(page.locator("#right .checks li").last).to_contain_text("品項明細「金額」加總 = 總金額")
+
+
+def test_plain_mode_keeps_generic_names_and_hint(page, samples):
+    """不是示範發票時：提示列照常顯示、舉例不綁特定單據，表格與直欄維持原本的命名。"""
+    from helpers import click_at, draw_box
+
+    folder, _ = samples
+    page.set_input_files("#filePicker", str(folder / "sample_6_invoice.pdf"))
+    page.wait_for_selector(".docs li")
+    page.keyboard.press("k")
+    expect(page.locator("#hint")).to_have_text("先框住欄位名稱，也就是值旁邊每份都一樣的標題。")
+    page.get_by_role("button", name="縮小").click()  # 整頁放進畫面，才框得到下方的表格
+    page.get_by_role("button", name="縮小").click()
+    page.keyboard.press("t")
+    draw_box(page, [0.08, 0.47, 0.92, 0.8])
+    click_at(page, 0.58, 0.6)
+    expect(page.locator("#itemName")).to_have_value("表格1")
+    names = page.locator("#right .column-row input").evaluate_all("nodes => nodes.map(n => n.value)")
+    assert names == ["欄1", "欄2"], names
