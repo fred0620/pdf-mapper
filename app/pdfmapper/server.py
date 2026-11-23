@@ -26,8 +26,8 @@ from . import template as tpl
 from .clean import write_clean
 from .document import Document
 from .excel import write_excel
-from .extract import REASONS, read_box
-from .limits import LimitExceeded
+from .extract import REASONS, read_box, shape_value
+from .limits import LimitExceeded, PatternTimeout
 from .logs import clean as log_text
 from .logs import log
 from .parser import find_value, handle_value, parse_best, parse_pdf, summarize
@@ -55,6 +55,7 @@ MAX_RUNS = 20                # 保留最近幾次解析結果，舊的釋放記�
 MAX_CLIENTS = 50
 MAX_NAME_LENGTH = 120
 MAX_EDIT_LENGTH = 10000
+MAX_TRY_TEXT = 2000          # 規則試算的原始內容上限（一格的內容不會這麼長）
 PORT_RANGE = 20
 CLOSE_GRACE_SECONDS = 8      # 容許重新整理頁面，不會誤關
 CLIENT_TIMEOUT_SECONDS = 1800  # 瀏覽器當掉、沒通知就消失時的上限
@@ -442,6 +443,34 @@ def delete_practice_template(template_id):
     path.unlink()
     log.info("刪除練習範本 template=%s", template_id)
     return jsonify({"removed": template_id})
+
+
+@app.post("/api/regex-try")
+def regex_try():
+    """進階功能的規則試算。用和範本取值相同的函式（shape_value）與相同的安全檢查，結果和解析時一致。
+    規則有問題、比對逾時都回 ok: false 與說明（不是請求錯誤，頁面照常顯示）。日誌不記規則與內容。"""
+    body = _json_body()
+    pattern, text, mode = body.get("pattern"), body.get("text"), body.get("mode", "extract")
+    if mode not in ("extract", "match") or not isinstance(pattern, str) or not isinstance(text, str):
+        raise ValueError("請求內容格式不正確")
+    if len(text) > MAX_TRY_TEXT:
+        raise ValueError(f"原始內容太長，試算最多 {MAX_TRY_TEXT} 字")
+    if not pattern.strip():
+        return jsonify({"ok": False, "error": "請輸入規則"})
+    problem = tpl.check_pattern(pattern)
+    if problem:
+        log.info("試算規則 mode=%s ok=False", mode)
+        return jsonify({"ok": False, "error": problem})
+    key = "extract" if mode == "extract" else "pattern"
+    try:
+        value, reasons = shape_value(text, text.splitlines(), {key: pattern})
+    except PatternTimeout:
+        log.info("試算規則 mode=%s 逾時", mode)
+        return jsonify({"ok": False, "error": "這個規則比對太久，請改簡單，例如不要在重複的內容裡再放重複"})
+    log.info("試算規則 mode=%s ok=True", mode)
+    if mode == "extract":
+        return jsonify({"ok": True, "found": "extract_no_match" not in reasons, "value": value})
+    return jsonify({"ok": True, "matched": "format_mismatch" not in reasons, "value": value})
 
 
 def _demo_template(name: str) -> dict:

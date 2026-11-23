@@ -51,7 +51,8 @@ PAGES = {"使用手冊": "PDF 解析器使用手冊", "換版說明": "PDF 解�
 
 
 def build(name: str, title: str) -> None:
-    converter = markdown.Markdown(extensions=["tables", "fenced_code", "toc", "sane_lists"],
+    # attr_list：章節用 {#id} 寫明確的錨點，工具裡的說明卡連到這些 id，不依賴中文標題自動產生的 id
+    converter = markdown.Markdown(extensions=["tables", "fenced_code", "attr_list", "toc", "sane_lists"],
                                   extension_configs={"toc": {"toc_depth": "2-2"}})
     body = converter.convert((DOCS / f"{name}.md").read_text(encoding="utf-8"))
     body = re.sub(r'src="(images/[^"]+)"', inline_image, body)

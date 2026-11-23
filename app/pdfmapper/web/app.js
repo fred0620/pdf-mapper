@@ -256,7 +256,8 @@ const onBox = guard(async (box) => {
   if (tool === "table") {
     snapshot();
     const table = {
-      id: nextId("t", T().tables), name: `表格${T().tables.length + 1}`,
+      // 示範發票：表格直接叫「明細」，看得懂是哪一塊；一般模式維持原本的命名
+      id: nextId("t", T().tables), name: demoTableName() || `表格${T().tables.length + 1}`,
       columns: [{ id: "c1", name: "欄1", band: 0 }], key_column: null, key_position: "auto", required: true,
       regions: [{ page_rule: defaultRule(), ref_page: state.page, box, dividers: [box[0], box[2]] }],
     };
@@ -361,6 +362,7 @@ function addDivider(table, region, x) {
   for (const column of table.columns) if (column.band >= index) column.band += 1;
   table.columns.push({ id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band: index });
   table.columns.sort((a, b) => a.band - b.band);
+  if (state.guide.demo.train) nameColumnsFromGuide(table);  // 只在示範發票：直欄用 PDF 上的標題命名
   renderAll();
 }
 function removeDivider(table, index) {
@@ -666,7 +668,7 @@ function renderHint() {
     if (!isReference()) text = "這份是測試範例。切回基準範例才能標注。";
     else if (state.tool === "kv") text = state.pending
       ? `已記下「${state.pending.label.text || "標題"}」。再框住它的數值範圍，框大一點沒關係。按 Esc 取消。`
-      : "先框住欄位名稱，例如「報單號碼」。";
+      : state.guide.demo.train ? "先框住欄位名稱，例如「發票號碼」。" : "先框住欄位名稱，也就是值旁邊每份都一樣的標題。";
     else if (state.tool === "pos") text = "框住數值的範圍。這類欄位沒有標題，靠定位點找位置。";
     else if (state.tool === "table") text = "框住表格的資料區，不含標題列。";
     else if (state.tool === "region") text = `框住這一頁的資料區，第 ${state.page + 1} 頁起會用這個範圍。`;
@@ -977,8 +979,8 @@ function ruleSelect(item, onChange) {
     [custom, `只有第 ${custom.split(":")[1]} 頁`]].map(([value, label]) =>
     h("option", { value, selected: item.page_rule === value }, label))));
 }
-function bind(item, key, label, extra = {}) {
-  return h("label", {}, label, h("input", {
+function bind(item, key, label, extra = {}, hint = null) {
+  return h("label", {}, hint ? h("span", { class: "label-line" }, label, hint) : label, h("input", {
     type: "text", value: item[key] ?? "", ...extra,
     oninput: (e) => { if (e.target.value) item[key] = e.target.value; else delete item[key]; saveDraft(); renderOverlay(); },
   }));
@@ -1025,9 +1027,11 @@ function fieldPanel(field) {
           if (e.target.checked) startContinuation(field);
           else { snapshot(); delete field.continuation; state.continuing = null; setTool("select"); renderAll(); }
         },
-      }), "內容可能接到下一頁", helpHint("feat-pos-field", "續頁與取行規則")),
+      }), "內容可能接到下一頁"),
       field.continuation ? h("p", { class: "note" }, `接續範圍在第 ${field.continuation.ref_page + 1} 頁，接上時會標記給人確認。`) : null),
-    h("details", {}, h("summary", {}, "進階設定"), h("div", { class: "form" },
+    h("details", {
+      id: "fieldAdvanced", open: !!state.fieldAdvancedOpen, ontoggle: (e) => { state.fieldAdvancedOpen = e.target.open; },
+    }, h("summary", { onclick: (e) => { state.fieldAdvancedOpen = !e.currentTarget.parentElement.open; } }, "進階設定"), h("div", { class: "form" },
       field.kind === "key_value" ? h("label", {}, "比對用的標題文字", h("input", {
         type: "text", value: field.label.text,
         oninput: (e) => { field.label.text = e.target.value; delete field.label.text_center; saveDraft(); },
@@ -1036,19 +1040,52 @@ function fieldPanel(field) {
         type: "number", value: field.pick_line ?? "",
         oninput: (e) => { if (e.target.value) field.pick_line = Number(e.target.value); else delete field.pick_line; saveDraft(); },
       })),
-      bind(field, "extract", "從內容擷取（正規表達式）", { placeholder: "例如：共\\s*(\\d+)\\s*頁" }),
-      bind(field, "pattern", "格式檢查（正規表達式）", { placeholder: "例如：^\\d{8}$" }),
+      bind(field, "extract", "從內容擷取（正規表達式）", { placeholder: "例如：共\\s*(\\d+)\\s*頁", id: "fieldExtractInput" },
+        helpHint("feat-regex", "用規則抓特定格式的值", fieldRegexContext(field))),
+      bind(field, "pattern", "格式檢查（正規表達式）", { placeholder: "例如：^\\d{8}$", id: "fieldPatternInput" },
+        helpHint("feat-format-check", "內容格式不對就標記")),
       h("label", {}, "資料來源", h("select", { onchange: (e) => { field.source = e.target.value; saveDraft(); } },
         [["auto", "自動"], ["text", "只用文字層"], ["ocr", "只用影像辨識"]].map(([value, label]) =>
           h("option", { value, selected: (field.source || "auto") === value }, label)))))),
     h("div", { style: "margin-top:10px" }, h("button", { class: "btn danger", onclick: deleteSelected }, "刪除欄位")),
   ];
 }
-function markerRow(label, marker, action, onPick, onRemove) {
+function markerRow(label, marker, action, onPick, onRemove, pickClass = "") {
   return h("div", { class: "row marker-row" },
     h("span", {}, marker ? `${label}：${marker.text || "已設定"}` : label),
     marker ? h("button", { class: "linkish", onclick: onRemove }, "移除")
-      : h("button", { class: "linkish", onclick: onPick }, action));
+      : h("button", { class: `linkish ${pickClass}`.trim(), onclick: onPick }, action));
+}
+// 從欄位或表格欄的設定打開規則試算時，可以把試好的規則直接套用回去
+function fieldRegexContext(field) {
+  return () => ({
+    pattern: field.extract || "",
+    applyLabel: "套用到這個欄位",
+    apply: (pattern) => {
+      snapshot();
+      field.extract = pattern;
+      saveDraft();
+      closeSpotlight(false);
+      renderRight();
+      toast(`已把規則套用到「${field.name}」`);
+    },
+  });
+}
+function columnRegexContext(table, column) {
+  return () => ({
+    pattern: column.extract || "",
+    text: state.columnPreview?.id === column.id ? state.columnPreview.rows?.[0]?.raw || "" : "",
+    apply: (pattern) => {
+      snapshot();
+      if (valueMode(column) !== "regex") setValueMode(table, column, "regex");
+      column.extract = pattern;
+      state.openColumn = column.id;
+      saveDraft();
+      closeSpotlight(false);
+      renderRight();
+      toast(`已把規則套用到「${column.name}」`);
+    },
+  });
 }
 const redraw = () => { saveDraft(); renderRight(); };
 const VALUE_MODES = [
@@ -1073,10 +1110,10 @@ function setValueMode(table, column, mode) {
     column.part = peers.filter((c) => c.part_by === mode).length + 1;
   }
 }
-function valueOptions(column) {
+function valueOptions(table, column) {
   const mode = valueMode(column);
-  const text = (key, label, placeholder, note) => [
-    h("label", {}, label, h("input", {
+  const text = (key, label, placeholder, note, hint = null) => [
+    h("label", {}, hint ? h("span", { class: "label-line" }, label, hint) : label, h("input", {
       type: "text", value: column[key] ?? "", placeholder, "aria-label": label,
       oninput: (e) => { column[key] = e.target.value; saveDraft(); },
     })),
@@ -1101,7 +1138,8 @@ function valueOptions(column) {
     ];
   }
   if (mode === "regex") {
-    return text("extract", "正規表達式", "例如：ECCN:\\s*(\\S+)", "有括號時取第一組。比對不到時留空。");
+    return text("extract", "正規表達式", "例如：ECCN:\\s*(\\S+)", "有括號時取第一組。比對不到時留空。",
+      helpHint("feat-regex", "用規則抓特定格式的值", columnRegexContext(table, column)));
   }
   if (mode === "space") return number("part", "取第幾段", "每段不能含空格。段數不對時，內容放在第一段並標記。");
   if (mode === "gap") return number("part", "取第幾段", "依字和字的實際距離分段，適合有文字層的 PDF。段數不對時，內容放在第一段並標記。");
@@ -1149,12 +1187,12 @@ function columnDetail(table, column) {
       onchange: (e) => { if (e.target.checked) column.row_required = true; else delete column.row_required; saveDraft(); },
     }), "每一列都一定有這欄"),
     h("p", { class: "note" }, "用來判斷跨頁：這欄沒抓到，代表這一列還沒結束。"),
-    h("label", {}, h("span", { class: "label-line" }, "這一欄怎麼取值", helpHint("feat-cell-extract", "表格取值方式")), h("select", {
+    h("label", {}, h("span", { class: "label-line" }, "這一欄怎麼取值", helpHint("feat-cell-extract", "一格有好幾個值，只取一個")), h("select", {
       "aria-label": "這一欄怎麼取值",
       onchange: (e) => { snapshot(); setValueMode(table, column, e.target.value); renderRight(); },
     }, VALUE_MODES.map(([value, label]) =>
       h("option", { value, selected: valueMode(column) === value }, label)))),
-    valueOptions(column),
+    valueOptions(table, column),
     isReference() ? h("button", { class: "linkish column-preview-btn", style: "text-align:left", onclick: () => previewColumn(table, column) }, "用基準範例試抓這一欄") : null,
     previewRows(column),
     h("div", { class: "row" },
@@ -1228,15 +1266,15 @@ function placementTab(table) {
         if (!onReference(region.ref_page)) { toast("這份基準範例沒有這一頁，請換一份頁數夠的範例", true); return; }
         state.markerRegion = i; setPage(region.ref_page); setTool("header");
       },
-      () => { snapshot(); delete region.header; renderAll(); })));
+      () => { snapshot(); delete region.header; renderAll(); }, "header-pick")));
   return [
-    h("h3", { class: "label-line" }, "每一頁的範圍", helpHint("feat-cross-page", "跨頁表格、表頭與表尾")),
+    h("h3", { class: "label-line" }, "每一頁的範圍", helpHint("feat-cross-page", "明細接到下一頁")),
     regions,
-    h("button", { class: "linkish", onclick: () => setTool("region") }, "在目前這一頁加範圍"),
+    h("button", { class: "linkish", id: "addRegionBtn", onclick: () => setTool("region") }, "在目前這一頁加範圍"),
     h("p", { class: "note" }, "明細接到下一頁時，切到那一頁再加。表格起始位置不固定時，框選表頭。"),
     h("h3", {}, "表格結尾"),
     markerRow("表尾標記", table.end_marker, "框選表尾",
-      () => setTool("endmark"), () => { snapshot(); delete table.end_marker; renderAll(); }),
+      () => setTool("endmark"), () => { snapshot(); delete table.end_marker; renderAll(); }, "endmark-pick"),
     h("div", { class: "form", style: "margin-top:6px" },
       bind(table, "stop_pattern", "或遇到這段文字就結束", { placeholder: "例如：以下空白" })),
     h("p", { class: "note" }, "都沒設定時，抓到範圍底部為止。"),
@@ -1269,7 +1307,7 @@ function tablePanel(table) {
     }))),
     todo.length ? h("p", { class: "todo" }, `還需要：${todo.join("，")}`) : null,
     h("div", { class: "subtabs", role: "tablist" }, tabs.map(([id, label]) => h("button", {
-      role: "tab", "aria-selected": String(active === id),
+      role: "tab", "aria-selected": String(active === id), dataset: { tab: id },
       onclick: () => { state.tableTab = id; renderRight(); },
     }, label))),
     { columns: columnsTab, place: placementTab, more: advancedTab }[active](table),
@@ -1304,55 +1342,87 @@ const suggestAnchors = guard(async () => {
   toast(`加入 ${T().anchors.length - existing} 個定位點，刪掉會隨單據變動的項目`);
   renderAll();
 });
+// 數字檢查草稿缺哪幾格（加入按鈕停用的原因、預覽與導覽的子步驟共用）
+function checkDraftMissing(draft) {
+  const missing = [];
+  if (draft.type === "sum_fields" && !draft.fields?.length) missing.push("要相加的欄位");
+  if (draft.type === "sum_column" && !(draft.table && draft.column)) missing.push("表格欄");
+  if (!draft.target) missing.push(draft.type === "page_count" ? "寫著總頁數的欄位" : "要等於");
+  return missing;
+}
+// 這條檢查的白話說明：已加入的檢查清單與表單預覽共用
+function describeCheck(rule) {
+  const fields = T().fields;
+  const name = (id) => fields.find((f) => f.id === id)?.name || id;
+  if (rule.type === "page_count") return `PDF 總頁數 = 「${name(rule.field)}」寫的頁數`;
+  if (rule.type === "sum_fields") return `${rule.fields.map((id) => `「${name(id)}」`).join(" + ")} = ${name(rule.equals)}`;
+  const table = T().tables.find((t) => t.id === rule.table);
+  return `${table?.name || "表格"}「${table?.columns.find((c) => c.id === rule.column)?.name || "?"}」加總 = ${name(rule.equals)}`;
+}
+const draftRule = (draft) => (draft.type === "page_count" ? { type: "page_count", field: draft.target }
+  : draft.type === "sum_fields" ? { type: "sum_fields", fields: draft.fields || [], equals: draft.target, tolerance: 1 }
+    : { type: "sum_column", table: draft.table, column: draft.column, equals: draft.target, tolerance: 1 });
+// 選了下拉不重畫整個表單（焦點才不會跑掉），只更新預覽與加入按鈕
+function updateCheckForm() {
+  const draft = state.checkDraft;
+  const preview = $("checkPreview");
+  const button = $("checkAddBtn");
+  if (!draft || !preview || !button) return;
+  const missing = checkDraftMissing(draft);
+  const reason = missing.length ? `還缺：${missing.join("、")}` : "";
+  preview.textContent = missing.length ? reason
+    : `${describeCheck(draftRule(draft))}${draft.type === "page_count" ? "" : "（差 1 以內算通過）"}`;
+  preview.classList.toggle("incomplete", missing.length > 0);
+  button.disabled = missing.length > 0;
+  button.title = reason ? `${reason}，選好才能加入` : "";
+  scheduleGuide();
+}
+function addCheck() {
+  const draft = state.checkDraft;
+  if (!draft || checkDraftMissing(draft).length) return;
+  snapshot();
+  T().validations.push(draftRule(draft));
+  state.checkDraft = null;
+  renderRight();
+}
 function checksPanel() {
   const fields = T().fields;
-  const describe = (rule) => {
-    const name = (id) => fields.find((f) => f.id === id)?.name || id;
-    if (rule.type === "page_count") return `總頁數要等於「${name(rule.field)}」`;
-    if (rule.type === "sum_fields") return `${rule.fields.map(name).join(" + ")} = ${name(rule.equals)}`;
-    const table = T().tables.find((t) => t.id === rule.table);
-    return `${table?.name}「${table?.columns.find((c) => c.id === rule.column)?.name}」加總 = ${name(rule.equals)}`;
-  };
   const draft = state.checkDraft || (state.checkDraft = { type: "sum_fields", fields: [] });
-  const fieldOptions = fields.map((f) => h("option", { value: f.id }, f.name));
+  const fieldOptions = (selected) => fields.map((f) => h("option", { value: f.id, selected: selected(f.id) }, f.name));
+  const missing = checkDraftMissing(draft);
   const form = h("div", { class: "form" },
+    h("p", { class: "note check-intro" }, "解析時把左邊加起來和右邊比，對不上就標記給人看。"),
     h("label", {}, "檢查方式", h("select", {
       id: "checkTypeSelect",
-      onchange: (e) => { state.checkDraft = { type: e.target.value, fields: [] }; renderRight(); },
+      onchange: (e) => { state.checkDraft = { type: e.target.value, fields: [] }; state.checkTypeTouched = true; renderRight(); },
     }, [["sum_fields", "幾個欄位相加"], ["sum_column", "表格某欄加總"], ["page_count", "比對總頁數"]].map(([value, label]) =>
       h("option", { value, selected: draft.type === value }, label)))),
     draft.type === "sum_fields" ? h("label", {}, "要相加的欄位（按住 Ctrl 或 Command 複選）", h("select", {
-      multiple: true, size: Math.min(5, Math.max(2, fields.length)),
-      onchange: (e) => { draft.fields = [...e.target.selectedOptions].map((o) => o.value); },
-    }, fieldOptions)) : null,
+      id: "checkFieldsSelect", multiple: true, size: Math.min(5, Math.max(2, fields.length)),
+      onchange: (e) => { draft.fields = [...e.target.selectedOptions].map((o) => o.value); updateCheckForm(); },
+    }, fieldOptions((id) => (draft.fields || []).includes(id)))) : null,
     draft.type === "sum_column" ? h("label", {}, "表格欄", h("select", {
       id: "checkColSelect",
-      onchange: (e) => { [draft.table, draft.column] = e.target.value.split("|"); },
+      onchange: (e) => { [draft.table, draft.column] = e.target.value.split("|"); if (!draft.table) { delete draft.table; delete draft.column; } updateCheckForm(); },
     }, h("option", { value: "|" }, "選擇"), T().tables.flatMap((t) => t.columns.map((c) =>
-      h("option", { value: `${t.id}|${c.id}` }, `${t.name}：${c.name}`))))) : null,
+      h("option", { value: `${t.id}|${c.id}`, selected: draft.table === t.id && draft.column === c.id }, `${t.name}：${c.name}`))))) : null,
     h("label", {}, draft.type === "page_count" ? "寫著總頁數的欄位" : "要等於", h("select", {
       id: "checkTargetSelect",
-      onchange: (e) => { draft.target = e.target.value; },
-    }, h("option", { value: "" }, "選擇"), fieldOptions.map((o) => o.cloneNode(true)))),
-    h("button", {
-      class: "btn", id: "checkAddBtn", onclick: () => {
-        if (!draft.target) { toast("請選擇要比對的欄位", true); return; }
-        snapshot();
-        const rule = draft.type === "page_count" ? { type: "page_count", field: draft.target }
-          : draft.type === "sum_fields" ? { type: "sum_fields", fields: draft.fields, equals: draft.target, tolerance: 1 }
-            : { type: "sum_column", table: draft.table, column: draft.column, equals: draft.target, tolerance: 1 };
-        T().validations.push(rule);
-        state.checkDraft = null;
-        renderRight();
-      },
-    }, "加入檢查"));
+      onchange: (e) => { draft.target = e.target.value; updateCheckForm(); },
+    }, h("option", { value: "" }, "選擇"), fieldOptions((id) => draft.target === id))),
+    h("p", { class: `check-preview${missing.length ? " incomplete" : ""}`, id: "checkPreview", "aria-live": "polite" }),
+    h("button", { class: "btn", id: "checkAddBtn", onclick: addCheck }, "加入檢查"));
+  setTimeout(updateCheckForm, 0);  // 表單放進畫面後再填預覽與按鈕狀態
   return [
-    h("ul", { class: "checks" }, T().validations.map((rule, i) => h("li", { class: "row note" }, h("span", {}, describe(rule)),
+    h("ul", { class: "checks" }, T().validations.map((rule, i) => h("li", { class: "row note" }, h("span", {}, describeCheck(rule)),
       h("button", { class: "linkish", style: "flex:0 0 auto", onclick: () => { snapshot(); T().validations.splice(i, 1); renderRight(); } }, "移除")))),
     h("details", {
       id: "checksDetails", open: !!state.checksOpen,
       ontoggle: (e) => { state.checksOpen = e.target.open; scheduleGuide(); },
-    }, h("summary", {}, "新增檢查"), form),
+    }, h("summary", {
+      // toggle 事件是非同步的；點下去就先記住，避免事件送達前右欄重畫時又收起來
+      onclick: (e) => { state.checksOpen = !e.currentTarget.parentElement.open; },
+    }, "新增檢查"), form),
   ];
 }
 /* 輸出設定：沒列在設定裡的欄位預設輸出，新增的欄位不會漏掉 */
@@ -1394,7 +1464,7 @@ function outputPanel() {
   const fields = T().fields.map((f) => [f.id, f.name]);
   return [
     h("button", { class: "linkish", style: "margin-bottom:8px", onclick: () => { state.outputPanel = false; renderRight(); } }, "回到欄位清單"),
-    h("h2", { class: "label-line" }, "輸出欄位", helpHint("feat-output", "輸出整理")),
+    h("h2", { class: "label-line" }, "輸出欄位", helpHint("feat-output", "只輸出需要的欄位、改欄名")),
     h("p", { class: "note" }, "只影響「乾淨資料」，檢查用 Excel 維持完整內容。欄名留空就用原本的名稱。"),
     fields.length ? outputGroup("欄位", fields, () => T().output?.fields, (list) => { output().fields = list; }) : null,
     T().tables.map((table) => outputGroup(table.name, table.columns.map((c) => [c.id, c.name]),
@@ -1667,7 +1737,7 @@ function renderRightRun() {
       h("label", { class: "check-line" }, h("input", {
         type: "checkbox", checked: !!state.onlyConfirmed,
         onchange: (e) => { state.onlyConfirmed = e.target.checked; renderRight(); },
-      }), "乾淨資料只輸出已確認", helpHint("run-clean-export", "只輸出已確認"))));
+      }), "乾淨資料只輸出已確認", helpHint("run-clean-export", "只交出確認過的資料"))));
 }
 function renderRight() { (state.view === "train" ? renderRightTrain : renderRightRun)(); scheduleGuide(); }
 

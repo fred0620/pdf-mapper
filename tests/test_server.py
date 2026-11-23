@@ -220,3 +220,45 @@ def test_demo_files_match_samples():
         assert (server.DEMO / name).read_bytes() == (app / "samples" / name).read_bytes(), name
     for name in ("invoice_demo.json", "customs_demo.json"):
         assert (server.DEMO / name).read_bytes() == (app / "examples" / "templates" / name).read_bytes(), name
+
+
+def test_regex_try_matches_template_extraction():
+    """規則試算和範本取值用同一個函式：取第一組、沒抓到留空、檢查模式回報符合與否。"""
+    client = server.app.test_client()
+    post = lambda **body: client.post("/api/regex-try", json=body).json  # noqa: E731
+    assert post(pattern=r"共\s*(\d+)\s*頁", text="第1頁/共11頁", mode="extract") == {"ok": True, "found": True, "value": "11"}
+    assert post(pattern=r"ECCN:\s*(\S+)", text="ECCN: 5A992 Origin: TW", mode="extract")["value"] == "5A992"
+    assert post(pattern=r"(\d{4}/\d{2}/\d{2})", text="開立日期 2026/03/01", mode="extract")["value"] == "2026/03/01"
+    missed = post(pattern=r"ECCN:\s*(\S+)", text="Origin: TW", mode="extract")
+    assert missed == {"ok": True, "found": False, "value": ""}
+    assert post(pattern=r"^\d{8}$", text="12345678", mode="match")["matched"] is True
+    assert post(pattern=r"^\d{8}$", text="1234567", mode="match")["matched"] is False
+    multi = post(pattern=r"Origin:\s*(\S+)", text="ECCN: 5A992\nOrigin: TW", mode="extract")
+    assert multi["value"] == "TW"  # 多行內容和解析時一樣接成一段再比對
+
+
+def test_regex_try_rejects_risky_and_bad_input():
+    client = server.app.test_client()
+    risky = client.post("/api/regex-try", json={"pattern": r"(\d+\s?)+", "text": "1 2 3", "mode": "extract"}).json
+    assert risky["ok"] is False and "卡住" in risky["error"]
+    broken = client.post("/api/regex-try", json={"pattern": "(abc", "text": "abc"}).json
+    assert broken["ok"] is False and "有誤" in broken["error"]
+    assert client.post("/api/regex-try", json={"pattern": "a" * 501, "text": "a"}).json["ok"] is False
+    assert client.post("/api/regex-try", json={"pattern": "", "text": "a"}).json == {"ok": False, "error": "請輸入規則"}
+    too_long = client.post("/api/regex-try", json={"pattern": "a", "text": "x" * 2001})
+    assert too_long.status_code == 400 and "太長" in too_long.json["error"]
+    assert client.post("/api/regex-try", json={"pattern": "a", "text": "a", "mode": "eval"}).status_code == 400
+    assert client.post("/api/regex-try", json={"pattern": 1, "text": "a"}).status_code == 400
+    cross = client.post("/api/regex-try", json={"pattern": "a", "text": "a"}, headers={"Sec-Fetch-Site": "cross-site"})
+    assert cross.status_code == 403
+    foreign = client.post("/api/regex-try", json={"pattern": "a", "text": "a"}, headers={"Origin": "https://evil.example"})
+    assert foreign.status_code == 403
+
+
+def test_regex_try_does_not_log_pattern_or_text(caplog):
+    import logging
+
+    with caplog.at_level(logging.INFO, logger=server.log.name):
+        server.app.test_client().post("/api/regex-try", json={"pattern": "秘密規則(\\d+)", "text": "機密內容123"})
+    assert "試算規則" in caplog.text  # 有記錄，但不含規則與內容
+    assert "秘密規則" not in caplog.text and "機密內容" not in caplog.text

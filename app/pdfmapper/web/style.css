@@ -1,5 +1,8 @@
 /* 視覺沿用 Stageshow（benjitaylor/skills stageshow/kit，MIT，Benji Taylor）的色彩、圓角、陰影與元件尺寸。
-   只用系統字型與純 CSS，不需要下載任何字型或套件。工具要長時間閱讀，字級維持 12.5px 以上。 */
+   只用系統字型與純 CSS，不需要下載任何字型或套件。工具要長時間閱讀，字級維持 12.5px 以上。
+   導覽的顏色（2026-11-23 使用者測試後調整）：導覽本身的介面（指令條、進度點、浮標、說明卡）用 Stageshow 唯一的
+   強調色 accent，深色太不顯眼；疊在 PDF 與結果表格上的指示（虛線靶框、切欄線、儲存格外框）維持深色，
+   因為藍色在那裡代表「已人工處理」。 */
 :root {
   /* Stageshow light */
   --canvas: #f6f5f4;
@@ -132,7 +135,7 @@ button { cursor: pointer; }
   background: var(--accent-soft); color: var(--accent-text); font-size: 13px; font-weight: 500;
   border-bottom: 1px solid var(--line);
 }
-.hint:empty { display: none; }
+.hint:empty, .hint.covered { display: none; }
 
 /* 文件 */
 .stage { flex: 1; min-height: 0; overflow: auto; padding: 24px; position: relative; }
@@ -323,6 +326,9 @@ details .form { margin-top: 10px; }
   content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--text-strong);
 }
 .todo { margin: 10px 0 0; padding: 8px 12px; background: var(--warning-soft); color: var(--warning-text); border-radius: var(--radius-md); font-size: 12.5px; }
+.check-intro { margin: 0 !important; color: var(--text-strong) !important; }
+.check-preview { margin: 0; padding: 8px 10px; border-radius: var(--radius-md); background: var(--canvas); font-size: 12.5px; color: var(--text-strong); overflow-wrap: anywhere; }
+.check-preview.incomplete { color: var(--text); }
 .field-label { display: grid; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--text-strong); }
 .side h3 { margin: 16px 0 8px; font-size: 12.5px; font-weight: 600; }
 .column-row { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; margin-top: 6px; }
@@ -468,8 +474,8 @@ details .form { margin-top: 10px; }
 }
 
 /* ---------- 導覽（spotlights.js） ----------
-   引導一律用深色（text-strong）：藍色在這個工具代表「已人工處理」與主按鈕，
-   引導若也用藍色，在結果表格與 PDF 框上分不清是「要你點」還是「已處理」。 */
+   導覽本身的介面用 accent（使用者測試：深色不顯眼）；疊在 PDF 與結果表格上的指示維持深色虛線與深色外框，
+   不和代表「已人工處理」的藍色混在一起。 */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .btn.ghost { background: none; box-shadow: none; color: var(--text-strong); }
 .btn.ghost:hover:not(:disabled) { background: var(--ink-2); }
@@ -490,32 +496,40 @@ details .form { margin-top: 10px; }
   content: ""; position: absolute; inset: 5px; border-radius: var(--radius-pill);
   box-shadow: inset 0 0 0 1px var(--ink-5); background: transparent;
 }
-.guide-step.done::after { background: var(--text-strong); box-shadow: none; }
-.guide-step.active::after { background: var(--text-strong); box-shadow: 0 0 0 3px var(--ink-2); }
+.guide-step.done::after { background: var(--accent); box-shadow: none; }
+.guide-step.active::after { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .guide-step.skipped::after { background: linear-gradient(135deg, transparent 45%, var(--text) 45%, var(--text) 58%, transparent 58%); }
-.guide-progress { color: var(--text-strong); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guide-progress { color: var(--accent-text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .guide-bar .spring { flex: 1; }
 .guide-bar-actions { display: flex; gap: 8px; }
 .guide-bar-actions .btn { font-size: 12.5px; }
 
-/* 指令條：版面的一部分，不是浮動物，所以沒有陰影 */
+/* 指令條：版面的一部分，不是浮動物，所以沒有陰影。用 accent 淡底與細框，一眼看得到 */
 .mission-strip {
+  --mission-ring: color-mix(in srgb, var(--accent) 35%, transparent);
   display: flex; align-items: flex-start; gap: 10px; margin: 8px 12px; padding: 10px 12px;
-  background: var(--well); border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--ink-2);
+  background: var(--accent-soft); border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--mission-ring);
 }
-.mission-enter { animation: missionIn 300ms var(--ui); }
-@keyframes missionIn { from { opacity: 0; } to { opacity: 1; } }
+/* 換步驟時 accent 外圈脈衝一次，讓眼睛注意到內容變了 */
+.mission-enter { animation: missionRing 700ms var(--ui); }
+@keyframes missionRing {
+  0% { box-shadow: inset 0 0 0 1px var(--mission-ring), 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  100% { box-shadow: inset 0 0 0 1px var(--mission-ring), 0 0 0 8px transparent; }
+}
 .mission-badge {
-  flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px; border-radius: var(--radius-pill);
-  display: grid; place-items: center; background: var(--text-strong); color: var(--text-inverse);
-  font-size: 12.5px; font-weight: 600; line-height: 1;
+  flex: 0 0 auto; min-width: 20px; height: 20px; padding: 0 6px; margin-top: 1px; border-radius: var(--radius-pill);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: var(--text-inverse);
+  font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap;
 }
+.mission-sub { font-weight: 500; opacity: .9; }
 .mission-text { flex: 1; min-width: 0; display: grid; gap: 4px; }
 .mission-text p { margin: 0; }
-.mission-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text-strong); }
-.mission-tip, .mission-note { font-size: 12.5px; color: var(--text); }
-.mission-note { color: var(--text-strong); }
-.mission-assist { min-height: 24px; padding: 0 8px; font-size: 12.5px; box-shadow: inset 0 0 0 1px var(--ink-4); }
+.mission-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-strong); }
+.mission-tip, .mission-note { font-size: 12.5px; font-weight: 400; color: var(--text-strong); }
+/* 選錯提示用警告色（紅色在這個工具代表缺值） */
+.mission-tip.wrong { color: var(--warning-text); }
+.mission-tip.wrong::before { content: "⚠ "; }
+.mission-assist { min-height: 24px; padding: 0 8px; font-size: 12.5px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--mission-ring); }
 .mission-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .mission-controls .btn { font-size: 12.5px; }
 .mission-controls .linkish { margin-right: 4px; }
@@ -530,17 +544,17 @@ details .form { margin-top: 10px; }
 .sw-ok { background: var(--success); }
 .sw-notice { background: var(--ink-5); }
 
-/* 指向浮標：深底白字、帶三角，不擋滑鼠 */
+/* 指向浮標：accent 底白字、三角同色，不擋滑鼠 */
 .mission-pointer {
   position: fixed; z-index: 15; height: 26px; padding: 0 10px; border-radius: var(--radius-md);
   display: inline-flex; align-items: center; white-space: nowrap; pointer-events: none;
-  background: var(--text-strong); color: var(--text-inverse); font-size: 12.5px; font-weight: 500; box-shadow: var(--shadow-float);
+  background: var(--accent); color: var(--text-inverse); font-size: 12.5px; font-weight: 500; box-shadow: var(--shadow-float);
 }
 .mission-pointer::after { content: ""; position: absolute; border: 6px solid transparent; }
-.mission-pointer[data-dir="left"]::after { right: 100%; top: 50%; margin-top: -6px; border-right-color: var(--text-strong); }
-.mission-pointer[data-dir="right"]::after { left: 100%; top: 50%; margin-top: -6px; border-left-color: var(--text-strong); }
-.mission-pointer[data-dir="down"]::after { top: 100%; left: 50%; margin-left: -6px; border-top-color: var(--text-strong); }
-.mission-pointer[data-dir="up"]::after { bottom: 100%; left: 50%; margin-left: -6px; border-bottom-color: var(--text-strong); }
+.mission-pointer[data-dir="left"]::after { right: 100%; top: 50%; margin-top: -6px; border-right-color: var(--accent); }
+.mission-pointer[data-dir="right"]::after { left: 100%; top: 50%; margin-top: -6px; border-left-color: var(--accent); }
+.mission-pointer[data-dir="down"]::after { top: 100%; left: 50%; margin-left: -6px; border-top-color: var(--accent); }
+.mission-pointer[data-dir="up"]::after { bottom: 100%; left: 50%; margin-left: -6px; border-bottom-color: var(--accent); }
 
 /* 畫布虛線靶框：和已畫好的藍色實線範本框區分 */
 .guide-ghost {
@@ -557,8 +571,10 @@ details .form { margin-top: 10px; }
   position: absolute; left: -4px; top: -10px; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--text-strong);
 }
 
-/* 要你點的目標：深色實線外框，進入新步驟時脈衝 2 次後靜止 */
-.guide-target { outline: 2px solid var(--text-strong) !important; outline-offset: 3px; border-radius: var(--radius-sm); }
+/* 要你點的目標：介面控制項用 accent 外框；疊在 PDF 與結果表格上的維持深色（藍色在那裡代表已處理）。
+   進入新步驟時脈衝 2 次後靜止 */
+.guide-target { outline: 2px solid var(--accent) !important; outline-offset: 3px; border-radius: var(--radius-sm); }
+:is(#drawer, #overlay) .guide-target { outline-color: var(--text-strong) !important; }
 .guide-pulse { animation: targetPulse 350ms var(--ui) 2; }
 @keyframes targetPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
 
@@ -610,6 +626,38 @@ details .form { margin-top: 10px; }
 }
 .help-hint:hover { color: var(--icon); }
 .card-legend { margin-top: 8px; }
+/* 進階功能卡：什麼時候用、例子、清單、符號速查、規則試算 */
+.coach-card.wide { width: 360px; }
+.float-card .card-when { margin-top: 2px; color: var(--text-strong); }
+.float-card .card-when strong { font-weight: 600; }
+.float-card .card-body { margin-top: 6px; }
+.float-card code { font-family: var(--mono); font-size: 12.5px; color: var(--text-strong); overflow-wrap: anywhere; }
+.card-examples { display: grid; gap: 2px; margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-md); background: var(--canvas); }
+.card-example { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.card-example.head { font-size: 12.5px; color: var(--text); }
+.card-arrow { display: grid; justify-items: center; color: var(--text); font-size: 12.5px; }
+.card-arrow small { font-size: 12.5px; white-space: nowrap; color: var(--text-strong); font-family: var(--mono); }
+.card-list { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.card-list strong { display: inline-block; min-width: 6.5em; margin-right: 6px; font-weight: 600; color: var(--text-strong); }
+.card-symbols { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0 0; }
+.card-symbols dt, .card-symbols dd { margin: 0; }
+.trial { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.trial label { display: grid; gap: 4px; font-size: 12.5px; font-weight: 500; color: var(--text-strong); }
+.trial-text, .trial-pattern, .trial-preset {
+  width: 100%; padding: 6px 10px; border: 0; border-radius: var(--radius-md); background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--ink-4); color: var(--text-strong); font-size: 12.5px;
+}
+.trial-text, .trial-pattern { font-family: var(--mono); }
+.trial-text { resize: vertical; }
+.trial-row { display: grid; grid-template-columns: minmax(0, 1fr) 108px; gap: 6px; }
+.trial-text:focus, .trial-pattern:focus, .trial-preset:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); }
+.trial-result { margin: 0 !important; padding: 6px 10px; border-radius: var(--radius-md); background: var(--canvas); color: var(--text-strong); font-size: 12.5px; overflow-wrap: anywhere; }
+.trial-result.good { background: var(--success-soft); color: var(--success-text); }
+.trial-result.bad { background: var(--warning-soft); color: var(--warning-text); }
+.card-manual { font-size: 12.5px; text-decoration: none; }
+.help-group { margin: 6px 8px 2px; font-size: 12.5px; font-weight: 500; color: var(--text); }
+.legend-chip.pick { padding: 2px 6px; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
+.legend-chip.pick:hover { background: var(--ink-2); }
 /* 導覽關閉後也保留的提醒：細邊框卡片，不用左側粗色條 */
 .guide-nudge { margin: 4px 0 8px; padding: 8px 10px; border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--ink-4); font-size: 12.5px; color: var(--text-strong); }
 /* 新功能小卡：頂列下方，不遮 PDF */
