@@ -492,6 +492,112 @@ def build_template() -> dict:
     }
 
 
+# ---------- Practice PDFs and templates for the guided labs ----------
+# English labels only (the bundled font subset lacks most CJK). Templates carry no image patches; the server adds them.
+def _lab_pdf(path, titles, rules, values, font_path=None, right=()):
+    """titles: [(text, x, y, big)]; rules: [(x0, y0, x1, y1)]; values: [(text, x, y)] go on the text layer."""
+    sheet = Sheet(font_path)
+    for text, x, y, big in titles:
+        sheet.label(text, x, y, sheet.big if big else None)
+    for rule in rules:
+        sheet.line(*rule)
+    buffer = io.BytesIO()
+    sheet.image.convert("L").save(buffer, "PNG", optimize=True)  # grayscale PNG keeps ten lab PDFs under 300 KB
+    buffer.seek(0)
+    out = canvas.Canvas(str(path), pagesize=(W, H))
+    out.drawImage(ImageReader(buffer), 0, 0, W, H)
+    out.setFont(MONO, 10)
+    for text, x, y in values:
+        (out.drawRightString if (text, x, y) in right else out.drawString)(x * W, H - y * H - 3, text)
+    out.showPage()
+    out.save()
+
+
+def _lab_label(text, x, y, width):
+    return {"text": text, "box": [x, round(y - 0.002, 4), round(x + width, 4), round(y + 0.021, 4)]}
+
+
+LAB_PO_NUMBER = "PO-2026-0412"
+LAB_ECCN = [("5A992", "TW"), ("4A003", "JP"), ("EAR99", "US"), ("3A001", "DE"), ("5D002", "KR")]
+LAB_REFS = [("INV-2026-0301", "2"), ("INV-2026-0302", "1"), ("INV-2026-0307", "3"), ("INV-2026-0311", "1"), ("INV-2026-0316", "2")]
+LAB_COLS = [0.08, 0.16, 0.6, 0.92]
+LAB_COLS4 = [0.08, 0.16, 0.5, 0.76, 0.92]
+
+
+def _lab_base(template_id, name, anchors, **extra):
+    return {"schema_version": 1, "template_id": template_id, "name": name, "fields": [], "tables": [],
+            "anchors": anchors, "validations": []} | extra
+
+
+def build_lab_pos_field(folder: Path, font_path=None):
+    titles = [("Purchase Order", 0.08, 0.04, True), ("Supplier", 0.1, 0.18, False),
+              ("Ship To", 0.1, 0.24, False), ("Total", 0.6, 0.86, False)]
+    rules = [(0.08, 0.16, 0.92, 0.16), (0.08, 0.22, 0.92, 0.22), (0.08, 0.28, 0.92, 0.28)]
+    values = [(LAB_PO_NUMBER, 0.66, 0.062), ("Acme Trading Ltd", 0.3, 0.188), ("Taipei Warehouse", 0.3, 0.248), ("4,700", 0.78, 0.873)]
+    _lab_pdf(folder / "lab_pos_field.pdf", titles, rules, values, font_path)
+    anchors = [{"id": "title", "text": "Purchase Order", "box": [0.08, 0.04, 0.42, 0.1], "page_rule": "first", "ref_page": 0},
+               {"id": "ship", "text": "Ship To", "box": [0.1, 0.238, 0.19, 0.261], "page_rule": "first", "ref_page": 0},
+               {"id": "total", "text": "Total", "box": [0.6, 0.858, 0.66, 0.881], "page_rule": "first", "ref_page": 0}]
+    supplier = {"id": "f1", "name": "Supplier", "kind": "key_value", "page_rule": "first", "ref_page": 0,
+                "label": _lab_label("Supplier", 0.1, 0.18, 0.1), "value_box": [0.28, 0.172, 0.9, 0.212],
+                "type": "text", "required": True}
+    return _lab_base("lab_pos_field", "lab pos field", anchors, fields=[supplier])
+
+
+def build_lab_cell_extract(folder: Path, font_path=None):
+    titles = [("Export Items", 0.08, 0.04, True)] + [(t, x + 0.008, 0.17, False) for t, x in
+                                                     zip(("No", "Item", "Spec", "Qty"), LAB_COLS4)]
+    rules = [(0.08, 0.16, 0.92, 0.16), (0.08, 0.21, 0.92, 0.21)]
+    values, right = [], []
+    for i, (eccn, origin) in enumerate(LAB_ECCN):
+        y = 0.24 + i * 0.07
+        values += [(str(i + 1), LAB_COLS4[0] + 0.01, y), (f"Part-{100 + i * 11}", LAB_COLS4[1] + 0.01, y),
+                   (f"ECCN: {eccn}", LAB_COLS4[2] + 0.01, y), (f"Origin: {origin}", LAB_COLS4[2] + 0.01, y + 0.022),
+                   (str(2 + i), LAB_COLS4[4] - 0.02, y)]
+        right.append((str(2 + i), LAB_COLS4[4] - 0.02, y))
+    _lab_pdf(folder / "lab_cell_extract.pdf", titles, rules, values, font_path, right)
+    anchors = [{"id": "title", "text": "Export Items", "box": [0.08, 0.04, 0.42, 0.1], "page_rule": "first", "ref_page": 0},
+               {"id": "h_spec", "page_rule": "first", "ref_page": 0, **_lab_label("Spec", LAB_COLS4[2] + 0.008, 0.17, 0.07)},
+               {"id": "h_qty", "page_rule": "first", "ref_page": 0, **_lab_label("Qty", LAB_COLS4[3] + 0.008, 0.17, 0.05)}]
+    columns = [{"id": "no", "name": "No", "band": 0}, {"id": "item", "name": "Item", "band": 1},
+               {"id": "spec", "name": "Spec", "band": 2}, {"id": "qty", "name": "Qty", "band": 3}]
+    table = {"id": "items", "name": "Items", "columns": columns, "key_column": "no", "key_position": "auto", "required": True,
+             "regions": [{"page_rule": "first", "ref_page": 0, "box": [0.08, 0.22, 0.92, 0.6], "dividers": LAB_COLS4}]}
+    return _lab_base("lab_cell_extract", "lab cell extract", anchors, tables=[table])
+
+
+def build_lab_regex(folder: Path, font_path=None):
+    titles = [("Invoice List", 0.08, 0.04, True)] + [(t, x + 0.008, 0.17, False) for t, x in
+                                                     zip(("No", "Ref", "Amount"), LAB_COLS)]
+    rules = [(0.08, 0.16, 0.92, 0.16), (0.08, 0.21, 0.92, 0.21)]
+    values, right = [], []
+    for i, (number, rev) in enumerate(LAB_REFS):
+        y = 0.24 + i * 0.05
+        values += [(str(i + 1), LAB_COLS[0] + 0.01, y), (f"Ref {number} rev{rev}", LAB_COLS[1] + 0.01, y),
+                   (f"{1200 + i * 350:,}", LAB_COLS[3] - 0.02, y)]
+        right.append((f"{1200 + i * 350:,}", LAB_COLS[3] - 0.02, y))
+    _lab_pdf(folder / "lab_regex.pdf", titles, rules, values, font_path, right)
+    anchors = [{"id": "title", "text": "Invoice List", "box": [0.08, 0.04, 0.42, 0.1], "page_rule": "first", "ref_page": 0},
+               {"id": "h_ref", "page_rule": "first", "ref_page": 0, **_lab_label("Ref", LAB_COLS[1] + 0.008, 0.17, 0.05)},
+               {"id": "h_amount", "page_rule": "first", "ref_page": 0, **_lab_label("Amount", LAB_COLS[2] + 0.008, 0.17, 0.09)}]
+    cols = [LAB_COLS[0], LAB_COLS[1], 0.6, LAB_COLS[3]]
+    columns = [{"id": "no", "name": "No", "band": 0}, {"id": "ref", "name": "Ref", "band": 1},
+               {"id": "amount", "name": "Amount", "band": 2}]
+    table = {"id": "items", "name": "Invoices", "columns": columns, "key_column": "no", "key_position": "auto", "required": True,
+             "regions": [{"page_rule": "first", "ref_page": 0, "box": [0.08, 0.22, 0.92, 0.52], "dividers": cols}]}
+    return _lab_base("lab_regex", "lab regex", anchors, tables=[table])
+
+
+def build_labs(folder: Path, font_path=None) -> None:
+    """Write the lab PDFs and templates into app/pdfmapper/demo/labs/ (batch A); later labs are added here."""
+    import json
+    folder.mkdir(parents=True, exist_ok=True)
+    for build in (build_lab_pos_field, build_lab_cell_extract, build_lab_regex):
+        template = build(folder, font_path)
+        name = template["template_id"]
+        (folder / f"{name}.json").write_text(json.dumps(template, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="samples")

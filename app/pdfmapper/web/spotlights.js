@@ -22,6 +22,8 @@ const blankPrefs = () => ({
   tipsSeen: { drawerTip: 0 },
   whatsnewSeen: null,
   whatsnewCardShown: null,
+  labsDone: [],                            // 實地練習做完過的 id，說明選單顯示「練習過 ✓」
+  labStep: null, labSkipped: [], labDone: false,  // 練習中的進度只在這次畫面有效，不存檔
 });
 // 這個瀏覽器有沒有用過本工具：沒有任何紀錄時當作第一次使用，不跳新功能
 let onboardingFirstUse = false;
@@ -37,7 +39,7 @@ function loadOnboardingPrefs() {
       for (const key of ["trainStep", "runStep", "whatsnewSeen", "whatsnewCardShown"]) {
         prefs[key] = typeof data[key] === "string" ? data[key].slice(0, 40) : null;
       }
-      for (const key of ["trainSkipped", "runSkipped", "spotlightsSeen"]) {
+      for (const key of ["trainSkipped", "runSkipped", "spotlightsSeen", "labsDone"]) {
         prefs[key] = Array.isArray(data[key]) ? data[key].filter((v) => typeof v === "string").slice(0, 50) : [];
       }
       const tip = Number(data.tipsSeen?.drawerTip);
@@ -59,15 +61,19 @@ function loadOnboardingPrefs() {
   return prefs;
 }
 function saveOnboardingPrefs() {
-  try { localStorage.setItem(ONBOARDING_KEY, JSON.stringify(state.onboarding)); } catch (_e) { /* 非必要 */ }
+  try {
+    const { labStep, labSkipped, labDone, ...saved } = state.onboarding;  // 練習中的進度不存
+    localStorage.setItem(ONBOARDING_KEY, JSON.stringify(saved));
+  } catch (_e) { /* 非必要 */ }
 }
 
 /* ---------- 執行中的導覽狀態（不存檔） ---------- */
 const blankGuide = () => ({
-  on: { train: false, run: false },        // 導覽列是否顯示
-  demo: { train: false, run: false },      // 用示範檔案進行（顯示虛線靶框與一鍵帶入）
-  current: { train: null, run: null },     // 目前停在哪一步
-  latched: { train: [], run: [] },         // 做過就算完成的步驟（例如點過正常格）
+  on: { train: false, run: false, lab: false },        // 導覽列是否顯示
+  demo: { train: false, run: false, lab: false },      // 用示範檔案進行（顯示虛線靶框與一鍵帶入）
+  current: { train: null, run: null, lab: null },      // 目前停在哪一步
+  latched: { train: [], run: [], lab: [] },            // 做過就算完成的步驟（例如點過正常格）
+  lab: null,                               // 實地練習中：{ id, data, stash, flags, baseFieldIds, okValues }（labs.js）
   pinned: false,                           // 使用者主動回頭看，不自動拉走
   ghosts: [],                              // 畫布上的虛線靶框
   ghostKey: "[]",
@@ -110,7 +116,10 @@ const blankGuide = () => ({
  */
 function trainMissions() { return typeof TRAIN_MISSIONS === "undefined" ? [] : TRAIN_MISSIONS; }
 function runMissions() { return typeof RUN_MISSIONS === "undefined" ? [] : RUN_MISSIONS; }
-const missionsFor = (view) => (view === "train" ? trainMissions() : runMissions());
+const labMissions = () => (typeof LAB_STEPS === "undefined" || !state.guide.lab ? [] : LAB_STEPS[state.guide.lab.id] || []);
+const missionsFor = (view) => (view === "lab" ? labMissions() : view === "train" ? trainMissions() : runMissions());
+// 練習中而且在建立範本頁，導覽列與指令條用練習的步驟；離開建立範本頁就不顯示
+const guideView = () => (state.guide.lab && state.view === "train" ? "lab" : state.view);
 function allSpotlights() {
   const lists = [trainMissions(), runMissions()];
   if (typeof FEATURE_SPOTLIGHTS !== "undefined") lists.push(FEATURE_SPOTLIGHTS, RUN_SPOTLIGHTS);
@@ -121,7 +130,11 @@ function allSpotlights() {
 const findSpotlight = (id) => allSpotlights().find((step) => step.id === id) || null;
 
 /* ---------- 推關 ---------- */
-const guideVisible = (view) => !POPOUT && !state.onboarding.dismissed && state.guide.on[view];
+function guideVisible(view) {
+  if (POPOUT) return false;
+  if (view === "lab") return !!state.guide.lab && state.guide.on.lab && state.view === "train";
+  return !state.onboarding.dismissed && state.guide.on[view];
+}
 function stepDone(view, step) {
   const latched = state.guide.latched[view];
   if (latched.includes(step.id)) return true;
@@ -158,6 +171,7 @@ function evaluateGuide(view) {
   }
   if (complete && !state.onboarding[`${view}Done`]) {
     state.onboarding[`${view}Done`] = true;
+    if (view === "lab" && g.lab && !state.onboarding.labsDone.includes(g.lab.id)) state.onboarding.labsDone.push(g.lab.id);
     saveOnboardingPrefs();
   }
   return { view, steps, done, skipped, index, step, complete };
@@ -175,6 +189,7 @@ function goToStep(view, id, pinned) {
 function skipStep(view) {
   const info = evaluateGuide(view);
   if (!info.step) return;
+  if (view === "lab" && info.index === info.steps.length - 1) return;  // 最後一步要真的試抓對了，不能跳過
   const skipped = state.onboarding[`${view}Skipped`];
   if (!info.done[info.index] && !skipped.includes(info.step.id)) skipped.push(info.step.id);
   const next = info.steps[info.index + 1];
@@ -216,7 +231,7 @@ function scheduleGuide() {
 }
 function renderGuide() {
   const g = state.guide;
-  const view = state.view;
+  const view = guideView();
   let info = null;
   if (guideVisible(view)) info = evaluateGuide(view);
   renderGuideBar(info);
@@ -252,8 +267,9 @@ function renderGuideBar(info) {
   if (key === state.guide.barKey) return;
   state.guide.barKey = key;
   const word = { active: "進行中", done: "已完成", skipped: "已跳過", todo: "未開始" };
+  const lab = view === "lab";
   fill(bar,
-    h("span", { class: "guide-name" }, view === "train" ? "建立範本" : "解析 PDF"),
+    h("span", { class: "guide-name" }, lab ? "實地練習" : view === "train" ? "建立範本" : "解析 PDF"),
     h("ol", { class: "guide-steps" }, steps.map((s, i) => h("li", {},
       h("button", {
         type: "button", class: `guide-step ${states[i]}`, title: s.title,
@@ -265,11 +281,12 @@ function renderGuideBar(info) {
       : step ? `${index + 1}/${steps.length} ${step.title}` : ""),
     h("span", { class: "spring" }),
     h("div", { class: "guide-bar-actions" },
-      typeof openHelp === "function" ? h("button", {
+      lab ? h("button", { type: "button", class: "btn ghost", id: "labExitBtn", onclick: () => exitLab() }, "回到我的工作") : null,
+      !lab && typeof openHelp === "function" ? h("button", {
         type: "button", class: "btn ghost", id: "featureMenuBtn", "aria-haspopup": "dialog",
         onclick: (e) => openHelp("advanced", e.currentTarget),
       }, "功能點我看 ▾") : null,
-      h("button", { type: "button", class: "btn ghost", id: "guideCloseBtn", onclick: dismissGuide }, "關閉導覽")));
+      lab ? null : h("button", { type: "button", class: "btn ghost", id: "guideCloseBtn", onclick: dismissGuide }, "關閉導覽")));
 }
 
 /* 指令條：一句行動、一行提醒。內容沒變就不重畫，螢幕閱讀器才不會一直重念。 */
@@ -296,6 +313,7 @@ function renderMissionStrip(info) {
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 function stepContent(info) {
   const { step, index, steps, view } = info;
+  if (view === "lab" && !state.docs.length) return labMissingDoc(step, index);
   if (view === "train" && !state.docs.length) {
     // 重新整理後範例 PDF 不在了：先請使用者加入，或改用示範發票
     return {
@@ -319,6 +337,8 @@ function stepContent(info) {
   const tip = typeof step.tip === "function" ? safeCall(step.tip) : step.tip;
   const action = typeof step.action === "function" ? safeCall(step.action) : step.action;
   const sub = step.sub ? safeCall(step.sub) : null;
+  const wrong = !!sub?.wrong || (step.wrong ? !!safeCall(step.wrong) : false);
+  const lastLabStep = view === "lab" && index === steps.length - 1;
   const nodes = [
     h("span", { class: "mission-badge", "aria-hidden": "true" }, String(index + 1),
       sub ? [" ", h("span", { class: "mission-sub" }, `${sub.index}/${sub.total}`)] : null),
@@ -326,15 +346,16 @@ function stepContent(info) {
       note ? h("p", { class: "mission-note" }, note) : null,
       h("p", { class: "mission-action" }, h("span", { class: "sr-only" }, `第 ${index + 1} 步${sub ? `的 ${sub.index}/${sub.total}` : ""}，`), action,
         helper ? h("button", { type: "button", class: "btn ghost mission-assist", onclick: helper.run }, helper.label) : null),
-      legend || (tip ? h("p", { class: `mission-tip${sub?.wrong ? " wrong" : ""}` }, tip) : null)),
+      legend || (tip ? h("p", { class: `mission-tip${wrong ? " wrong" : ""}` }, tip) : null)),
     h("div", { class: "mission-controls" },
       h("button", { type: "button", class: "btn ghost", disabled: index === 0, onclick: () => goToStep(view, steps[index - 1].id, true) }, "上一步"),
-      h("button", { type: "button", class: "btn ghost", onclick: () => skipStep(view) }, "下一步")),
+      h("button", { type: "button", class: "btn ghost", disabled: lastLabStep, onclick: () => skipStep(view) }, "下一步")),
   ];
   // 子步驟換了也算換步驟（指令條會脈衝一次）
   return { key: [sub ? `${step.id}#${sub.index}` : step.id, action, tip, note, helper?.label || "", !!legend, index], nodes };
 }
 function completionContent(view) {
+  if (view === "lab") return labCompletion();
   const actions = typeof completionActions === "function" ? completionActions(view) : [];
   const nodes = [
     h("span", { class: "mission-badge done", "aria-hidden": "true" }, "✓"),
@@ -1034,7 +1055,7 @@ const FEATURE_SPOTLIGHTS = [
     when: "單號、日期這類旁邊沒有標題、只能靠位置找的值。",
     examples: [{ raw: "（右上角）INV-2023-0042", value: "INV-2023-0042" }],
     body: "用 P 直接框住值，工具靠定位點對位找到它；記得每頁加 3 個以上的定位點。",
-    needs: "doc", tour: ["feat-pos-field-1"], manual: "pos-field",
+    needs: "doc", tour: ["feat-pos-field-1"], manual: "pos-field", lab: "pos-field",
   },
   {
     id: "feat-cell-extract", tab: "train", group: "抓值", title: "一格有好幾個值，只取一個",
@@ -1047,7 +1068,7 @@ const FEATURE_SPOTLIGHTS = [
       ["依空格分段", "每一段本身都不含空格。"],
       ["依字距分段", "文字層 PDF，兩段之間距離明顯較大。"],
     ],
-    needs: "table", manual: "value-modes",
+    needs: "table", manual: "value-modes", lab: "cell-extract",
     setup: () => selectFirstTable("columns", true),
     target: '#right select[aria-label="這一欄怎麼取值"]',
   },
@@ -1056,7 +1077,7 @@ const FEATURE_SPOTLIGHTS = [
     when: "值有固定格式，但前後的字會變，例如頁數、型號、日期。",
     body: "用一段規則描述內容長什麼樣子，只取括號裡你要的那段；比對不到就留空並標記。",
     symbols: REGEX_SYMBOLS, trial: "extract",
-    needs: "table", manual: "regex",
+    needs: "table", manual: "regex", lab: "regex",
     setup: () => selectFirstTable("columns", true),
     target: '#right select[aria-label="這一欄怎麼取值"]',
   },
@@ -1313,6 +1334,7 @@ function regexTrial(mode, context) {
     }
     result.textContent = message;
     result.className = `trial-result ${kind}`;
+    if (typeof labTrialResult === "function") labTrialResult(mode, data);
   };
   const run = () => {
     clearTimeout(timer);
@@ -1383,14 +1405,22 @@ function cardNodes(step, opts, missing) {
   const go = !!(opts.go || seq);
   const actions = [];
   const close = (label) => h("button", { type: "button", class: "btn", onclick: () => closeSpotlight() }, label);
+  const lab = step.lab && !opts.inPlace && !seq;
+  if (lab) {
+    // 實地練習不需要先有文件：載入練習 PDF 與做好前置步驟的練習範本
+    actions.push(h("button", {
+      type: "button", class: "btn primary", id: "spotLabBtn",
+      onclick: () => { closeSpotlight(false); requestLab(step.lab, $("helpBtn")); },
+    }, "實地練習"));
+  }
   if (missing) {
     // 沒有文件：用示範發票，載入後接著做同一件事
     actions.push(h("button", {
-      type: "button", class: "btn primary", id: "spotDemoBtn",
+      type: "button", class: lab ? "btn" : "btn primary", id: "spotDemoBtn",
       onclick: () => demoThen(step, () => (go ? openSpotlight(step.id, opts) : hasGo(step) ? goToSpotlight(step) : openSpotlight(step.id, opts))),
     }, "用示範發票看"));
   } else if (!go && !opts.inPlace && hasGo(step)) {
-    actions.push(h("button", { type: "button", class: "btn primary", id: "spotGoBtn", onclick: () => goToSpotlight(step) }, "帶我去設定"));
+    actions.push(h("button", { type: "button", class: lab ? "btn" : "btn primary", id: "spotGoBtn", onclick: () => goToSpotlight(step) }, "帶我去設定"));
   }
   if (step.tryIt && !missing) {
     actions.push(h("button", {
@@ -1527,7 +1557,9 @@ function advancedSection(view, first) {
       h("ul", {}, list.filter((s) => s.group === group).map((step) => h("li", {}, h("button", {
         type: "button", class: "help-row", dataset: { spotlight: step.id },
         onclick: () => openSpotlight(step.id),
-      }, h("span", {}, step.title), seen.includes(step.id) ? h("span", { class: "help-meta seen" }, "已看過") : null)))),
+      }, h("span", {}, step.title),
+      step.lab && state.onboarding.labsDone.includes(step.lab) ? h("span", { class: "help-meta seen" }, "練習過 ✓")
+        : seen.includes(step.id) ? h("span", { class: "help-meta seen" }, "已看過") : null)))),
     ]));
 }
 function renderHelpPopover() {
@@ -1680,7 +1712,7 @@ async function loadWhatsNew(version) {
   state.whatsnew.pending = items;
   state.whatsnew.fresh = fresh;
   renderWhatsNewDot();
-  const guideRunning = guideVisible("train") || guideVisible("run");
+  const guideRunning = guideVisible("train") || guideVisible("run") || guideVisible("lab");
   if (prefs.whatsnewCardShown !== version && !guideRunning) setTimeout(showWhatsNewCard, 1200);
 }
 function renderWhatsNewDot() {

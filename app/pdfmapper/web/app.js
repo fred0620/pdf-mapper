@@ -123,6 +123,8 @@ function undo() {
 // 也不自動套用：重開時先詢問，避免上一次的名稱和框線留在新範本裡。
 const DRAFT_KEY = "pdfmapper.draft";
 function saveDraft() {
+  scheduleGuide();  // 設定改了就重算導覽的完成條件（輸入框打字不會重畫）
+  if (state.guide.lab) return;  // 實地練習中：練習範本不存草稿，原本的草稿原封不動
   state.recovery = null;
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({ template: state.template, saved: state.savedTemplate }));
@@ -189,6 +191,7 @@ function resumeParked() {
   toast("已接回之前的範本");
 }
 function recoveryNotice() {
+  if (state.guide.lab) return null;
   const draft = state.recovery;
   const parked = !draft && state.view === "train" ? parkedTemplate() : null;
   if (parked) {
@@ -1542,10 +1545,10 @@ function actionsBar() {
     h("button", {
       class: "btn primary wide", id: "testBtn", disabled: state.testing || !state.docs.length, onclick: testTemplate,
     }, state.testing ? "測試中" : `用 ${state.docs.length} 份範例測試`),
-    h("button", { class: "btn wide", id: "saveButton", disabled: !T().template_id, onclick: saveTemplate },
+    h("button", { class: "btn wide", id: "saveButton", disabled: !T().template_id || !!state.guide.lab, onclick: saveTemplate },
       state.showcase ? "另存成我的範本" : T().template_id ? "儲存範本" : "先填範本名稱才能儲存"),
     h("button", {
-      class: "btn wide", id: "resetButton", disabled: templateIsEmpty() && !state.docs.length, onclick: resetTemplate,
+      class: "btn wide", id: "resetButton", disabled: (templateIsEmpty() && !state.docs.length) || !!state.guide.lab, onclick: resetTemplate,
     }, "開始新範本"));
 }
 function renderRightActions() {
@@ -1571,6 +1574,7 @@ const testTemplate = guard(async () => {
   }
 });
 const saveTemplate = guard(async () => {
+  if (state.guide.lab) { toast("練習範本不會存檔，回到我的工作後再儲存自己的範本", true); return; }
   if (state.showcase) {
     // 觀摩範本另存成自己的範本，示範範本保持原樣
     T().name = "商業發票（我的）";
@@ -1919,6 +1923,7 @@ async function closeDocs(view) {
 const startDemo = guard(async (mode, options = {}) => {
   const withGuide = options.guide !== false;
   const view = mode === "run" ? "run" : "train";
+  if (state.guide.lab && view === "train") await exitLab();  // 先把練習前的文件與範本接回來
   if (state.guide.loadingDemo) return;
   if (state.run && !state.run.finished) { toast("解析進行中，完成後再開始示範", true); return; }
   state.guide.loadingDemo = true;

@@ -1,0 +1,131 @@
+{
+  "pos-field": {
+    "title": "值旁邊沒有標題怎麼抓",
+    "spotlight": "feat-pos-field",
+    "pdf": "labs/lab_pos_field.pdf",
+    "doc_name": "練習_採購單.pdf",
+    "template": "labs/lab_pos_field.json",
+    "template_name": "實地練習：沒有標題的值",
+    "steps": [
+      "lab-pos-field-1",
+      "lab-pos-field-2",
+      "lab-pos-field-3"
+    ],
+    "verify": {
+      "kind": "new_field",
+      "expect": "PO-2026-0412"
+    },
+    "hints": [
+      {
+        "when": "empty",
+        "text": "框的位置沒有字。單號在頁面右上角，框住整個單號。"
+      },
+      {
+        "when": "partof",
+        "text": "框得太小，單號被切掉了。拖曳框的邊，把整個單號框進去。"
+      },
+      {
+        "when": "wider",
+        "text": "框太大，包到單號以外的字。拖曳框的邊，只留單號。"
+      },
+      {
+        "when": "other",
+        "text": "框到的不是單號。單號在頁面右上角，沒有標題。"
+      }
+    ],
+    "learned": "沒有標題的值，用 P 直接框住它就能抓到；工具靠分散的定位點對位，每頁記得留 3 個以上。",
+    "manual": "pos-field"
+  },
+  "cell-extract": {
+    "title": "一格有好幾個值，只取一個",
+    "spotlight": "feat-cell-extract",
+    "pdf": "labs/lab_cell_extract.pdf",
+    "doc_name": "練習_出口清單.pdf",
+    "template": "labs/lab_cell_extract.json",
+    "template_name": "實地練習：一格取一個值",
+    "steps": [
+      "lab-cell-extract-1",
+      "lab-cell-extract-2",
+      "lab-cell-extract-3",
+      "lab-cell-extract-4"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "spec",
+      "expect": [
+        "5A992",
+        "4A003",
+        "EAR99",
+        "3A001",
+        "5D002"
+      ]
+    },
+    "hints": [
+      {
+        "when": "contains:Origin",
+        "text": "這格還帶著 Origin。「值到哪裡結束」要選「這一行結束」，不然會一路取到下一個開頭文字。"
+      },
+      {
+        "when": "contains:ECCN",
+        "text": "整格內容都進來了。「這一欄怎麼取值」要選「開頭文字」，開頭文字填 ECCN:。"
+      },
+      {
+        "when": "empty",
+        "text": "沒取到值。開頭文字要和 PDF 上一樣，包含冒號：ECCN:"
+      },
+      {
+        "when": "other",
+        "text": "取到的不是 ECCN 的值。確認開頭文字是 ECCN:，值到哪裡結束選「這一行結束」。"
+      }
+    ],
+    "learned": "一格有好幾個值時，用「開頭文字」只取其中一個，再選好值到哪裡結束。",
+    "manual": "value-modes"
+  },
+  "regex": {
+    "title": "用規則抓特定格式的值",
+    "spotlight": "feat-regex",
+    "pdf": "labs/lab_regex.pdf",
+    "doc_name": "練習_發票清單.pdf",
+    "template": "labs/lab_regex.json",
+    "template_name": "實地練習：用規則抓格式",
+    "steps": [
+      "lab-regex-1",
+      "lab-regex-2",
+      "lab-regex-3",
+      "lab-regex-4"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "ref",
+      "expect": [
+        "INV-2026-0301",
+        "INV-2026-0302",
+        "INV-2026-0307",
+        "INV-2026-0311",
+        "INV-2026-0316"
+      ]
+    },
+    "hints": [
+      {
+        "when": "contains:Ref",
+        "text": "整格內容都進來了，規則沒有套上。「這一欄怎麼取值」要選「正規表達式」，再填規則。"
+      },
+      {
+        "when": "contains:rev",
+        "text": "規則多取到 rev 了。只描述單號的樣子：INV-、4 個數字、-、4 個數字。"
+      },
+      {
+        "when": "empty",
+        "text": "規則沒比對到，這格留空了。先在試算區試到抓出 INV-2026-0301，再套用。"
+      },
+      {
+        "when": "other",
+        "text": "抓到的和預期不同。回試算區調整規則，試到對再套用。"
+      }
+    ],
+    "learned": "值有固定格式、前後的字會變時，用規則描述它的樣子，只取符合的那一段。",
+    "manual": "regex"
+  }
+}

@@ -43,6 +43,9 @@ DEMO_SETS = {
     "showcase": {"docs": [("sample_6_invoice.pdf", "示範發票.pdf")], "template": "invoice_demo.json", "guide": None},
 }
 DEMO_RUN_TEMPLATE = "customs_demo.json"
+# 進階功能的實地練習：練習 PDF、練習範本與驗證用的預期值。id（labs.json 的鍵）就是白名單
+LABS = json.loads((DEMO / "labs.json").read_text(encoding="utf-8"))
+LAB_PUBLIC = ("title", "spotlight", "steps", "verify", "hints", "learned", "manual")
 PRACTICE_SUFFIX = "（練習）"   # 導覽練習存的範本名稱結尾，只有這種範本可以從導覽刪除
 UPLOADS = paths.UPLOADS
 TEMPLATES = paths.TEMPLATES
@@ -485,11 +488,34 @@ def _demo_template(name: str) -> dict:
     return data
 
 
+def _lab_samples(lab_id):
+    """實地練習：只認 labs.json 的 id。練習範本只回傳給頁面，不寫入 workspace/templates。"""
+    if not isinstance(lab_id, str) or lab_id not in LABS:
+        raise ValueError("不認得的練習")
+    lab = LABS[lab_id]
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    doc_id = uuid.uuid4().hex
+    target = UPLOADS / f"{doc_id}__{lab['doc_name']}"
+    shutil.copyfile(DEMO / lab["pdf"], target)
+    try:
+        doc = {**_describe(doc_id, lab["doc_name"]), "demo": True}
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    template = _demo_template(lab["template"])
+    template["name"] = lab["template_name"]
+    log.info("載入練習 lab=%s doc=%s", lab_id, doc_id)
+    return jsonify({"docs": [doc], "demo": True, "recommended_template_id": None, "template": template,
+                    "lab": {"id": lab_id, **{key: lab[key] for key in LAB_PUBLIC if key in lab}}})
+
+
 @app.post("/api/demo-samples")
 def demo_samples():
     """新手導覽：把 app 內附的示範 PDF 複製進上傳暫存，和一般上傳一樣檢查頁數與損壞。"""
     body = _json_body()
     mode = body.get("mode")
+    if mode == "lab":
+        return _lab_samples(body.get("lab"))
     if not isinstance(mode, str) or mode not in DEMO_SETS:
         raise ValueError("不認得的示範模式")
     spec = DEMO_SETS[mode]
