@@ -124,6 +124,13 @@ def _check_regex(spec: dict, keys: tuple[str, ...], where: str, errors: list[str
                           "重複的內容裡又有重複（例如 (\\d+)+），請改成不巢狀的寫法（例如 \\d+）")
 
 
+def check_pattern(pattern: str) -> str | None:
+    """單一正規表達式的檢查（長度、語法、會讓解析卡住的寫法），和範本儲存時相同。回傳錯誤訊息或 None。"""
+    errors: list[str] = []
+    _check_regex({"pattern": pattern}, ("pattern",), "規則", errors)
+    return errors[0] if errors else None
+
+
 def validate(template: dict) -> list[str]:
     errors: list[str] = []
     if not template.get("template_id"):
