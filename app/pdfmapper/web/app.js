@@ -1033,7 +1033,7 @@ function fieldPanel(field) {
       }), "內容可能接到下一頁"),
       field.continuation ? h("p", { class: "note" }, `接續範圍在第 ${field.continuation.ref_page + 1} 頁，接上時會標記給人確認。`) : null),
     h("details", {
-      id: "fieldAdvanced", open: !!state.fieldAdvancedOpen, ontoggle: (e) => { state.fieldAdvancedOpen = e.target.open; },
+      id: "fieldAdvanced", open: !!state.fieldAdvancedOpen, ontoggle: (e) => { state.fieldAdvancedOpen = e.target.open; scheduleGuide(); },
     }, h("summary", { onclick: (e) => { state.fieldAdvancedOpen = !e.currentTarget.parentElement.open; } }, "進階設定"), h("div", { class: "form" },
       field.kind === "key_value" ? h("label", {}, "比對用的標題文字", h("input", {
         type: "text", value: field.label.text,

@@ -495,21 +495,27 @@ def build_template() -> dict:
 # ---------- Practice PDFs and templates for the guided labs ----------
 # English labels only (the bundled font subset lacks most CJK). Templates carry no image patches; the server adds them.
 def _lab_pdf(path, titles, rules, values, font_path=None, right=()):
-    """titles: [(text, x, y, big)]; rules: [(x0, y0, x1, y1)]; values: [(text, x, y)] go on the text layer."""
-    sheet = Sheet(font_path)
-    for text, x, y, big in titles:
-        sheet.label(text, x, y, sheet.big if big else None)
-    for rule in rules:
-        sheet.line(*rule)
-    buffer = io.BytesIO()
-    sheet.image.convert("L").save(buffer, "PNG", optimize=True)  # grayscale PNG keeps ten lab PDFs under 300 KB
-    buffer.seek(0)
+    """One page: titles [(text, x, y, big)]; rules [(x0, y0, x1, y1)]; values [(text, x, y)] go on the text layer."""
+    _lab_pdf_pages(path, [(titles, rules, values)], font_path, right)
+
+
+def _lab_pdf_pages(path, pages, font_path=None, right=()):
+    """Several pages, each (titles, rules, values) as in _lab_pdf."""
     out = canvas.Canvas(str(path), pagesize=(W, H))
-    out.drawImage(ImageReader(buffer), 0, 0, W, H)
-    out.setFont(MONO, 10)
-    for text, x, y in values:
-        (out.drawRightString if (text, x, y) in right else out.drawString)(x * W, H - y * H - 3, text)
-    out.showPage()
+    for titles, rules, values in pages:
+        sheet = Sheet(font_path)
+        for text, x, y, big in titles:
+            sheet.label(text, x, y, sheet.big if big else None)
+        for rule in rules:
+            sheet.line(*rule)
+        buffer = io.BytesIO()
+        sheet.image.convert("L").save(buffer, "PNG", optimize=True)  # grayscale PNG keeps ten lab PDFs under 300 KB
+        buffer.seek(0)
+        out.drawImage(ImageReader(buffer), 0, 0, W, H)
+        out.setFont(MONO, 10)
+        for text, x, y in values:
+            (out.drawRightString if (text, x, y) in right else out.drawString)(x * W, H - y * H - 3, text)
+        out.showPage()
     out.save()
 
 
@@ -522,6 +528,8 @@ LAB_ECCN = [("5A992", "TW"), ("4A003", "JP"), ("EAR99", "US"), ("3A001", "DE"), 
 LAB_REFS = [("INV-2026-0301", "2"), ("INV-2026-0302", "1"), ("INV-2026-0307", "3"), ("INV-2026-0311", "1"), ("INV-2026-0316", "2")]
 LAB_COLS = [0.08, 0.16, 0.6, 0.92]
 LAB_COLS4 = [0.08, 0.16, 0.5, 0.76, 0.92]
+LAB_TAX_ID = "1234567"  # 7 digits on purpose
+LAB_NEXT_BOX = [0.08, 0.22, 0.92, 0.6]
 
 
 def _lab_base(template_id, name, anchors, **extra):
@@ -587,12 +595,99 @@ def build_lab_regex(folder: Path, font_path=None):
              "regions": [{"page_rule": "first", "ref_page": 0, "box": [0.08, 0.22, 0.92, 0.52], "dividers": cols}]}
     return _lab_base("lab_regex", "lab regex", anchors, tables=[table])
 
+# ---------- Batch B: format check, next page, moving table start, variable table end ----------
+LAB_COLS3 = [0.08, 0.2, 0.6, 0.92]
+LAB_PARTS = ["Bolt M6", "Nut M6", "Washer 6", "Screw M4", "Clip A2", "Pin 8", "Spacer 3"]
+
+
+def _lab_table_page(title, header_y, first_y, items, start_no, step=0.05, total=None, extra=(), footer=True):
+    """One page of a Line/Item/Amount table. Returns (titles, rules, values, right)."""
+    titles = [(title, 0.08, 0.04, True)] + [(t, x + 0.008, header_y, False) for t, x in zip(("Line", "Item", "Amount"), LAB_COLS3)]
+    if footer:
+        titles += [("Confidential", 0.6, 0.92, False), ("Acme Corp", 0.08, 0.92, False)]
+    rules = [(0.08, header_y - 0.01, 0.92, header_y - 0.01), (0.08, header_y + 0.04, 0.92, header_y + 0.04)]
+    values, right = list(extra), []
+    for i, name in enumerate(items):
+        y = first_y + i * step
+        amount = f"{(start_no + i) * 310:,}"
+        values += [(str(start_no + i), LAB_COLS3[0] + 0.01, y), (name, LAB_COLS3[1] + 0.01, y), (amount, LAB_COLS3[3] - 0.02, y)]
+        right.append((amount, LAB_COLS3[3] - 0.02, y))
+    if total:
+        y = first_y + len(items) * step + 0.02
+        titles.append(("Total", LAB_COLS3[1] + 0.008, y, False))
+        values.append((total, LAB_COLS3[3] - 0.02, y + 0.002))
+        right.append((total, LAB_COLS3[3] - 0.02, y + 0.002))
+    return titles, rules, values, right
+
+
+def _lab_table_template(template_id, anchors, region_boxes, **table_extra):
+    columns = [{"id": "no", "name": "Line", "band": 0}, {"id": "item", "name": "Item", "band": 1},
+               {"id": "amount", "name": "Amount", "band": 2}]
+    regions = [{"page_rule": rule, "ref_page": page, "box": box, "dividers": LAB_COLS3} for rule, page, box in region_boxes]
+    table = {"id": "items", "name": "Lines", "columns": columns, "key_column": "no", "key_position": "auto",
+             "required": True, "regions": regions} | table_extra
+    return _lab_base(template_id, template_id.replace("_", " "), anchors, tables=[table])
+
+
+def _lab_anchor(aid, text, x, y, width, page_rule="first", page=0):
+    return {"id": aid, "page_rule": page_rule, "ref_page": page, **_lab_label(text, x, y, width)}
+
+
+def build_lab_format_check(folder: Path, font_path=None):
+    titles = [("Company Profile", 0.08, 0.04, True), ("Company", 0.1, 0.18, False), ("Tax ID", 0.1, 0.24, False),
+              ("Phone", 0.1, 0.30, False), ("Confidential", 0.6, 0.9, False)]
+    rules = [(0.08, 0.16, 0.92, 0.16), (0.08, 0.22, 0.92, 0.22), (0.08, 0.28, 0.92, 0.28), (0.08, 0.34, 0.92, 0.34)]
+    values = [("Acme Trading Ltd", 0.3, 0.188), (LAB_TAX_ID, 0.3, 0.248), ("02-2345-6789", 0.3, 0.308)]
+    _lab_pdf(folder / "lab_format_check.pdf", titles, rules, values, font_path)
+    anchors = [{"id": "title", "text": "Company Profile", "box": [0.08, 0.04, 0.5, 0.1], "page_rule": "first", "ref_page": 0},
+               _lab_anchor("phone", "Phone", 0.1, 0.30, 0.08), _lab_anchor("conf", "Confidential", 0.6, 0.9, 0.14)]
+    field = {"id": "tax_id", "name": "Tax ID", "kind": "key_value", "page_rule": "first", "ref_page": 0,
+             "label": _lab_label("Tax ID", 0.1, 0.24, 0.08), "value_box": [0.28, 0.232, 0.9, 0.272],
+             "type": "text", "required": True}
+    return _lab_base("lab_format_check", "lab format check", anchors, fields=[field])
+
+
+def build_lab_next_page(folder: Path, font_path=None):
+    pages, right = [], []
+    for page, (items, start) in enumerate(((LAB_PARTS[:4], 1), (LAB_PARTS[4:], 5))):
+        titles, rules, values, r = _lab_table_page("Packing List", 0.17, 0.24, items, start)
+        pages.append((titles, rules, values))
+        right += r
+    _lab_pdf_pages(folder / "lab_next_page.pdf", pages, font_path, right)
+    anchors = []
+    for page, rule in ((0, "first"), (1, "rest")):
+        anchors += [{"id": f"t{page}", "text": "Packing List", "box": [0.08, 0.04, 0.42, 0.1], "page_rule": rule, "ref_page": page},
+                    _lab_anchor(f"c{page}", "Confidential", 0.6, 0.92, 0.14, rule, page),
+                    _lab_anchor(f"a{page}", "Acme Corp", 0.08, 0.92, 0.12, rule, page)]
+    return _lab_table_template("lab_next_page", anchors, [("first", 0, LAB_NEXT_BOX)])
+
+
+def build_lab_header(folder: Path, font_path=None):
+    titles, rules, values, right = _lab_table_page("Shipment List", 0.17, 0.24, LAB_PARTS[:5], 1)
+    _lab_pdf(folder / "lab_header_a.pdf", titles, rules, values, font_path, right)
+    titles, rules, values, right = _lab_table_page("Shipment List", 0.4, 0.47, LAB_PARTS[2:6], 1,
+                                                   extra=[("Rush order", 0.21, 0.2), ("Dock 4", 0.21, 0.26)])
+    titles += [("Remarks", 0.1, 0.17, False), ("Handling", 0.1, 0.23, False)]
+    _lab_pdf(folder / "lab_header_b.pdf", titles, rules, values, font_path, right)
+    anchors = [{"id": "title", "text": "Shipment List", "box": [0.08, 0.04, 0.42, 0.1], "page_rule": "first", "ref_page": 0},
+               _lab_anchor("conf", "Confidential", 0.6, 0.92, 0.14), _lab_anchor("acme", "Acme Corp", 0.08, 0.92, 0.12)]
+    return _lab_table_template("lab_header", anchors, [("first", 0, [0.08, 0.22, 0.92, 0.85])])
+
+
+def build_lab_end_marker(folder: Path, font_path=None):
+    titles, rules, values, right = _lab_table_page("Order Lines", 0.17, 0.24, LAB_PARTS[:5], 1, total="7,750")
+    _lab_pdf(folder / "lab_end_marker.pdf", titles, rules, values, font_path, right)
+    anchors = [{"id": "title", "text": "Order Lines", "box": [0.08, 0.04, 0.42, 0.1], "page_rule": "first", "ref_page": 0},
+               _lab_anchor("conf", "Confidential", 0.6, 0.92, 0.14), _lab_anchor("acme", "Acme Corp", 0.08, 0.92, 0.12)]
+    return _lab_table_template("lab_end_marker", anchors, [("first", 0, [0.08, 0.22, 0.92, 0.85])])
+
 
 def build_labs(folder: Path, font_path=None) -> None:
-    """Write the lab PDFs and templates into app/pdfmapper/demo/labs/ (batch A); later labs are added here."""
+    """Write the lab PDFs and templates into app/pdfmapper/demo/labs/ (batches A and B); later labs are added here."""
     import json
     folder.mkdir(parents=True, exist_ok=True)
-    for build in (build_lab_pos_field, build_lab_cell_extract, build_lab_regex):
+    for build in (build_lab_pos_field, build_lab_cell_extract, build_lab_regex, build_lab_format_check, build_lab_next_page,
+                  build_lab_header, build_lab_end_marker):
         template = build(folder, font_path)
         name = template["template_id"]
         (folder / f"{name}.json").write_text(json.dumps(template, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

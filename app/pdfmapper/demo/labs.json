@@ -127,5 +127,168 @@
     ],
     "learned": "值有固定格式、前後的字會變時，用規則描述它的樣子，只取符合的那一段。",
     "manual": "regex"
+  },
+  "format-check": {
+    "title": "內容格式不對就標記",
+    "spotlight": "feat-format-check",
+    "pdf": "labs/lab_format_check.pdf",
+    "doc_name": "練習_公司資料.pdf",
+    "template": "labs/lab_format_check.json",
+    "template_name": "實地練習：格式檢查",
+    "steps": [
+      "lab-format-check-1",
+      "lab-format-check-2",
+      "lab-format-check-3",
+      "lab-format-check-4"
+    ],
+    "verify": {
+      "kind": "field_flag",
+      "field": "tax_id",
+      "value": "1234567",
+      "reason": "format_mismatch",
+      "done": "1234567 少一碼，已被標記為格式不符"
+    },
+    "hints": [
+      {
+        "when": "empty",
+        "text": "還沒有設格式檢查。到欄位的進階設定，在「格式檢查」填規則。"
+      },
+      {
+        "when": "contains:{7}",
+        "text": "規則寫成 7 碼了，1234567 剛好符合所以沒被標記。統一編號是 8 碼，改成 ^\\d{8}$。"
+      },
+      {
+        "when": "other",
+        "text": "這條規則讓 1234567 通過了。統一編號是 8 個數字，前後加 ^ 和 $：^\\d{8}$。"
+      }
+    ],
+    "learned": "值一定是固定格式時，用格式檢查：不符合的就標記給人看，不會改動抓到的值。",
+    "manual": "format-check"
+  },
+  "cross-page": {
+    "title": "明細接到下一頁",
+    "spotlight": "feat-cross-page",
+    "pdf": "labs/lab_next_page.pdf",
+    "doc_name": "練習_裝箱單.pdf",
+    "template": "labs/lab_next_page.json",
+    "template_name": "實地練習：明細接到下一頁",
+    "steps": [
+      "lab-cross-page-1",
+      "lab-cross-page-2",
+      "lab-cross-page-3",
+      "lab-cross-page-4"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "item",
+      "expect": [
+        "Bolt M6",
+        "Nut M6",
+        "Washer 6",
+        "Screw M4",
+        "Clip A2",
+        "Pin 8",
+        "Spacer 3"
+      ],
+      "rows_hint": "列數對不上，第 2 頁的列沒有全部接進來。確認第 2 頁的範圍框住所有資料列，套用頁面維持「第 2 頁起」。"
+    },
+    "hints": [
+      {
+        "when": "other",
+        "text": "這一列的內容對不上。確認第 2 頁的範圍框住表頭下面的資料，沒有包到標題。"
+      }
+    ],
+    "learned": "明細接到下一頁時，在第 2 頁也加一個資料範圍，跨頁的列會自動接成一張表。",
+    "manual": "table-place"
+  },
+  "header": {
+    "title": "表格開始的位置不固定",
+    "spotlight": "feat-header",
+    "pdf": "labs/lab_header_a.pdf",
+    "doc_name": "練習_出貨單_甲.pdf",
+    "pdfs": [
+      "labs/lab_header_a.pdf",
+      "labs/lab_header_b.pdf"
+    ],
+    "doc_names": [
+      "練習_出貨單_甲.pdf",
+      "練習_出貨單_乙.pdf"
+    ],
+    "template": "labs/lab_header.json",
+    "template_name": "實地練習：表格位置不固定",
+    "steps": [
+      "lab-header-1",
+      "lab-header-2",
+      "lab-header-3"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "item",
+      "per_doc": true,
+      "expect": [
+        [
+          "Bolt M6",
+          "Nut M6",
+          "Washer 6",
+          "Screw M4",
+          "Clip A2"
+        ],
+        [
+          "Washer 6",
+          "Screw M4",
+          "Clip A2",
+          "Pin 8"
+        ]
+      ],
+      "rows_hint": "表格的位置每份不同，範圍沒有跟著表頭移動。到「位置」分頁，在表頭那一列按「框選表頭」。"
+    },
+    "hints": [
+      {
+        "when": "other",
+        "text": "這一列的內容對不上，表格上緣沒有對到表頭。重新框選表頭，只框住「Line」這個字。"
+      }
+    ],
+    "learned": "表格位置每份不同時，框住每份都一樣的表頭字，表格上緣和分隔線會跟著表頭移動。",
+    "manual": "table-place"
+  },
+  "endmark": {
+    "title": "表格長度不固定",
+    "spotlight": "feat-endmark",
+    "pdf": "labs/lab_end_marker.pdf",
+    "doc_name": "練習_訂單明細.pdf",
+    "template": "labs/lab_end_marker.json",
+    "template_name": "實地練習：表格長度不固定",
+    "steps": [
+      "lab-endmark-1",
+      "lab-endmark-2",
+      "lab-endmark-3"
+    ],
+    "verify": {
+      "kind": "column",
+      "table": "items",
+      "column": "amount",
+      "expect": [
+        "310",
+        "620",
+        "930",
+        "1,240",
+        "1,550"
+      ],
+      "rows_hint": "多抓或少抓了列。到「位置」分頁的表格結尾，框住表格結束後緊接著的「Total」。"
+    },
+    "hints": [
+      {
+        "when": "contains:7,750",
+        "text": "最後一列多帶到了合計的金額。框選表尾，框住表格結束後緊接著的「Total」，合計就不會算進明細。"
+      },
+      {
+        "when": "other",
+        "text": "這一列的金額對不上。表尾只框「Total」這個字，不要框到明細。"
+      }
+    ],
+    "learned": "明細列數不固定時，框住表格結束後緊接著的字（例如 Total），抓到那裡為止，合計不會混進明細。",
+    "manual": "table-place"
   }
 }

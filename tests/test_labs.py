@@ -27,31 +27,73 @@ def solved(lab_id):
         column.update(start="ECCN:", end="line")
     elif lab_id == "regex":
         template["tables"][0]["columns"][1]["extract"] = r"INV-\d{4}-\d{4}"
+    elif lab_id == "format-check":
+        template["fields"][0]["pattern"] = r"^\d{8}$"
+    elif lab_id == "cross-page":
+        table = template["tables"][0]
+        table["regions"].append({"page_rule": "rest", "ref_page": 1, "box": [0.08, 0.22, 0.92, 0.6],
+                                 "dividers": table["regions"][0]["dividers"]})
+    elif lab_id == "header":
+        template["tables"][0]["regions"][0]["header"] = {"text": "Line", "box": [0.085, 0.165, 0.17, 0.195]}
+    elif lab_id == "endmark":
+        template["tables"][0]["end_marker"] = {"text": "Total", "box": [0.2, 0.5, 0.29, 0.54], "ref_page": 0}
     return template
+
+
+def lab_pdfs(lab):
+    return lab.get("pdfs") or [lab["pdf"]]
+
+
+def table_column(result, verify):
+    table = next(t for t in result["tables"] if t["id"] == verify["table"])
+    return [row["cells"][verify["column"]]["value"] for row in table["rows"]]
 
 
 @pytest.mark.parametrize("lab_id", sorted(LABS))
 def test_lab_files_steps_and_expected_values(lab_id):
     lab = LABS[lab_id]
-    assert (DEMO / lab["pdf"]).is_file() and (DEMO / lab["template"]).is_file()
+    assert all((DEMO / pdf).is_file() for pdf in lab_pdfs(lab)) and (DEMO / lab["template"]).is_file()
+    assert len(lab.get("doc_names") or [lab["doc_name"]]) == len(lab_pdfs(lab))
     for step in lab["steps"]:
-        assert re.search(rf'id: "{step}"|labVerifyStep\("{step}"', LABS_JS), step
+        assert re.search(rf'id: "{step}"|lab(?:Verify|Place)Step\("{step}"', LABS_JS), step
     assert re.search(rf'id: "feat-[\w-]+".*?lab: "{lab_id}"', SPOTLIGHTS_JS, re.S)
     assert lab["spotlight"] in SPOTLIGHTS_JS
     template = solved(lab_id)
-    with Document(DEMO / lab["pdf"]) as reference:
+    with Document(DEMO / lab_pdfs(lab)[0]) as reference:
         tpl.finalize(template, reference)
-    result = parse_pdf(DEMO / lab["pdf"], template)
+    results = [parse_pdf(DEMO / pdf, template) for pdf in lab_pdfs(lab)]
     verify = lab["verify"]
     if verify["kind"] == "new_field":
-        got = [f["value"] for f in result["fields"] if f["id"] == "f2"]
-        expect = [verify["expect"]]
+        got = [f["value"] for f in results[0]["fields"] if f["id"] == "f2"]
+        assert got == [verify["expect"]]
+    elif verify["kind"] == "field_flag":
+        field = next(f for f in results[0]["fields"] if f["id"] == verify["field"])
+        assert field["value"] == verify["value"] and verify["reason"] in field["reasons"]
+    elif verify.get("per_doc"):
+        assert len(results) == len(verify["expect"])
+        for result, expect in zip(results, verify["expect"]):
+            assert [v.replace("\r\n", "\n") for v in table_column(result, verify)] == expect
     else:
-        table = next(t for t in result["tables"] if t["id"] == verify["table"])
-        got = [row["cells"][verify["column"]]["value"] for row in table["rows"]]
-        expect = verify["expect"]
-    assert [v.replace("\r\n", "\n") for v in got] == expect
-    assert result["status"] == "ok"
+        assert [v.replace("\r\n", "\n") for v in table_column(results[0], verify)] == verify["expect"]
+    assert all(r["status"] in ("ok", "review") for r in results)
+    if verify["kind"] != "field_flag":
+        assert all(r["status"] == "ok" for r in results)
+
+
+def test_lab_unsolved_templates_fail_the_check():
+    """沒做步驟的練習範本一開始不能已經通過驗證，否則練習沒意義。"""
+    for lab_id in ("format-check", "cross-page", "header", "endmark"):
+        lab = LABS[lab_id]
+        template = tpl.load(DEMO / lab["template"])
+        with Document(DEMO / lab_pdfs(lab)[0]) as reference:
+            tpl.finalize(template, reference)
+        results = [parse_pdf(DEMO / pdf, template) for pdf in lab_pdfs(lab)]
+        verify = lab["verify"]
+        if verify["kind"] == "field_flag":
+            assert verify["reason"] not in results[0]["fields"][0]["reasons"]
+            continue
+        expects = verify["expect"] if verify.get("per_doc") else [verify["expect"]]
+        assert any(table_column(r, verify) != e for r, e in zip(results, expects)), lab_id
 
 
 def test_lab_pdfs_stay_small():
@@ -84,6 +126,8 @@ def _check_lab_mode(client, templates):
         data = client.post("/api/demo-samples", json={"mode": "lab", "lab": lab_id}).json
         assert data["lab"]["id"] == lab_id and data["lab"]["steps"] == lab["steps"] and data["lab"]["verify"] == lab["verify"]
         assert "pdf" not in data["lab"] and "template" not in data["lab"]
-        assert len(data["docs"]) == 1 and data["docs"][0]["demo"] and data["template"]["template_id"].startswith("lab_")
+        assert len(data["docs"]) == len(lab_pdfs(lab)) and all(d["demo"] for d in data["docs"])
+        assert [d["name"] for d in data["docs"]] == (lab.get("doc_names") or [lab["doc_name"]])
+        assert data["template"]["template_id"].startswith("lab_")
         assert "patch" not in json.dumps(data["template"])
     assert not list(templates.iterdir())  # 練習範本不寫入範本資料夾

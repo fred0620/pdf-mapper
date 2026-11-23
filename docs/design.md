@@ -169,6 +169,9 @@
 - `/api/demo-samples` 加 `mode: "lab"` 與 `lab`，id 以 labs.json 的鍵為白名單，未知 id 回 400，Host、Sec-Fetch-Site、Origin 檢查沿用。
 - 進度只在畫面上，不存檔；只有「做完過」的 id 記在 `prefs.labsDone`，說明選單顯示「練習過 ✓」。
 - 練習 PDF 用 `scripts/make_samples.py` 的 `build_labs()` 產生，只用英數字標題（字型子集缺字），底圖用灰階 PNG，十份合計要在 300 KB 內。
+- 批次 B（練習 4 到 7）的驗證方式：`labs.json` 的 `verify.kind` 新增 `field_flag`（欄位值要被標上指定原因，用在格式檢查），`column` 可加 `per_doc: true`（`expect` 改成每份一組，位置不固定的練習用）與 `rows_hint`（列數不符時的專屬提示）。`pdfs` 與 `doc_names` 成對時一個練習可載入多份 PDF，第一份是基準範例；`verify.done` 可自訂完成畫面的結果文字。
+- 表頭只讓表格上緣與分隔線跟著移動，範圍下緣不動，所以位置不固定的練習範本把範圍下緣拉到頁面底部；沒框表頭時第 2 份的表格會偏掉。
+- 練習 PDF 要用 `.gitignore` 的例外（`!app/pdfmapper/demo/labs/*.pdf`）才會進版控，批次 A 漏了這行，這次一併補上。
 - 取捨：練習 2 的標準做法是選「開頭文字」填 `ECCN:`，值到哪裡結束維持預設「這一行結束」；選做的「同一格拆成多欄」這一批沒做。
 
 ## 治理

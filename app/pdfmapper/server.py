@@ -494,18 +494,25 @@ def _lab_samples(lab_id):
         raise ValueError("不認得的練習")
     lab = LABS[lab_id]
     UPLOADS.mkdir(parents=True, exist_ok=True)
-    doc_id = uuid.uuid4().hex
-    target = UPLOADS / f"{doc_id}__{lab['doc_name']}"
-    shutil.copyfile(DEMO / lab["pdf"], target)
+    # 一個練習可以有好幾份 PDF（pdfs 與 doc_names 成對）；第一份是基準範例
+    pdfs = lab.get("pdfs") or [lab["pdf"]]
+    names = lab.get("doc_names") or [lab["doc_name"]]
+    docs, targets = [], []
     try:
-        doc = {**_describe(doc_id, lab["doc_name"]), "demo": True}
+        for pdf, name in zip(pdfs, names):
+            doc_id = uuid.uuid4().hex
+            target = UPLOADS / f"{doc_id}__{name}"
+            shutil.copyfile(DEMO / pdf, target)
+            targets.append(target)
+            docs.append({**_describe(doc_id, name), "demo": True})
     except Exception:
-        target.unlink(missing_ok=True)
+        for target in targets:
+            target.unlink(missing_ok=True)
         raise
     template = _demo_template(lab["template"])
     template["name"] = lab["template_name"]
-    log.info("載入練習 lab=%s doc=%s", lab_id, doc_id)
-    return jsonify({"docs": [doc], "demo": True, "recommended_template_id": None, "template": template,
+    log.info("載入練習 lab=%s docs=%d", lab_id, len(docs))
+    return jsonify({"docs": docs, "demo": True, "recommended_template_id": None, "template": template,
                     "lab": {"id": lab_id, **{key: lab[key] for key in LAB_PUBLIC if key in lab}}})
 
 

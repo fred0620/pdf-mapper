@@ -21,4 +21,5 @@ wheels/
 *.pdf
 !app/samples/*.pdf
 !app/pdfmapper/demo/*.pdf
+!app/pdfmapper/demo/labs/*.pdf
 .DS_Store

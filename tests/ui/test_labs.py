@@ -190,3 +190,94 @@ def test_lab_without_documents_and_missing_card_buttons(page):
     card.locator("#spotLabBtn").click()
     expect(page.locator("#guideBar .guide-name")).to_have_text("實地練習", timeout=30_000)
     expect(page.locator("#labConfirmBtn")).to_have_count(0)
+
+
+def test_format_check_lab_wrong_then_right(page):
+    start_lab(page, "feat-format-check")
+    expect(page.locator("#templateName")).to_have_value("實地練習：格式檢查")
+    expect(action(page)).to_contain_text("Tax ID")
+    page.locator("#right .items li button").first.click()
+    expect(action(page)).to_contain_text("進階設定")
+    page.locator("#fieldAdvanced > summary").click()
+    expect(action(page)).to_contain_text("格式檢查")
+    page.locator("#fieldPatternInput").fill(r"^\d{7}$")  # 7 碼的規則，少一碼的值也通過
+    expect(action(page)).to_contain_text("用 1 份範例測試")
+    page.locator("#testBtn").click()
+    expect(tip(page)).to_contain_text("沒有被標記", timeout=30_000)
+    expect(tip(page)).to_have_class(re.compile(r"\bwrong\b"))
+    expect(tip(page)).to_contain_text("規則寫成 7 碼")
+    page.locator("#right .items li button").first.click()
+    page.locator("#fieldPatternInput").fill(r"^\d{8}$")
+    page.locator("#testBtn").click()
+    finish(page, "1234567 少一碼，已被標記為格式不符")
+    assert not [p for p in server.TEMPLATES.glob("*.json") if "lab" in p.name]
+
+
+def test_cross_page_lab_second_page_range(page):
+    start_lab(page, "feat-cross-page")
+    expect(action(page)).to_contain_text("「位置」分頁")
+    page.locator('#right .subtabs [data-tab="place"]').click()
+    expect(action(page)).to_contain_text("翻到第 2 頁")
+    page.locator('#toolbar button[aria-label="下一頁"]').click()
+    expect(action(page)).to_contain_text("在目前這一頁加範圍")
+    page.locator("#addRegionBtn").click()
+    expect(page.locator("#overlay .guide-ghost")).to_be_visible()  # 第 2 頁的虛線靶框
+    draw_box(page, [0.08, 0.22, 0.92, 0.32])  # 只框到前兩列
+    expect(action(page)).to_contain_text("用 1 份範例測試")
+    page.locator("#testBtn").click()
+    expect(tip(page)).to_contain_text("抓到 6 列，預期 7 列", timeout=30_000)
+    expect(tip(page)).to_have_class(re.compile(r"\bwrong\b"))
+    page.locator("#right .items li button").last.click()
+    page.locator("#right .region-card button", has_text="移除").click()
+    if page.locator('#toolbar button[aria-label="下一頁"]').is_enabled():  # 測試後可能回到第 1 頁，範圍要加在第 2 頁
+        page.locator('#toolbar button[aria-label="下一頁"]').click()
+    page.locator("#addRegionBtn").click()
+    draw_box(page, [0.08, 0.22, 0.92, 0.5])
+    page.locator("#testBtn").click()
+    finish(page, "Bolt M6、Nut M6、Washer 6、Screw M4、Clip A2、Pin 8、Spacer 3")
+
+
+def test_header_lab_two_documents(page):
+    start_lab(page, "feat-header")
+    expect(page.locator(".docs li")).to_have_count(2)
+    page.locator('#right .subtabs [data-tab="place"]').click()
+    expect(action(page)).to_contain_text("框選表頭")
+    page.locator("#right .header-pick").click()
+    expect(page.locator("#overlay .guide-ghost")).to_be_visible()
+    draw_box(page, [0.4, 0.165, 0.5, 0.195])  # 框到沒有字的地方，表頭對不上
+    expect(page.locator("#right .region-card .marker-row")).to_contain_text("表頭：")
+    expect(action(page)).to_contain_text("用 2 份範例測試")
+    page.locator("#testBtn").click()
+    expect(tip(page)).to_have_class(re.compile(r"\bwrong\b"), timeout=30_000)
+    expect(tip(page)).to_contain_text("第 ")
+    page.locator("#right .items li button").last.click()
+    page.locator('#right .subtabs [data-tab="place"]').click()
+    page.locator("#right .region-card .marker-row button", has_text="移除").click()
+    page.locator("#right .header-pick").click()
+    draw_box(page, [0.085, 0.165, 0.17, 0.195])
+    expect(page.locator("#right .region-card .marker-row")).to_contain_text("表頭：")  # 框好後要讀字，等它設定完
+    page.locator("#testBtn").click()
+    finish(page, "Washer 6")
+    expect(page.locator("#labResult")).to_contain_text("Pin 8")
+
+
+def test_endmark_lab_total_row_not_counted(page):
+    start_lab(page, "feat-endmark")
+    page.locator('#right .subtabs [data-tab="place"]').click()
+    expect(action(page)).to_contain_text("框選表尾")
+    page.locator("#right .endmark-pick").click()
+    expect(page.locator("#overlay .guide-ghost")).to_be_visible()
+    draw_box(page, [0.2, 0.34, 0.3, 0.37])  # 框到第 3 列的字，表格會在這裡就結束
+    expect(page.locator("#right .marker-row", has_text="表尾標記：")).to_be_visible()
+    page.locator("#testBtn").click()
+    expect(tip(page)).to_contain_text("預期 5 列", timeout=30_000)
+    expect(tip(page)).to_contain_text("框住表格結束後緊接著的「Total」")
+    expect(tip(page)).to_have_class(re.compile(r"\bwrong\b"))
+    page.locator("#right .items li button").last.click()
+    page.locator('#right .subtabs [data-tab="place"]').click()
+    page.locator("#right .marker-row button", has_text="移除").click()
+    page.locator("#right .endmark-pick").click()
+    draw_box(page, [0.2, 0.5, 0.29, 0.54])
+    expect(page.locator("#right .marker-row", has_text="表尾標記：")).to_be_visible()
+    page.locator("#testBtn").click()
+    finish(page, "310、620、930、1,240、1,550")

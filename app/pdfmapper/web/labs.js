@@ -38,43 +38,61 @@ function labHint(hints, got, expect) {
   }
   return "";
 }
+/* 一份結果和預期值的差異：沒差回傳 null，有差回傳要顯示的訊息。who 是「第 2 份」這類前綴（多份 PDF 時） */
+function labDiff(got, expect, v, who, single) {
+  if (got.length !== expect.length) {
+    return `${who}抓到 ${got.length} 列，預期 ${expect.length} 列。${v.rows_hint || "表格範圍或判斷新一列的欄位被改到了，請改回來。"}`;
+  }
+  for (let i = 0; i < expect.length; i += 1) {
+    if (got[i] === expect[i]) continue;
+    const where = single ? `${who}抓到` : `${who}第 ${i + 1} 列抓到`;
+    return `${where}${labShow(got[i])}，預期${labShow(expect[i])}。${labHint(state.guide.lab.data.hints, got[i], expect[i])}改好後再按一次測試。`;
+  }
+  return null;
+}
+const labList = (value) => (value === undefined ? [] : Array.isArray(value) ? value.map(labNorm) : [labNorm(value)]);
+/* 格式檢查：值要被標記。規則還沒設、或設了仍讓值通過，依規則的現況給提示 */
+function labFieldFlag(v, result) {
+  const field = result.fields.find((f) => f.id === v.field);
+  if (!field) return { status: "stale", message: "這份結果和現在的設定對不上，再按一次測試。" };
+  if ((field.reasons || []).includes(v.reason)) return { status: "ok", values: [labNorm(field.value)] };
+  const pattern = T().fields.find((f) => f.id === v.field)?.pattern || "";
+  let passes = pattern === "";
+  try { passes = passes || new RegExp(pattern).test(v.value); } catch (_e) { return { status: "stale", message: "規則寫法有誤，改好後再按一次測試。" }; }
+  if (!passes) return { status: "stale", message: "格式檢查改過了，再按一次測試。" };
+  const hint = labHint(state.guide.lab.data.hints, pattern, v.value);
+  return { status: "wrong", message: `${field.name} 抓到${labShow(field.value)}，沒有被標記。${hint}改好後再按一次測試。` };
+}
 /* 用實際的試抓結果驗證：none 還沒試抓、stale 結果對不上現在的設定、wrong 有差異、ok 全對。
  * 比對前 \r\n 一律轉成 \n（Windows 與其他系統的換行不同）。 */
 function labCheck() {
   const L = state.guide.lab;
   if (!L) return null;
-  const result = state.tests.find((r) => r.doc_id === state.referenceId);
-  if (!result) return { status: "none" };
   const v = L.data.verify;
-  const hints = L.data.hints;
-  let got;
+  const docs = v.per_doc ? state.docs : state.docs.filter((d) => d.id === state.referenceId);
+  const results = docs.map((d) => state.tests.find((r) => r.doc_id === d.id));
+  if (!results.length || results.some((r) => !r)) return { status: "none" };
+  if (v.kind === "field_flag") return labFieldFlag(v, results[0]);
   if (v.kind === "new_field") {
     const mine = labNewFields();
     if (!mine.length) return { status: "wrong", message: "還沒有你新增的欄位。用 P 在頁面右上角框住單號，再按測試。" };
-    const field = result.fields.find((f) => f.id === mine[mine.length - 1].id);
+    const field = results[0].fields.find((f) => f.id === mine[mine.length - 1].id);
     if (!field) return { status: "stale", message: "欄位改過了，再按一次測試。" };
-    got = [labNorm(field.value)];
-  } else {
-    const table = result.tables.find((t) => t.id === v.table);
+    const message = labDiff([labNorm(field.value)], labList(v.expect), v, "", true);
+    return message ? { status: "wrong", message } : { status: "ok", values: labList(v.expect) };
+  }
+  const expects = v.per_doc ? v.expect.map(labList) : [labList(v.expect)];
+  for (let d = 0; d < results.length; d += 1) {
+    const table = results[d].tables.find((t) => t.id === v.table);
     if (!table || !table.columns.some((c) => c.id === v.column)) {
       return { status: "stale", message: "這份結果和現在的設定對不上，再按一次測試。" };
     }
-    got = table.rows.map((row) => labNorm(row.cells[v.column]?.value));
+    const got = table.rows.map((row) => labNorm(row.cells[v.column]?.value));
+    const who = v.per_doc ? `第 ${d + 1} 份（${docs[d].name}）` : "";
+    const message = labDiff(got, expects[d], v, who, false);
+    if (message) return { status: "wrong", message };
   }
-  const expect = v.expect === undefined ? [] : Array.isArray(v.expect) ? v.expect.map(labNorm) : [labNorm(v.expect)];
-  if (got.length !== expect.length) {
-    return { status: "wrong", message: `抓到 ${got.length} 列，預期 ${expect.length} 列。表格範圍或判斷新一列的欄位被改到了，請改回來。` };
-  }
-  for (let i = 0; i < expect.length; i += 1) {
-    if (got[i] === expect[i]) continue;
-    const where = v.kind === "new_field" ? "抓到" : `第 ${i + 1} 列抓到`;
-    const hint = labHint(hints, got[i], expect[i]);
-    return {
-      status: "wrong",
-      message: `${where}${labShow(got[i])}，預期${labShow(expect[i])}。${hint}改好後再按一次測試。`,
-    };
-  }
-  return { status: "ok", values: expect };
+  return { status: "ok", values: expects.flat() };
 }
 // 最後一步的完成條件：驗證通過。結果記下來給完成畫面用
 function labVerified() {
@@ -114,16 +132,35 @@ function labColumnTarget(columnId, name, sel, label) {
 const labOpened = (columnId) => state.selected?.type === "table" && state.openColumn === columnId;
 // 最後一步：按測試，結果錯了就指回去改
 function labTestTarget() {
-  if (labWrong() && rightShowsList()) return { sel: "#right .items li:last-child button", label: "回去改設定" };
+  const back = state.guide.lab?.data.verify.kind === "field_flag" ? "first-child" : "last-child";  // 欄位排在清單最前面，表格最後面
+  if (labWrong() && rightShowsList()) return { sel: `#right .items li:${back} button`, label: "回去改設定" };
   return state.selected ? null : { sel: "#testBtn", label: "按這裡試抓" };
 }
 function labVerifyStep(id, tip) {
   return {
-    id, tab: "train", title: "試抓驗證", action: "按「用 1 份範例測試」，看結果對不對",
+    id, tab: "train", title: "試抓驗證", action: () => `按「用 ${state.docs.length} 份範例測試」，看結果對不對`,
     tip: () => labVerifyTip(tip), wrong: labWrong, target: labTestTarget, sticky: true, done: labVerified,
   };
 }
 const LAB_PO_BOX = [0.64, 0.05, 0.82, 0.076];   // 練習 PDF 右上角的單號
+
+const LAB_NEXT_BOX = [0.08, 0.22, 0.92, 0.6];     // 練習 PDF 第 2 頁的資料區
+const LAB_HEADER_BOX = [0.085, 0.165, 0.17, 0.195];  // 出貨單表頭的「Line」
+const LAB_END_BOX = [0.2, 0.5, 0.29, 0.54];       // 訂單明細表尾的「Total」
+const labRegionCount = () => firstTable()?.regions.length || 0;
+// 表格「位置」分頁裡的按鈕：還沒選表格就先指到表格，分頁不對就指到分頁
+function labPlaceTarget(sel, label) {
+  if (state.selected?.type !== "table") return { sel: "#right .items li:last-child button", label: "點表格" };
+  if (state.tableTab !== "place") return { sel: '#right .subtabs [data-tab="place"]', label: "點「位置」" };
+  return { sel, label };
+}
+const labPlaceStep = (id) => ({
+  id, tab: "train", title: "切到「位置」分頁",
+  action: "點表格，切到「位置」分頁", tip: "每一頁的資料範圍、表頭與表尾都在「位置」。",
+  setup: labSelectTable,
+  target: () => (state.selected?.type === "table" && state.tableTab === "place" ? null : labPlaceTarget()),
+  sticky: true, done: () => state.selected?.type === "table" && state.tableTab === "place",
+});
 
 /* ---------- 步驟 ---------- */
 const LAB_STEPS = {
@@ -212,6 +249,78 @@ const LAB_STEPS = {
     },
     labVerifyStep("lab-regex-4", "每一列只該抓到 INV 開頭的單號。"),
   ],
+  "format-check": [
+    {
+      id: "lab-format-check-1", tab: "train", title: "打開 Tax ID 欄位",
+      action: "點右邊清單的「Tax ID」", tip: "這個統一編號只有 7 碼，是故意少一碼的。",
+      target: () => (state.selected?.type === "field" ? null : { sel: "#right .items li:first-child button", label: "點 Tax ID" }),
+      sticky: true, done: () => state.selected?.type === "field" && state.selected.id === "tax_id",
+    },
+    {
+      id: "lab-format-check-2", tab: "train", title: "展開進階設定",
+      action: "展開「進階設定」", tip: "格式檢查在進階設定裡。",
+      target: () => (state.selected?.type === "field" ? { sel: "#fieldAdvanced > summary", label: "點「進階設定」" } : { sel: "#right .items li:first-child button", label: "點 Tax ID" }),
+      sticky: true, done: () => state.selected?.type === "field" && !!state.fieldAdvancedOpen,
+    },
+    {
+      id: "lab-format-check-3", tab: "train", title: "填格式檢查",
+      action: "「格式檢查」填 ^\\d{8}$", tip: "規則前後的 ^ 和 $ 代表整格都要符合；\\d{8} 是 8 個數字。",
+      target: () => (document.querySelector("#fieldPatternInput") && state.selected?.type === "field"
+        ? { sel: "#fieldPatternInput", label: "填 ^\\d{8}$" } : { sel: "#right .items li:first-child button", label: "點 Tax ID" }),
+      assist: () => ({
+        label: "幫我填",
+        run: () => {
+          const field = T().fields.find((f) => f.id === "tax_id");
+          if (!field) return;
+          snapshot();
+          field.pattern = String.raw`^\d{8}$`;
+          Object.assign(state, { selected: { type: "field", id: field.id }, fieldAdvancedOpen: true });
+          renderRight();
+        },
+      }),
+      sticky: true, done: () => !!(T().fields.find((f) => f.id === "tax_id")?.pattern || "").trim(),
+    },
+    labVerifyStep("lab-format-check-4", "不符合規則的值會被標記，結果列在下面。"),
+  ],
+  "cross-page": [
+    labPlaceStep("lab-cross-page-1"),
+    {
+      id: "lab-cross-page-2", tab: "train", title: "翻到第 2 頁",
+      action: "翻到第 2 頁", tip: "明細接到了第 2 頁，範圍要加在那一頁。",
+      target: () => (state.page >= 1 ? null : { sel: '#toolbar button[aria-label="下一頁"]', label: "翻到第 2 頁" }),
+      sticky: true, done: () => state.page >= 1,
+    },
+    {
+      id: "lab-cross-page-3", tab: "train", title: "在第 2 頁加範圍",
+      action: "按「在目前這一頁加範圍」，框住第 2 頁的資料區", tip: "只框表頭下面的資料，套用頁面維持「第 2 頁起」。",
+      ghost: () => (labRegionCount() > 1 ? [] : [{ page: 1, box: LAB_NEXT_BOX, label: "框住第 2 頁的資料區" }]),
+      target: () => (state.tool === "region" ? null : labPlaceTarget("#addRegionBtn", "按這裡，再框資料區")),
+      sticky: true, done: () => labRegionCount() > 1,
+    },
+    labVerifyStep("lab-cross-page-4", "7 列都該抓到，包含第 2 頁的 3 列。"),
+  ],
+  header: [
+    labPlaceStep("lab-header-1"),
+    {
+      id: "lab-header-2", tab: "train", title: "框選表頭",
+      action: "按「框選表頭」，框住表頭的「Line」", tip: "乙的表格比甲低；表頭每份都一樣，用它定位。",
+      ghost: () => (firstTable()?.regions[0]?.header ? [] : [{ page: 0, box: LAB_HEADER_BOX, label: "框住表頭「Line」" }]),
+      target: () => (state.tool === "header" ? null : labPlaceTarget("#right .header-pick", "按這裡，再框表頭")),
+      sticky: true, done: () => !!firstTable()?.regions[0]?.header,
+    },
+    labVerifyStep("lab-header-3", "兩份的明細都要抓完整，結果分兩份列在下面。"),
+  ],
+  endmark: [
+    labPlaceStep("lab-endmark-1"),
+    {
+      id: "lab-endmark-2", tab: "train", title: "框選表尾",
+      action: "按「框選表尾」，框住「Total」", tip: "表格結束後緊接著的字，抓到那裡為止。",
+      ghost: () => (firstTable()?.end_marker ? [] : [{ page: 0, box: LAB_END_BOX, label: "框住「Total」" }]),
+      target: () => (state.tool === "endmark" ? null : labPlaceTarget("#right .endmark-pick", "按這裡，再框表尾")),
+      sticky: true, done: () => !!firstTable()?.end_marker,
+    },
+    labVerifyStep("lab-endmark-3", "Total 那一列不該算進明細，只剩 5 列。"),
+  ],
 };
 
 /* ---------- 指令條：缺文件與完成畫面 ---------- */
@@ -234,11 +343,11 @@ function labCompletion() {
   const values = lab.okValues || [];
   const shown = values.map((v) => labNorm(v).replace(/\n/g, "↵")).join("、");
   return {
-    key: ["done", lab.id, shown],
+    key: ["done", lab.id, shown, lab.data.verify.done || ""],
     nodes: [
       h("span", { class: "mission-badge done", "aria-hidden": "true" }, "✓"),
       h("div", { class: "mission-text" },
-        h("p", { class: "mission-action", id: "labResult" }, `✓ 抓到 ${shown}`),
+        h("p", { class: "mission-action", id: "labResult" }, `✓ ${lab.data.verify.done || `抓到 ${shown}`}`),
         h("p", { class: "mission-tip", id: "labLearned" }, lab.data.learned)),
       h("div", { class: "mission-controls" },
         lab.data.manual ? h("a", {
