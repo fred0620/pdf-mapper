@@ -1179,6 +1179,13 @@ function previewRows(column) {
     h("strong", {}, cell.value || "（空白）"),
     h("span", {}, cell.raw ?? cell.value))));
 }
+// 從欄位設定複製：有試抓結果就用前 3 列的原始內容和抓到的值，沒有就留空，請使用者自己補例子
+function copyColumnAiPrompt(column) {
+  const preview = state.columnPreview?.id === column.id ? (state.columnPreview.rows || []).slice(0, 3) : [];
+  const samples = preview.map((cell) => cell.raw ?? cell.value ?? "");
+  const outcome = preview.length ? preview.map((cell) => `「${cell.value || "（空白）"}」`).join("、") : "";
+  copyAiPrompt("extract", { samples, pattern: column.extract || "", outcome: outcome && `前 ${preview.length} 列抓到 ${outcome}` });
+}
 function columnDetail(table, column) {
   const siblings = table.columns.filter((c) => c.band === column.band);
   const split = siblings.length > 1;
@@ -1193,7 +1200,10 @@ function columnDetail(table, column) {
       onchange: (e) => { if (e.target.checked) column.row_required = true; else delete column.row_required; saveDraft(); },
     }), "每一列都一定有這欄"),
     h("p", { class: "note" }, "用來判斷跨頁：這欄沒抓到，代表這一列還沒結束。"),
-    h("label", {}, h("span", { class: "label-line" }, "這一欄怎麼取值", helpHint("feat-cell-extract", "一格有好幾個值，只取一個")), h("select", {
+    h("label", {}, h("span", { class: "label-line" }, "這一欄怎麼取值", helpHint("feat-cell-extract", "一格有好幾個值，只取一個"),
+      h("button", {
+        type: "button", class: "linkish copy-ai-btn", id: "columnCopyAi", onclick: (e) => { e.preventDefault(); copyColumnAiPrompt(column); },
+      }, "複製給 AI 的提問")), h("select", {
       "aria-label": "這一欄怎麼取值",
       onchange: (e) => { snapshot(); setValueMode(table, column, e.target.value); renderRight(); },
     }, VALUE_MODES.map(([value, label]) =>

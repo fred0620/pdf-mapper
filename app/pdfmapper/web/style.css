@@ -484,9 +484,10 @@ details .form { margin-top: 10px; }
 .guide-bar {
   display: flex; align-items: center; gap: 12px; height: var(--bar); padding: 0 12px;
   background: var(--surface); border-bottom: 1px solid var(--ink-2); font-size: 12.5px;
+  container-type: inline-size; /* 空間不夠時，用容器寬度決定要不要藏步驟點 */
 }
 .guide-name { font-weight: 600; color: var(--text-strong); white-space: nowrap; }
-.guide-steps { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; }
+.guide-steps { flex: none; display: flex; align-items: center; margin: 0; padding: 0; list-style: none; }
 .guide-steps li { display: flex; align-items: center; }
 .guide-steps li + li::before { content: ""; width: 14px; max-width: 20px; height: 1px; background: var(--ink-2); }
 .guide-step {
@@ -499,10 +500,12 @@ details .form { margin-top: 10px; }
 .guide-step.done::after { background: var(--accent); box-shadow: none; }
 .guide-step.active::after { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .guide-step.skipped::after { background: linear-gradient(135deg, transparent 45%, var(--text) 45%, var(--text) 58%, transparent 58%); }
-.guide-progress { color: var(--accent-text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guide-progress { min-width: 0; color: var(--accent-text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .guide-bar .spring { flex: 1; }
-.guide-bar-actions { display: flex; gap: 8px; }
-.guide-bar-actions .btn { font-size: 12.5px; }
+.guide-bar-actions { flex: none; display: flex; gap: 8px; }
+.guide-bar-actions .btn { font-size: 12.5px; white-space: nowrap; }
+/* 中央欄窄時，先藏步驟點，再由進度文字用省略號截斷，一行排得下 */
+@container (max-width: 700px) { .guide-steps { display: none; } }
 
 /* 指令條：版面的一部分，不是浮動物，所以沒有陰影。用 accent 淡底與細框，一眼看得到 */
 .mission-strip {

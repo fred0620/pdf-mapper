@@ -34,7 +34,7 @@ APP = ROOT / "app"
 NAME = "pdf-mapper"
 TOP_FILES = ["run.bat", "run.sh"]
 APP_FILES = ["launcher.ps1", "launcher.sh", "pyproject.toml", "uv.lock", ".python-version",
-             "使用手冊.html", "換版說明.html"]
+             "使用手冊.html", "換版說明.html", "manual.js"]
 APP_DIRS = ["pdfmapper", "examples", "samples"]
 SKIP = {"__pycache__", ".DS_Store"}
 WINDOWS_TEXT = {".bat", ".cmd", ".ps1"}

@@ -44,6 +44,28 @@ def expect_step(page, number: int, text: str) -> None:
     expect(strip(page).locator(".mission-action")).to_contain_text(text)
 
 
+def test_guide_bar_fits_one_line_at_narrow_widths(page):
+    """視窗 1000 與 1001（中央欄最窄）寬時導覽列都是一行：高度等於 --bar，按鈕文字不換行，空間不夠先藏步驟點。"""
+    page.set_viewport_size({"width": 1000, "height": 720})
+    page.click("#demoStartBtn")
+    expect(page.locator("#guideBar .guide-name")).to_be_visible(timeout=30_000)
+    bar_height = page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar'))")
+    for width in (1000, 1001, 1100):
+        page.set_viewport_size({"width": width, "height": 720})
+        bar = page.locator("#guideBar").bounding_box()
+        assert bar["height"] == bar_height, f"{width}px 導覽列高度 {bar['height']}"
+        if bar["width"] <= 700:
+            expect(page.locator("#guideBar .guide-steps")).to_be_hidden()
+        for selector in ("#featureMenuBtn", "#guideCloseBtn"):
+            button = page.locator(selector)
+            expect(button).to_be_visible()
+            assert button.bounding_box()["height"] < 36, f"{width}px {selector} 文字換行"
+        close = page.locator("#guideCloseBtn").bounding_box()
+        assert close["x"] + close["width"] <= bar["x"] + bar["width"], f"{width}px 關閉導覽被擠出導覽列"
+    page.set_viewport_size({"width": 1001, "height": 720})
+    expect(page.locator("#guideBar .guide-steps")).to_be_hidden()
+
+
 def test_train_journey_with_demo_invoice(page):
     page.click("#demoStartBtn")
     expect(page.locator("#guideBar")).to_be_visible(timeout=30_000)

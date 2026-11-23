@@ -1,42 +1,107 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PDF 解析器換版說明</title><style>
-:root { --ink:#000; --soft:#565b57; --rule:#c6cac5; --green:#2C5F34; }
-body { margin:0; background:#fff; color:var(--ink);
-  font:16px/1.75 "Noto Sans TC","PingFang TC","Microsoft JhengHei",Helvetica,sans-serif; }
-main { max-width:800px; margin:0 auto; padding:40px 20px 80px; }
-.toc { border-top:1.5px solid var(--ink); border-bottom:1px solid var(--ink); padding:10px 0; margin:24px 0; }
-.toc ul { list-style:none; margin:0; padding:0; columns:2; }
-.toc ul ul { display:none; }
-.toc a { color:var(--ink); text-decoration:none; }
-.toc a:hover { color:var(--green); text-decoration:underline; }
-h1 { font-size:30px; line-height:1.3; margin:0 0 12px; }
-h2 { font-size:22px; margin:48px 0 10px; padding-top:8px; border-top:2px solid var(--ink); }
-h3 { font-size:17px; margin:30px 0 6px; }
-p { margin:10px 0; }
-strong { font-weight:700; }
-a { color:var(--green); }
-img { display:block; max-width:100%; height:auto; margin:14px 0 20px; border:1px solid var(--rule); }
-table { width:100%; border-collapse:collapse; margin:14px 0 22px; font-size:15px; }
-th { text-align:left; padding:6px 10px 6px 0; border-top:1.5px solid var(--ink); border-bottom:1px solid var(--ink); }
-td { text-align:left; padding:6px 10px 6px 0; border-bottom:1px solid #e6e8e5; vertical-align:top; }
-tbody tr:last-child td { border-bottom:1.5px solid var(--ink); }
-blockquote { margin:16px 0; padding:2px 0 2px 14px; border-left:3px solid var(--green); }
-code { background:#f0f1ef; padding:1px 4px; font-size:.9em; font-family:Consolas,Menlo,monospace; }
-pre { background:#f0f1ef; padding:12px 14px; overflow-x:auto; }
-pre code { background:none; padding:0; }
-@media print { h2 { break-after:avoid; } img { break-inside:avoid; } }
-</style></head><body><main><h1 id="pdf">PDF 解析器換版說明</h1>
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PDF 解析器換版說明</title><style>:root {
+  /* Stageshow light */
+  --canvas: #f6f5f4;
+  --surface: #ffffff;
+  --well: #efeeec;
+  --ink-1: rgba(0, 0, 0, 0.04);
+  --ink-2: rgba(0, 0, 0, 0.06);
+  --ink-3: rgba(0, 0, 0, 0.08);
+  --ink-4: rgba(0, 0, 0, 0.1);
+  --ink-5: rgba(0, 0, 0, 0.15);
+  --line: rgba(0, 0, 0, 0.06);
+  --line-faint: rgba(0, 0, 0, 0.04);
+  --text: #7a7a7d;
+  --text-strong: #262628;
+  --text-faint: #9a9a9d;
+  --icon: #707074;
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.12);
+  --accent-text: #306bca;
+  --success: #22c55e;
+  --success-soft: rgba(34, 197, 94, 0.12);
+  --success-text: #15803d;
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.1);
+  --danger-text: #b91c1c;
+  --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --warning-text: #b45309;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-window: 12px;
+  --radius-pill: 999px;
+  --control: 34px;
+  --button: 28px;
+  --row: 26px;
+  --bar: 38px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-window: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-float: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.12), 0 12px 32px rgba(0, 0, 0, 0.08);
+  --shadow-thumb: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --ui: cubic-bezier(0.22, 1, 0.36, 1);
+  --press: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --font: system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  --mono: "SF Mono", "SFMono-Regular", ui-monospace, Consolas, monospace;
+  /* 補充 token（導覽元件用，Stageshow 沒有獨立名稱）：深底上的字，對應 Stageshow tooltip 的白字；
+     建議位置的虛線用 text-strong 的 60% */
+  --text-inverse: #ffffff;
+  --guide-line: color-mix(in srgb, var(--text-strong) 60%, transparent);
+  --settle: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+* { box-sizing: border-box; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+body { margin: 0; background: var(--canvas); color: var(--text-strong); font: 14px/1.7 var(--font); }
+.topbar { position: fixed; inset: 0 0 auto 0; height: 52px; z-index: 10; display: flex; align-items: center; gap: 16px;
+  padding: 0 20px; background: var(--surface); box-shadow: 0 1px 0 var(--ink-3); }
+.topbar .brand { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.search { position: relative; flex: 1; max-width: 420px; }
+.search input { width: 100%; height: var(--control); padding: 0 12px; border: 0; border-radius: var(--radius-md); background: var(--ink-1);
+  color: var(--text-strong); font: inherit; box-shadow: inset 0 0 0 1px var(--ink-3); }
+.search input:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--accent-soft); }
+.results { position: absolute; top: calc(var(--control) + 6px); left: 0; right: 0; max-height: 60vh; overflow-y: auto; margin: 0; padding: 6px;
+  list-style: none; background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-float); }
+.results a { display: block; padding: 8px 10px; border-radius: var(--radius-md); color: var(--text-strong); text-decoration: none; }
+.results a:hover, .results a:focus { background: var(--ink-2); outline: none; }
+.results small { display: block; color: var(--text); font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.results mark { background: var(--accent-soft); color: inherit; border-radius: 2px; }
+.results .none { padding: 8px 10px; color: var(--text); }
+nav.sidebar { position: fixed; top: 52px; bottom: 0; left: 0; width: 272px; overflow-y: auto; padding: 16px 12px 40px; background: var(--surface);
+  box-shadow: 1px 0 0 var(--ink-3); }
+nav.sidebar ul { list-style: none; margin: 0; padding: 0; }
+nav.sidebar ul ul { margin: 2px 0 8px 10px; }
+nav.sidebar a { display: block; padding: 3px 8px; border-radius: var(--radius-sm); color: var(--text); text-decoration: none; font-size: 13px; line-height: 1.5; }
+nav.sidebar > ul > li > a { color: var(--text-strong); font-weight: 600; margin-top: 6px; }
+nav.sidebar a:hover { background: var(--ink-2); }
+nav.sidebar a[aria-current="true"] { background: var(--accent-soft); color: var(--accent-text); }
+main { margin: 52px 0 0 272px; padding: 36px 40px 96px; }
+article { max-width: 800px; margin: 0 auto; }
+h1 { font-size: 28px; line-height: 1.3; margin: 0 0 12px; }
+h2 { font-size: 22px; line-height: 1.4; margin: 56px 0 12px; padding-top: 14px; box-shadow: 0 -1.5px 0 var(--text-strong); }
+h3 { font-size: 17.5px; margin: 34px 0 8px; }
+h4 { font-size: 15px; margin: 26px 0 6px; }
+h2, h3, h4 { scroll-margin-top: 68px; }
+p, ul, ol { margin: 10px 0; }
+li { margin: 3px 0; }
+a { color: var(--accent-text); }
+img { display: block; max-width: 100%; height: auto; margin: 14px 0 20px; border-radius: var(--radius-md); box-shadow: var(--shadow-window); background: var(--surface); }
+table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 13.5px; line-height: 1.6; }
+th { text-align: left; padding: 6px 12px 6px 0; border-top: 1.5px solid var(--text-strong); border-bottom: 1px solid var(--text-strong); }
+td { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--ink-3); vertical-align: top; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--text-strong); }
+blockquote { margin: 16px 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--accent); }
+code { background: var(--ink-2); padding: 1px 5px; border-radius: var(--radius-sm); font: 13px var(--mono); }
+pre { background: var(--well); padding: 12px 14px; border-radius: var(--radius-md); overflow-x: auto; line-height: 1.55; }
+pre code { background: none; padding: 0; }
+@media (max-width: 900px) { nav.sidebar { display: none; } main { margin-left: 0; padding: 24px 16px 80px; } }
+@media print {
+  .topbar, nav.sidebar { display: none; }
+  main { margin: 0; padding: 0; }
+  body { background: #fff; }
+  h2 { break-after: avoid; } img { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+}
+</style></head><body><header class="topbar"><span class="brand">PDF 解析器換版說明</span><div class="search"><input id="manualSearch" type="search" placeholder="搜尋手冊（按 / 開始）" aria-label="搜尋手冊" autocomplete="off"><ul id="manualResults" class="results" hidden></ul></div></header><nav class="sidebar" aria-label="目錄"><ul><li><a href="#1">1. 先認識工具資料夾</a></li><li><a href="#2-zip">2. 解除封鎖（從瀏覽器下載的 ZIP 要先做）</a></li><li><a href="#3">3. 更新到新版</a></li><li><a href="#4">4. 新版有問題：退回上一版</a></li><li><a href="#5">5. 自動更新失敗時：手動更新</a></li><li><a href="#6-01">6. 從 0.1 版升級</a></li><li><a href="#7">7. 常見問題</a></li></ul></nav><main><article id="manualBody"><h1 id="pdf">PDF 解析器換版說明</h1>
 <p>這份說明怎麼更新到新版、新版有問題時怎麼退回。換版不會動到你的範本和匯出結果。</p>
-<div class="toc">
-<ul>
-<li><a href="#1">1. 先認識工具資料夾</a></li>
-<li><a href="#2-zip">2. 解除封鎖（從瀏覽器下載的 ZIP 要先做）</a></li>
-<li><a href="#3">3. 更新到新版</a></li>
-<li><a href="#4">4. 新版有問題：退回上一版</a></li>
-<li><a href="#5">5. 自動更新失敗時：手動更新</a></li>
-<li><a href="#6-01">6. 從 0.1 版升級</a></li>
-<li><a href="#7">7. 常見問題</a></li>
-</ul>
-</div>
 <h2 id="1">1. 先認識工具資料夾</h2>
 <p><img alt="工具資料夾的四個部分" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3NjAgMjcwIiB3aWR0aD0iNzYwIiBoZWlnaHQ9IjI3MCI+CiAgPHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2ZmZmZmZiIvPgogIDx0ZXh0IHg9IjMyIiB5PSIzMCIgZm9udC1mYW1pbHk9IidOb3RvIFNhbnMgVEMnLCdOb3RvIFNhbnMgQ0pLIFRDJywnTWljcm9zb2Z0IEpoZW5nSGVpJywnUGluZ0ZhbmcgVEMnLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjNjY2NjY2IiB0ZXh0LWFuY2hvcj0ic3RhcnQiPuizh+aWmeWkvjwvdGV4dD4KICA8dGV4dCB4PSIyNTAiIHk9IjMwIiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiM2NjY2NjYiIHRleHQtYW5jaG9yPSJzdGFydCI+5YWn5a65PC90ZXh0PgogIDx0ZXh0IHg9IjQ3MCIgeT0iMzAiIGZvbnQtZmFtaWx5PSInTm90byBTYW5zIFRDJywnTm90byBTYW5zIENKSyBUQycsJ01pY3Jvc29mdCBKaGVuZ0hlaScsJ1BpbmdGYW5nIFRDJyxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMiIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iIzY2NjY2NiIgdGV4dC1hbmNob3I9InN0YXJ0Ij7mm7TmlrDmmYI8L3RleHQ+CiAgPGxpbmUgeDE9IjI0IiB5MT0iNDIiIHgyPSI3MzYiIHkyPSI0MiIgc3Ryb2tlPSIjMTExMTExIiBzdHJva2Utd2lkdGg9IjEuMiIvPgogIDxwYXRoIGQ9Ik0zNCw2NCBoOSBsNSw1IHYxMyBoLTE0IHogTTQzLDY0IHY1IGg1IiBmaWxsPSIjZmZmZmZmIiBzdHJva2U9IiM2NjY2NjYiIHN0cm9rZS13aWR0aD0iMS4yIi8+CiAgPHRleHQgeD0iNTgiIHk9Ijc4IiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9IiMxMTExMTEiIHRleHQtYW5jaG9yPSJzdGFydCI+cnVuLmJhdDwvdGV4dD4KICA8dGV4dCB4PSIyNTAiIHk9Ijc4IiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9IiMxMTExMTEiIHRleHQtYW5jaG9yPSJzdGFydCI+5YWl5Y+j77yM6ZuZ5pOK6ZaL5ZWf5bel5YW3PC90ZXh0PgogIDx0ZXh0IHg9IjQ3MCIgeT0iNzgiIGZvbnQtZmFtaWx5PSInTm90byBTYW5zIFRDJywnTm90byBTYW5zIENKSyBUQycsJ01pY3Jvc29mdCBKaGVuZ0hlaScsJ1BpbmdGYW5nIFRDJyxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZm9udC13ZWlnaHQ9IjQwMCIgZmlsbD0iIzY2NjY2NiIgdGV4dC1hbmNob3I9InN0YXJ0Ij7mj5vmlrA8L3RleHQ+CiAgPGxpbmUgeDE9IjI0IiB5MT0iOTgiIHgyPSI3MzYiIHkyPSI5OCIgc3Ryb2tlPSIjZDlkOWQ5IiBzdHJva2Utd2lkdGg9IjEiLz4KICA8cGF0aCBkPSJNMzIsMTEyIGg2IGwyLDIgaDEwIHYxMCBoLTE4IHoiIGZpbGw9IiNmZmZmZmYiIHN0cm9rZT0iIzY2NjY2NiIgc3Ryb2tlLXdpZHRoPSIxLjIiLz4KICA8dGV4dCB4PSI1OCIgeT0iMTIyIiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9IiMxMTExMTEiIHRleHQtYW5jaG9yPSJzdGFydCI+YXBwPC90ZXh0PgogIDx0ZXh0IHg9IjI1MCIgeT0iMTIyIiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9IiMxMTExMTEiIHRleHQtYW5jaG9yPSJzdGFydCI+56iL5byP5pys6LqrPC90ZXh0PgogIDx0ZXh0IHg9IjQ3MCIgeT0iMTIyIiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9IiM2NjY2NjYiIHRleHQtYW5jaG9yPSJzdGFydCI+5pW05YyF5o+b5paw77yM5LiN6KaB5pS+6Ieq5bex55qE5qqU5qGIPC90ZXh0PgogIDxsaW5lIHgxPSIyNCIgeTE9IjE0MiIgeDI9IjczNiIgeTI9IjE0MiIgc3Ryb2tlPSIjZDlkOWQ5IiBzdHJva2Utd2lkdGg9IjEiLz4KICA8cGF0aCBkPSJNMzIsMTU2IGg2IGwyLDIgaDEwIHYxMCBoLTE4IHoiIGZpbGw9IiNmZmZmZmYiIHN0cm9rZT0iIzJDNUYzNCIgc3Ryb2tlLXdpZHRoPSIxLjIiLz4KICA8dGV4dCB4PSI1OCIgeT0iMTY2IiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiMyQzVGMzQiIHRleHQtYW5jaG9yPSJzdGFydCI+d29ya3NwYWNlPC90ZXh0PgogIDx0ZXh0IHg9IjI1MCIgeT0iMTY2IiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9IiMxMTExMTEiIHRleHQtYW5jaG9yPSJzdGFydCI+5L2g55qE56+E5pys44CB5Yyv5Ye657WQ5p6c44CB57SA6YyEPC90ZXh0PgogIDx0ZXh0IHg9IjQ3MCIgeT0iMTY2IiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiMyQzVGMzQiIHRleHQtYW5jaG9yPSJzdGFydCI+5LiN5pyD5YuV5YiwPC90ZXh0PgogIDxsaW5lIHgxPSIyNCIgeTE9IjE4NiIgeDI9IjczNiIgeTI9IjE4NiIgc3Ryb2tlPSIjZDlkOWQ5IiBzdHJva2Utd2lkdGg9IjEiLz4KICA8cGF0aCBkPSJNMzIsMjAwIGg2IGwyLDIgaDEwIHYxMCBoLTE4IHoiIGZpbGw9IiNmZmZmZmYiIHN0cm9rZT0iIzY2NjY2NiIgc3Ryb2tlLXdpZHRoPSIxLjIiLz4KICA8dGV4dCB4PSI1OCIgeT0iMjEwIiBmb250LWZhbWlseT0iJ05vdG8gU2FucyBUQycsJ05vdG8gU2FucyBDSksgVEMnLCdNaWNyb3NvZnQgSmhlbmdIZWknLCdQaW5nRmFuZyBUQycsSGVsdmV0aWNhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9IiMxMTExMTEiIHRleHQtYW5jaG9yPSJzdGFydCI+cnVudGltZTwvdGV4dD4KICA8dGV4dCB4PSIyNTAiIHk9IjIxMCIgZm9udC1mYW1pbHk9IidOb3RvIFNhbnMgVEMnLCdOb3RvIFNhbnMgQ0pLIFRDJywnTWljcm9zb2Z0IEpoZW5nSGVpJywnUGluZ0ZhbmcgVEMnLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iNDAwIiBmaWxsPSIjMTExMTExIiB0ZXh0LWFuY2hvcj0ic3RhcnQiPlB5dGhvbiDoiIflpZfku7Y8L3RleHQ+CiAgPHRleHQgeD0iNDcwIiB5PSIyMTAiIGZvbnQtZmFtaWx5PSInTm90byBTYW5zIFRDJywnTm90byBTYW5zIENKSyBUQycsJ01pY3Jvc29mdCBKaGVuZ0hlaScsJ1BpbmdGYW5nIFRDJyxIZWx2ZXRpY2Esc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNCIgZm9udC13ZWlnaHQ9IjQwMCIgZmlsbD0iIzY2NjY2NiIgdGV4dC1hbmNob3I9InN0YXJ0Ij7kuI3nlKjnrqHvvIzlo57mjonlj6/ku6XliKrmjonph43lu7o8L3RleHQ+CiAgPGxpbmUgeDE9IjI0IiB5MT0iMjMwIiB4Mj0iNzM2IiB5Mj0iMjMwIiBzdHJva2U9IiMxMTExMTEiIHN0cm9rZS13aWR0aD0iMS4yIi8+CiAgPHRleHQgeD0iMzIiIHk9IjI1OCIgZm9udC1mYW1pbHk9IidOb3RvIFNhbnMgVEMnLCdOb3RvIFNhbnMgQ0pLIFRDJywnTWljcm9zb2Z0IEpoZW5nSGVpJywnUGluZ0ZhbmcgVEMnLEhlbHZldGljYSxzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmb250LXdlaWdodD0iNDAwIiBmaWxsPSIjNjY2NjY2IiB0ZXh0LWFuY2hvcj0ic3RhcnQiPndvcmtzcGFjZSDlkowgcnVudGltZSDmmK/nrKzkuIDmrKHpm5nmk4ogcnVuLmJhdCDmmYLoh6rli5Xlu7rnq4vnmoTvvIzkuIvovInnmoQgWklQIOijoeaykuacieWug+WAkeOAgjwvdGV4dD4KPC9zdmc+Cg==" /></p>
 <p>記住一件事就好：<strong>你的範本和匯出結果都在 <code>workspace</code></strong>。<code>app</code> 是程式本身，每次換版都會整包換掉，不要在裡面放自己的檔案。</p>
@@ -97,4 +162,4 @@ pre code { background:none; padding:0; }
 <p><strong>更新後範本不見了</strong>
 確認是從同一個工具資料夾開啟。範本在 <code>workspace\templates</code>，換版不會動到它。</p>
 <p><strong><code>app.old</code> 可以刪嗎</strong>
-可以。刪掉後就不能用 <code>run.bat rollback</code> 退回，下次更新時會再產生一份。</p></main></body></html>
+可以。刪掉後就不能用 <code>run.bat rollback</code> 退回，下次更新時會再產生一份。</p></article></main><script src="manual.js"></script></body></html>

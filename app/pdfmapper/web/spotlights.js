@@ -1068,7 +1068,7 @@ const FEATURE_SPOTLIGHTS = [
       ["依空格分段", "每一段本身都不含空格。"],
       ["依字距分段", "文字層 PDF，兩段之間距離明顯較大。"],
     ],
-    needs: "table", manual: "value-modes", lab: "cell-extract",
+    needs: "table", manual: "cell-extract", lab: "cell-extract",
     setup: () => selectFirstTable("columns", true),
     target: '#right select[aria-label="這一欄怎麼取值"]',
   },
@@ -1110,13 +1110,13 @@ const FEATURE_SPOTLIGHTS = [
     when: "明細很長，會接到第 2 頁以後。",
     examples: [{ raw: "第 1 頁 10 列＋第 2 頁 4 列", value: "一張表 14 列" }],
     body: "在第 2 頁也加一個資料範圍，套用到「第 2 頁起」，跨頁的列會自動接起來。",
-    needs: "table", tour: ["feat-cross-page-1", "feat-cross-page-2", "feat-cross-page-3"], manual: "table-place", lab: "cross-page",
+    needs: "table", tour: ["feat-cross-page-1", "feat-cross-page-2", "feat-cross-page-3"], manual: "cross-page", lab: "cross-page",
   },
   {
     id: "feat-header", tab: "train", group: "表格", title: "表格開始的位置不固定",
     when: "表格上方的內容長短不一，明細有時高、有時低。",
     body: "框住表頭裡每份都一樣的字（例如第一欄的標題），表格上緣和分隔線會跟著表頭移動。",
-    needs: "table", manual: "table-place", lab: "header",
+    needs: "table", manual: "header", lab: "header",
     setup: () => selectFirstTable("place", false),
     target: "#right .header-pick",
   },
@@ -1125,7 +1125,7 @@ const FEATURE_SPOTLIGHTS = [
     when: "明細列數每份不同，下面接著合計或備註。",
     examples: [{ raw: "…第 8 列／合計 4,700", rule: "表尾「合計」", value: "抓到第 8 列為止" }],
     body: "框住表格結束後緊接著的字，例如「合計」；或在「遇到這段文字就結束」填「以下空白」。",
-    needs: "table", manual: "table-place", lab: "endmark",
+    needs: "table", manual: "endmark", lab: "endmark",
     setup: () => selectFirstTable("place", false),
     target: "#right .endmark-pick",
   },
@@ -1158,21 +1158,21 @@ const TOUR_SPOTLIGHTS = [
     done: () => state.tool === "pos",
   },
   {
-    id: "feat-cross-page-1", tab: "train", title: "切到「位置」分頁", manual: "table-place",
+    id: "feat-cross-page-1", tab: "train", title: "切到「位置」分頁", manual: "cross-page",
     body: "表格設定分成欄、位置、進階三頁，每一頁的資料範圍在「位置」。",
     setup: keepTableTab,
     target: '#right .subtabs [data-tab="place"]',
     done: () => state.selected?.type === "table" && state.tableTab === "place",
   },
   {
-    id: "feat-cross-page-2", tab: "train", title: "翻到第 2 頁", manual: "table-place",
+    id: "feat-cross-page-2", tab: "train", title: "翻到第 2 頁", manual: "cross-page",
     body: "用上方的 › 或左邊的縮圖翻到明細接續的那一頁。範例只有 1 頁時，看過就按下一項。",
     setup: () => selectFirstTable("place", false),
     target: '#toolbar button[aria-label="下一頁"]',
     done: () => state.page >= 1,
   },
   {
-    id: "feat-cross-page-3", tab: "train", title: "按「在目前這一頁加範圍」", manual: "table-place",
+    id: "feat-cross-page-3", tab: "train", title: "按「在目前這一頁加範圍」", manual: "cross-page",
     body: "框住這一頁的資料區，套用頁面維持「第 2 頁起」。",
     setup: () => selectFirstTable("place", false),
     target: "#addRegionBtn",
@@ -1191,14 +1191,14 @@ const RUN_SPOTLIGHTS = [
     when: "任何值都想改，不只被標記的。",
     body: "按兩下結果表格的格子就能改，改過的變藍色並保留原值，可以還原。",
     list: [["Enter", "儲存"], ["Shift+Enter", "換行"], ["Esc", "取消，不改"]],
-    needs: "result", manual: "run",
+    needs: "result", manual: "inline-edit",
     target: "#drawer td[data-ref]",
   },
   {
     id: "run-next-flagged", tab: "run", group: "瀏覽", title: "直接跳到下一個要看的",
     when: "待檢查很多，分散在不同頁或不同檔案。",
     body: "結果表格右上角的「跳到待檢查 ›」依檔案與頁面順序跳到下一個，處理完再按一次。",
-    needs: "result", manual: "run",
+    needs: "result", manual: "next-flagged",
     target: "#nextFlaggedBtn",
     tryIt: () => jumpNextFlagged(),
   },
@@ -1306,6 +1306,64 @@ function cardSymbols(symbols) {
     symbols.map(([sym, text]) => [h("dt", {}, h("code", {}, sym)), h("dd", {}, text)]));
 }
 
+/* 「複製給 AI 的提問」：把手冊第 5 章的提問範本、這個工具的正規表達式規則、目前的原始內容與試算結果組成一段文字，
+ * 只複製到剪貼簿，不連網、不送出資料。範本文字要和 docs/使用手冊.md 的第 5 章一致（tests/test_manual_anchors.py 會檢查）。 */
+const AI_PROMPT_EXTRACT = [
+  "請幫我寫一個 Python re 語法的正規表達式，用在一個 PDF 擷取工具。",
+  "工具的規則：取第一個括號內的內容；分大小寫；最長 500 字；不要在重複裡再放重複（例如 (a+)+）。",
+];
+const AI_PROMPT_MATCH = [
+  "請幫我寫一個 Python re 語法的正規表達式，用來檢查欄位格式。",
+  "工具只要內容有一段符合就算通過，所以請用 ^ 和 $ 包住整段。",
+];
+const AI_TOOL_RULES = [
+  "這個工具的正規表達式規則：",
+  "- 語法和 Python 的 re 相同。",
+  "- 擷取時取第一個括號裡的內容；沒有括號就取整段符合的部分。",
+  "- 分大小寫。要不分大小寫，在規則最前面加 (?i)。",
+  "- 格式檢查只要內容裡有一段符合就算通過。要整段都符合，規則前後加 ^ 和 $。",
+  "- 規則最長 500 字。不能在可重複的內容裡再放可重複的內容，例如 (a+)+。",
+];
+/* mode：extract 或 match；samples：原始內容（可多筆）；pattern：目前的規則；outcome：目前的試算結果文字 */
+function aiPromptText(mode, { samples, pattern, outcome }) {
+  const filled = samples.filter((t) => String(t).trim());
+  const raw = filled.length
+    ? filled.map((t, i) => `原始內容 ${i + 1}：\n${t}`).join("\n")
+    : "原始內容：（請貼上幾個真實的例子）";
+  const lines = mode === "match" ? [...AI_PROMPT_MATCH] : [...AI_PROMPT_EXTRACT];
+  lines.push("", ...AI_TOOL_RULES, "");
+  lines.push(mode === "match" ? "我要檢查的欄位，內容長得像下面這樣：" : "我要從下面這種格子裡取出【要取的部分，請在這裡補充】：");
+  lines.push(raw, "");
+  if (mode === "match") lines.push("應該通過：【請補充】", "應該標記：【請補充】", "");
+  lines.push(`目前的規則：${pattern || "（還沒有）"}`);
+  if (outcome) lines.push(`目前的試算結果：${outcome}`);
+  lines.push("", mode === "match"
+    ? "請給我規則，用一句話說明每個部分，並列出一個這個規則會誤判的情況。"
+    : "請給我規則，用一句話說明每個部分，並列出一個這個規則會抓錯的情況。");
+  return lines.join("\n");
+}
+async function copyAiPrompt(mode, parts) {
+  const text = aiPromptText(mode, parts);
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch (_error) {
+    // 沒有剪貼簿權限時，退回選取一個 textarea 再複製
+    const box = document.createElement("textarea");
+    box.id = "aiPromptFallback";
+    box.value = text;
+    box.setAttribute("aria-label", "要複製給 AI 的提問");
+    box.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+    document.body.append(box);
+    box.select();
+    try { copied = document.execCommand("copy"); } catch (_e) { copied = false; }
+    box.remove();
+  }
+  toast(copied ? "已複製，貼到公司的 AI" : "複製失敗，請在說明卡的試算區自己選取文字", !copied);
+  return copied;
+}
+
 /* 規則試算：結果由後端用和範本取值相同的函式算（/api/regex-try），不在前端用 JS RegExp（語法和 Python 不同）。
  * context.apply 存在時（從某一欄或某個欄位的設定打開）多一顆「套用到這一欄」。 */
 function regexTrial(mode, context) {
@@ -1319,6 +1377,7 @@ function regexTrial(mode, context) {
     maxlength: 500, value: context?.pattern || presets[0][2],
   });
   const result = h("p", { class: "trial-result", id: "trialResult", "aria-live": "polite" }, "試算中");
+  let lastOutcome = "";
   let timer = 0;
   let serial = 0;
   const show = (data) => {
@@ -1334,6 +1393,7 @@ function regexTrial(mode, context) {
     }
     result.textContent = message;
     result.className = `trial-result ${kind}`;
+    lastOutcome = message;
     if (typeof labTrialResult === "function") labTrialResult(mode, data);
   };
   const run = () => {
@@ -1366,6 +1426,10 @@ function regexTrial(mode, context) {
     h("label", {}, "原始內容", text),
     h("label", {}, mode === "extract" ? "規則" : "格式", h("span", { class: "trial-row" }, pattern, preset)),
     result,
+    h("button", {
+      type: "button", class: "btn", id: "trialCopyAi",
+      onclick: () => copyAiPrompt(mode, { samples: [text.value], pattern: pattern.value, outcome: lastOutcome }),
+    }, "複製給 AI 的提問"),
     context?.apply && mode === "extract" ? h("button", {
       type: "button", class: "btn", id: "trialApply", onclick: () => context.apply(pattern.value),
     }, context.applyLabel || "套用到這一欄") : null);

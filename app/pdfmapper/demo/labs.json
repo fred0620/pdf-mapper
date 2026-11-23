@@ -80,7 +80,7 @@
       }
     ],
     "learned": "一格有好幾個值時，用「開頭文字」只取其中一個，再選好值到哪裡結束。",
-    "manual": "value-modes"
+    "manual": "cell-extract"
   },
   "regex": {
     "title": "用規則抓特定格式的值",
@@ -200,7 +200,7 @@
       }
     ],
     "learned": "明細接到下一頁時，在第 2 頁也加一個資料範圍，跨頁的列會自動接成一張表。",
-    "manual": "table-place"
+    "manual": "cross-page"
   },
   "header": {
     "title": "表格開始的位置不固定",
@@ -251,7 +251,7 @@
       }
     ],
     "learned": "表格位置每份不同時，框住每份都一樣的表頭字，表格上緣和分隔線會跟著表頭移動。",
-    "manual": "table-place"
+    "manual": "header"
   },
   "endmark": {
     "title": "表格長度不固定",
@@ -289,7 +289,7 @@
       }
     ],
     "learned": "明細列數不固定時，框住表格結束後緊接著的字（例如 Total），抓到那裡為止，合計不會混進明細。",
-    "manual": "table-place"
+    "manual": "endmark"
   },
   "sum-fields": {
     "title": "幾個欄位相加，對不上就提醒",
