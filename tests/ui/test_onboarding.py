@@ -32,7 +32,8 @@ def strip(page):
 
 
 def expect_step(page, number: int, text: str) -> None:
-    expect(strip(page).locator(".mission-badge")).to_have_text(str(number))
+    # 有子步驟時步驟號後面接子進度，例如「7 2/5」
+    expect(strip(page).locator(".mission-badge")).to_have_text(re.compile(rf"^{number}(\s|$)"))
     expect(strip(page).locator(".mission-action")).to_contain_text(text)
 
 
