@@ -139,3 +139,24 @@ def test_legend_jumps_and_try_next_flagged(page):
     expect(page.locator("#overlay .box.focus")).to_have_count(1)
     inline = open_feature(page, "run-inline-edit")
     expect(inline.locator(".card-list")).to_contain_text("Shift+Enter")
+
+
+def test_regex_trial_preset_changes_text_and_pattern(page):
+    """換個例子：原始內容與規則都要換掉，結果跟著更新，之後的重繪不能把內容洗回預設。"""
+    card = open_feature(page, "feat-regex")
+    text, pattern, result = card.locator("#trialText"), card.locator("#trialPattern"), card.locator("#trialResult")
+    expect(result).to_have_text("抓到「11」")
+    preset = card.locator("#trialPreset")
+    preset.focus()
+    page.keyboard.press("ArrowDown")  # 鍵盤逐項切換：第一項是預設例子，再往下才會換內容
+    page.keyboard.press("ArrowDown")
+    expect(text).to_have_value("ECCN: 5A992 Origin: TW")
+    expect(pattern).to_have_value(r"ECCN:\s*(\S+)")
+    expect(result).to_have_text("抓到「5A992」")
+    # 使用者手動改過內容後，視窗大小改變等重繪不能洗掉
+    text.fill("ECCN: 9X999")
+    expect(result).to_have_text("抓到「9X999」")
+    page.set_viewport_size({"width": 1100, "height": 760})
+    page.wait_for_timeout(300)
+    expect(text).to_have_value("ECCN: 9X999")
+    expect(pattern).to_have_value(r"ECCN:\s*(\S+)")

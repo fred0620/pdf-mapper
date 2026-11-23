@@ -161,6 +161,47 @@ function labTrialResult(mode, data) {
   if (expect && data.value === expect) { L.flags.trial = true; scheduleGuide(); }
 }
 
+/* ---------- 填規則、填文字的步驟：內容要符合這個練習的預期才算完成 ---------- */
+const LAB_START_INPUT = '#right input[aria-label="開頭文字"]';
+const LAB_OUTPUT_NAME_INPUT = 'input[aria-label="Invoice No 的輸出欄名"]';
+const LAB_REF_TEXT = "Ref INV-2026-0301 rev2";
+const LAB_REF_VALUE = "INV-2026-0301";
+// 格式檢查：8 碼要通過，少一碼、多一碼、前面多字都要被擋住（所以前後都要有 ^ 和 $）
+const LAB_FORMAT_PASS = "12345678";
+const LAB_FORMAT_FAIL = ["1234567", "123456789", "A12345678"];
+function labCompile(pattern) {
+  try { return new RegExp(pattern); } catch (_e) { return null; }
+}
+// 回傳還差什麼；空字串表示規則已符合預期
+function labFormatProblem(pattern) {
+  const text = String(pattern || "").trim();
+  if (!text) return "empty";
+  const re = labCompile(text);
+  if (!re) return "規則還沒寫完整，括號和符號要成對。";
+  if (!re.test(LAB_FORMAT_PASS)) return `規則要讓 ${LAB_FORMAT_PASS} 通過，目前不符合。`;
+  if (re.test(LAB_FORMAT_FAIL[0])) return "7 碼的值也通過了，要限定剛好 8 個數字。";
+  if (LAB_FORMAT_FAIL.slice(1).some((v) => re.test(v))) return "規則要用 ^ 和 $ 包住整段，多一碼或前面多字才會被標記。";
+  return "";
+}
+const labFormatTip = (pattern) => {
+  const problem = labFormatProblem(pattern);
+  return problem && problem !== "empty" ? problem : "規則前後的 ^ 和 $ 代表整格都要符合；\\d{8} 是 8 個數字。";
+};
+function labRegexProblem(pattern) {
+  const text = String(pattern || "").trim();
+  if (!text) return "empty";
+  const re = labCompile(text);
+  if (!re) return "規則還沒寫完整，括號和符號要成對。";
+  const m = re.exec(LAB_REF_TEXT);
+  const got = m ? (m[1] ?? m[0]) : "";
+  if (got === LAB_REF_VALUE) return "";
+  return `這個規則${got ? `目前抓到「${got}」` : "目前抓不到東西"}，要抓到 ${LAB_REF_VALUE}。`;
+}
+const labRegexTip = (pattern) => {
+  const problem = labRegexProblem(pattern);
+  return problem && problem !== "empty" ? problem : "試算區的「套用到這一欄」，或直接貼進規則欄。";
+};
+
 /* ---------- 步驟共用的小零件 ---------- */
 function labSelectTable() {
   const t0 = firstTable();
@@ -179,14 +220,16 @@ const labOpened = (columnId) => state.selected?.type === "table" && state.openCo
 // 最後一步：按測試，結果錯了就指回去改
 function labTestTarget() {
   const kind = state.guide.lab?.data.verify.kind;
+  // 只要沒有更具體的去處，浮標就一直指著測試鈕（選了表格或欄位時也一樣，不能讓這一步沒有指引）
+  const test = { sel: "#testBtn", label: labWrong() ? "改好後再按一次" : "按這裡試抓" };
   if (kind === "output") {  // 輸出設定的面板開著就直接在那裡改；關掉了才指回按鈕
-    if (labWrong()) return state.outputPanel || !rightShowsList() ? null : { sel: "#outputBtn", label: "回去改輸出設定" };
-    return state.selected ? null : { sel: "#testBtn", label: "按這裡試抓" };
+    if (labWrong() && !state.outputPanel && rightShowsList()) return { sel: "#outputBtn", label: "回去改輸出設定" };
+    return test;
   }
-  if (kind === "sum_check" && labWrong()) return state.checksOpen || !rightShowsList() ? null : { sel: "#checksDetails > summary", label: "回去改檢查" };
+  if (kind === "sum_check" && labWrong() && !state.checksOpen && rightShowsList()) return { sel: "#checksDetails > summary", label: "回去改檢查" };
   const back = state.guide.lab?.data.verify.kind === "field_flag" ? "first-child" : "last-child";  // 欄位排在清單最前面，表格最後面
   if (labWrong() && rightShowsList()) return { sel: `#right .items li:${back} button`, label: "回去改設定" };
-  return state.selected ? null : { sel: "#testBtn", label: "按這裡試抓" };
+  return test;
 }
 function labVerifyStep(id, tip) {
   return {
@@ -257,7 +300,8 @@ const LAB_STEPS = {
     },
     {
       id: "lab-cell-extract-3", tab: "train", title: "填開頭文字",
-      action: "開頭文字填 ECCN:", tip: "和 PDF 上寫的一樣，包含冒號。",
+      action: "開頭文字填 ECCN:",
+      tip: () => (inputPending(LAB_START_INPUT, labColumn("spec")?.start) ? INPUT_PENDING_TIP : "和 PDF 上寫的一樣，包含冒號。"),
       target: () => labColumnTarget("spec", "Spec", '#right input[aria-label="開頭文字"]', "填 ECCN:"),
       assist: () => ({
         label: "幫我填",
@@ -271,7 +315,7 @@ const LAB_STEPS = {
           renderRight();
         },
       }),
-      sticky: true, done: () => !!labColumn("spec") && valueMode(labColumn("spec")) === "start" && !!(labColumn("spec").start || "").trim(),
+      sticky: true, done: () => !!labColumn("spec") && valueMode(labColumn("spec")) === "start" && inputDone(LAB_START_INPUT, labColumn("spec").start),
     },
     labVerifyStep("lab-cell-extract-4", "每一列只該抓到 ECCN 後面的值。"),
   ],
@@ -292,7 +336,8 @@ const LAB_STEPS = {
     },
     {
       id: "lab-regex-3", tab: "train", title: "套用到這一欄",
-      action: "把試好的規則套用到 Ref 欄", tip: "試算區的「套用到這一欄」，或直接貼進規則欄。",
+      action: "把試好的規則套用到 Ref 欄",
+      tip: () => labRegexTip(labColumn("ref")?.extract),
       target: () => labColumnTarget("ref", "Ref", '#right input[aria-label="正規表達式"]', "貼上規則"),
       assist: () => ({
         label: "幫我填",
@@ -306,7 +351,7 @@ const LAB_STEPS = {
           renderRight();
         },
       }),
-      sticky: true, done: () => !!labColumn("ref") && valueMode(labColumn("ref")) === "regex" && !!(labColumn("ref").extract || "").trim(),
+      sticky: true, done: () => !!labColumn("ref") && valueMode(labColumn("ref")) === "regex" && !labRegexProblem(labColumn("ref").extract),
     },
     labVerifyStep("lab-regex-4", "每一列只該抓到 INV 開頭的單號。"),
   ],
@@ -325,7 +370,8 @@ const LAB_STEPS = {
     },
     {
       id: "lab-format-check-3", tab: "train", title: "填格式檢查",
-      action: "「格式檢查」填 ^\\d{8}$", tip: "規則前後的 ^ 和 $ 代表整格都要符合；\\d{8} 是 8 個數字。",
+      action: "「格式檢查」填 ^\\d{8}$",
+      tip: () => labFormatTip(T().fields.find((f) => f.id === "tax_id")?.pattern),
       target: () => (document.querySelector("#fieldPatternInput") && state.selected?.type === "field"
         ? { sel: "#fieldPatternInput", label: "填 ^\\d{8}$" } : { sel: "#right .items li:first-child button", label: "點 Tax ID" }),
       assist: () => ({
@@ -339,7 +385,7 @@ const LAB_STEPS = {
           renderRight();
         },
       }),
-      sticky: true, done: () => !!(T().fields.find((f) => f.id === "tax_id")?.pattern || "").trim(),
+      sticky: true, done: () => !labFormatProblem(T().fields.find((f) => f.id === "tax_id")?.pattern),
     },
     labVerifyStep("lab-format-check-4", "不符合規則的值會被標記，結果列在下面。"),
   ],
@@ -431,9 +477,10 @@ const LAB_STEPS = {
     },
     {
       id: "lab-output-3", tab: "train", title: "改輸出欄名",
-      action: "Invoice No 的輸出欄名填 Doc No", tip: "欄名留空就用原本的名稱。",
+      action: "Invoice No 的輸出欄名填 Doc No",
+      tip: () => (inputPending(LAB_OUTPUT_NAME_INPUT, labOutputEntry("invoice_no")?.name) ? INPUT_PENDING_TIP : "欄名留空就用原本的名稱。"),
       target: () => (state.outputPanel ? { sel: 'input[aria-label="Invoice No 的輸出欄名"]', label: "填 Doc No" } : { sel: "#outputBtn", label: "按這裡" }),
-      sticky: true, done: () => !!(labOutputEntry("invoice_no")?.name || "").trim(),
+      sticky: true, done: () => inputDone(LAB_OUTPUT_NAME_INPUT, labOutputEntry("invoice_no")?.name),
     },
     {
       id: "lab-output-4", tab: "train", title: "調整順序",
@@ -460,7 +507,11 @@ const LAB_STEPS = {
       id: "lab-multi-template-3", tab: "run", title: "看每份用了哪個範本",
       action: "看左邊每份 PDF 用的範本",
       wrong: labWrong, tip: () => labVerifyTip("每份 PDF 下面會寫它用的範本。"),
-      target: () => (labWrong() ? { sel: labPicked() ? "#runStartBtn" : "#left .template-picks input:not(:checked)", label: labPicked() ? "再按一次開始解析" : "勾起來" } : null),
+      target: () => {
+        if (labWrong()) return { sel: labPicked() ? "#runStartBtn" : "#left .template-picks input:not(:checked)", label: labPicked() ? "再按一次開始解析" : "勾起來" };
+        if (!state.run?.finished) return { sel: "#runStartBtn", label: "先按開始解析" };  // 還沒解析完就跳到這一步（按了下一步）
+        return { sel: "#left .docs", label: "看每份用的範本" };
+      },
       sticky: true, done: labVerified,
     },
   ],

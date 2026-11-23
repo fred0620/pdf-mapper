@@ -238,7 +238,8 @@ function renderGuide() {
   renderMissionStrip(info);
   // 導覽指令條顯示時收起工具列的提示列，避免兩條藍色說明疊在一起
   $("hint").classList.toggle("covered", !$("missionStrip").hidden);
-  const ghosts = info?.step?.ghost && g.demo[view] ? safeGhosts(info.step) : [];
+  // 實地練習：還有按鈕要先按（目標還在）時，先用浮標指到按鈕；按下去進入框選模式後才換成畫布上的虛線靶框
+  const ghosts = info?.step?.ghost && g.demo[view] && !(view === "lab" && resolveTarget(info.step)) ? safeGhosts(info.step) : [];
   const key = JSON.stringify(ghosts);
   if (key !== g.ghostKey) {
     g.ghostKey = key;
@@ -673,6 +674,20 @@ function anchorSpread() {
   const quadrants = new Set(boxes.map((b) => ((b[0] + b[2]) / 2 < 0.5 ? 0 : 1) + ((b[1] + b[3]) / 2 < 0.5 ? 0 : 2)));
   return { count: boxes.length, quadrants: quadrants.size };
 }
+/* 打字的步驟：打字中不算完成（打第一個字就跳下一步會讓人還沒寫完提示就消失）。
+ * 輸入框有焦點時，要按 Enter 或離開輸入框（change）才算；沒有焦點（用「幫我填」、載入範本）有內容就算。 */
+const committedInputs = new WeakMap();
+document.addEventListener("change", (e) => {
+  if (e.target instanceof HTMLInputElement) { committedInputs.set(e.target, e.target.value); scheduleGuide(); }
+});
+document.addEventListener("focusout", () => scheduleGuide());
+function inputPending(sel, value) {
+  if (!String(value || "").trim()) return false;
+  const el = document.querySelector(sel);
+  return !!el && document.activeElement === el && committedInputs.get(el) !== el.value;
+}
+const inputDone = (sel, value) => !!String(value || "").trim() && !inputPending(sel, value);
+const INPUT_PENDING_TIP = "寫完後按 Enter，或點一下別的地方，才會算完成。";
 const rightShowsList = () => !state.selected && !state.outputPanel;
 const backToList = { sel: "#rightBackBtn", label: "回到欄位清單" };
 
@@ -680,10 +695,10 @@ const TRAIN_MISSIONS = [
   {
     id: "train-1", tab: "train", title: "命名",
     action: "在左欄輸入範本名稱",
-    tip: "名稱也是存檔的檔名，之後可以改。",
+    tip: () => (inputPending("#templateName", T().name) ? INPUT_PENDING_TIP : "名稱也是存檔的檔名，之後可以改。"),
     target: "#templateName", pointer: "輸入範本名稱",
     assist: () => ({ label: "幫我填", run: () => { setTemplateName("商業發票（練習）"); renderLeft(); } }),
-    done: () => !!T().template_id,
+    done: () => !!T().template_id && inputDone("#templateName", T().name),
   },
   {
     id: "train-2", tab: "train", title: "框有標題的欄位",
@@ -753,7 +768,7 @@ const TRAIN_MISSIONS = [
       renderOverlay();
     },
     target: () => (document.querySelector("#keyColumn") ? { sel: "#keyColumn", label: `選${firstTable()?.columns[0]?.name || "第 1 欄"}` }
-      : firstTable() ? { sel: "#overlay .box.table", label: "點表格打開設定" } : null),
+      : firstTable() ? { sel: "#overlay .box.table", label: "點表格打開設定" } : { sel: '[data-tool="table"]', label: "先用「表格」框出明細" }),
     done: () => T().tables.some((t) => !!t.key_column),
   },
   {
@@ -1414,10 +1429,10 @@ function regexTrial(mode, context) {
   const preset = h("select", {
     class: "trial-preset", id: "trialPreset", "aria-label": "換個例子",
     onchange: (e) => {
-      const chosen = presets[Number(e.target.value)];
+      // 選了就留在選單上（不歸零）：用鍵盤方向鍵或滾輪逐項切換時，每一步都要從目前這項往下
+      const chosen = e.target.value === "" ? null : presets[Number(e.target.value)];
       if (!chosen) return;
       [, text.value, pattern.value] = chosen;
-      e.target.value = "";
       run();
     },
   }, h("option", { value: "" }, "換個例子"), presets.map((item, i) => h("option", { value: String(i) }, item[0])));
