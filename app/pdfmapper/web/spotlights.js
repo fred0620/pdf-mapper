@@ -114,7 +114,7 @@ const missionsFor = (view) => (view === "train" ? trainMissions() : runMissions(
 function allSpotlights() {
   const lists = [trainMissions(), runMissions()];
   if (typeof FEATURE_SPOTLIGHTS !== "undefined") lists.push(FEATURE_SPOTLIGHTS, RUN_SPOTLIGHTS);
-  if (typeof SHOWCASE_SPOTLIGHTS !== "undefined") lists.push(SHOWCASE_SPOTLIGHTS);
+  if (typeof SHOWCASE_SPOTLIGHTS !== "undefined") lists.push(SHOWCASE_SPOTLIGHTS, TOUR_SPOTLIGHTS);
   if (typeof GENERAL_SPOTLIGHTS !== "undefined") lists.push(GENERAL_SPOTLIGHTS);
   return lists.flat();
 }
@@ -233,6 +233,7 @@ function renderGuide() {
   syncEmphasis(info?.step || null);
   if (typeof watchHandledRecords === "function") watchHandledRecords(info?.step || null);
   if (typeof positionOpenCards === "function") positionOpenCards();
+  if (typeof advanceTour === "function") advanceTour();
 }
 function safeGhosts(step) {
   try { return (step.ghost() || []).filter(Boolean); } catch (_e) { return []; }
@@ -354,10 +355,16 @@ const ALERT_LEGEND = [
   ["sw-ok", "正常", "沒有疑慮的值"],
   ["sw-notice", "整份提示", "整份檔案的提醒，例如項次不連續"],
 ];
-function alertLegendRow() {
-  return h("ul", { class: "legend-row", "aria-label": "顏色說明" }, ALERT_LEGEND.map(([cls, label, why]) =>
-    h("li", { class: "legend-chip", tabindex: "0", title: why, "aria-label": `${label}：${why}` },
-      h("span", { class: `legend-swatch ${cls}`, "aria-hidden": "true" }), label)));
+// onPick 有給時色塊變成按鈕，點了跳到第一個那種狀態的項目
+function alertLegendRow(onPick = null) {
+  return h("ul", { class: "legend-row", "aria-label": "顏色說明" }, ALERT_LEGEND.map(([cls, label, why]) => {
+    const chip = [h("span", { class: `legend-swatch ${cls}`, "aria-hidden": "true" }), label];
+    if (!onPick) return h("li", { class: "legend-chip", tabindex: "0", title: why, "aria-label": `${label}：${why}` }, chip);
+    return h("li", {}, h("button", {
+      type: "button", class: "legend-chip pick", title: `${why}。點一下跳到第一個`, dataset: { kind: cls.replace("sw-", "") },
+      onclick: () => onPick({ review: "review", missing: "missing", handled: "handled", ok: "ok", notice: "notice" }[cls.replace("sw-", "")]),
+    }, chip));
+  }));
 }
 
 /* ---------- 強調：同一時間只有一個強調點 ----------
@@ -404,8 +411,8 @@ function syncEmphasis(step) {
   const cardOpen = g.popoverOpen || !$("coachCard").hidden;
   if (g.spotlight) {
     // Spotlight 開著：只框它的目標，浮標退讓
-    const target = resolveTarget(g.spotlight.step);
-    setOutline(g.spotlight.opts.inPlace ? null : target?.el || null, `spot|${g.spotlight.step.id}`);
+    const target = g.spotlight.opts.go && !g.spotlight.missing ? resolveTarget(g.spotlight.step) : null;
+    setOutline(target?.el || null, `spot|${g.spotlight.step.id}`);
     markPointed(null);
     pointer.hidden = true;
     return;
@@ -919,81 +926,228 @@ function watchHandledRecords(step) {
   nodes.forEach((node) => handledObserver.observe(node));
 }
 
-/* ---------- 進階功能（說明選單與右欄 ? 共用） ----------
- * needs：doc 要有 PDF、result 要有解析結果、table 要有表格。沒有時浮動卡改顯示「用示範發票看」。
+/* ---------- 進階功能（說明選單、右欄 ?、新功能共用） ----------
+ * 卡片結構：標題寫「使用者想做的事」（16 字內）、什麼時候用（1 句）、例子（原始內容 → 抓到的值）、
+ * 動作列（帶我去設定、試試看、看手冊 ↗）。複雜的項目用 2 到 3 步的小導覽（同一個 Spotlight 序列）。
+ * needs：doc 要有 PDF、field 要有欄位、table 要有表格、result 要有解析結果；沒有時改成「用示範發票看」。
+ * manual：使用手冊的錨點（docs/使用手冊.md 裡寫明的 {#id}，測試會確認都存在）。
  */
+const MANUAL_URL = "/docs/使用手冊.html";
 function selectFirstTable(tab, openColumn) {
   const t0 = firstTable();
   if (!t0) return;
   state.selected = { type: "table", id: t0.id };
   state.outputPanel = false;
   state.tableTab = tab;
-  if (openColumn) state.openColumn = t0.columns[0]?.id || null;
+  if (openColumn && !t0.columns.some((c) => c.id === state.openColumn)) state.openColumn = t0.columns[0]?.id || null;
+  renderRight();
+  renderOverlay();
+}
+function selectFirstField(openAdvanced) {
+  const f0 = T().fields[0];
+  if (!f0) return;
+  state.selected = { type: "field", id: f0.id };
+  state.outputPanel = false;
+  state.fieldAdvancedOpen = !!openAdvanced;
   renderRight();
   renderOverlay();
 }
 function showList() { state.selected = null; state.outputPanel = false; renderRight(); renderOverlay(); }
+const keepTableTab = () => selectFirstTable(state.selected?.type === "table" ? state.tableTab || "columns" : "columns", false);
+
+const REGEX_SYMBOLS = [
+  ["\\d", "一個數字"],
+  ["\\s*", "可有可無的空白"],
+  ["+", "前一個出現一次以上"],
+  ["( )", "只取括號裡的部分"],
+];
+// 規則試算的預設範例：名稱、原始內容、規則
+const REGEX_PRESETS = {
+  extract: [
+    ["總頁數", "第1頁/共11頁", "共\\s*(\\d+)\\s*頁"],
+    ["型號", "ECCN: 5A992 Origin: TW", "ECCN:\\s*(\\S+)"],
+    ["日期", "開立日期 2026/03/01", "(\\d{4}/\\d{2}/\\d{2})"],
+  ],
+  match: [
+    ["統一編號（少一碼）", "1234567", "^\\d{8}$"],
+    ["統一編號（正確）", "12345678", "^\\d{8}$"],
+    ["稅則號別", "8471.30.00.00-1", "^\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d{2}-\\d$"],
+  ],
+};
+
 const FEATURE_SPOTLIGHTS = [
   {
-    id: "feat-pos-field", tab: "train", title: "只有值的欄位、續頁與取行規則",
-    body: "沒有標題的值用「只有值的欄位」（P）框，靠定位點找位置。欄位設定可勾內容接到下一頁、只取第幾行。",
-    target: '[data-tool="pos"]',
+    id: "feat-pos-field", tab: "train", group: "抓值", title: "值旁邊沒有標題怎麼抓",
+    when: "單號、日期這類旁邊沒有標題、只能靠位置找的值。",
+    examples: [{ raw: "（右上角）INV-2023-0042", value: "INV-2023-0042" }],
+    body: "用 P 直接框住值，工具靠定位點對位找到它；記得每頁加 3 個以上的定位點。",
+    needs: "doc", tour: ["feat-pos-field-1"], manual: "pos-field",
   },
   {
-    id: "feat-cell-extract", tab: "train", title: "表格 6 種取值與一格拆多欄", needs: "table",
-    body: "一格有好幾個值時，可依第幾行、開頭文字、正規表達式、空格或字距取值，也能把同一格拆成多欄。",
+    id: "feat-cell-extract", tab: "train", group: "抓值", title: "一格有好幾個值，只取一個",
+    when: "一格裡寫了好幾段資料，只要其中一段。",
+    examples: [{ raw: "ECCN: 5A992 Origin: TW", rule: "開頭文字 ECCN:", value: "5A992" }],
+    list: [
+      ["第幾行", "行數固定，例如稅則固定在第 2 行。"],
+      ["開頭文字", "值前面有固定標題，例如 ECCN:。"],
+      ["正規表達式", "值有特定格式，例如日期、型號。"],
+      ["依空格分段", "每一段本身都不含空格。"],
+      ["依字距分段", "文字層 PDF，兩段之間距離明顯較大。"],
+    ],
+    needs: "table", manual: "value-modes",
     setup: () => selectFirstTable("columns", true),
     target: '#right select[aria-label="這一欄怎麼取值"]',
   },
   {
-    id: "feat-column-preview", tab: "train", title: "試抓這一欄（免全檔重跑）", needs: "table",
-    body: "改了取值方式後，用基準範例試抓這一欄，馬上看到前幾列的結果，不用整份重新測試。",
+    id: "feat-regex", tab: "train", group: "抓值", title: "用規則抓特定格式的值",
+    when: "值有固定格式，但前後的字會變，例如頁數、型號、日期。",
+    body: "用一段規則描述內容長什麼樣子，只取括號裡你要的那段；比對不到就留空並標記。",
+    symbols: REGEX_SYMBOLS, trial: "extract",
+    needs: "table", manual: "regex",
+    setup: () => selectFirstTable("columns", true),
+    target: '#right select[aria-label="這一欄怎麼取值"]',
+  },
+  {
+    id: "feat-format-check", tab: "train", group: "抓值", title: "內容格式不對就標記",
+    when: "值一定是固定格式，例如統一編號是 8 個數字。",
+    examples: [{ raw: "1234567", rule: "^\\d{8}$", value: "不符合，標記" }],
+    body: "格式檢查不取值，只檢查抓到的值；規則前後加 ^ 和 $ 代表整格都要符合。",
+    trial: "match",
+    needs: "field", manual: "format-check",
+    setup: () => selectFirstField(true),
+    target: "#fieldPatternInput",
+  },
+  {
+    id: "feat-column-preview", tab: "train", group: "表格", title: "改完設定，先試抓這一欄",
+    when: "改了取值方式，想馬上看這一欄每一列抓到什麼。",
+    body: "用基準範例試抓，結果列在設定下方，附原始內容，不用整份重新測試。",
+    needs: "table", manual: "column-preview",
     setup: () => selectFirstTable("columns", true),
     target: "#right .column-preview-btn",
+    tryIt: () => {
+      selectFirstTable("columns", true);
+      const t0 = firstTable();
+      const column = t0.columns.find((c) => c.id === state.openColumn) || t0.columns[0];
+      previewColumn(t0, column);
+    },
   },
   {
-    id: "feat-cross-page", tab: "train", title: "跨頁表格、表頭浮動、表尾結束", needs: "table",
-    body: "明細接到下一頁時切到那頁加範圍；起始位置不固定就框表頭；遇到「合計」這類文字就結束。",
+    id: "feat-cross-page", tab: "train", group: "表格", title: "明細接到下一頁",
+    when: "明細很長，會接到第 2 頁以後。",
+    examples: [{ raw: "第 1 頁 10 列＋第 2 頁 4 列", value: "一張表 14 列" }],
+    body: "在第 2 頁也加一個資料範圍，套用到「第 2 頁起」，跨頁的列會自動接起來。",
+    needs: "table", tour: ["feat-cross-page-1", "feat-cross-page-2", "feat-cross-page-3"], manual: "table-place",
+  },
+  {
+    id: "feat-header", tab: "train", group: "表格", title: "表格開始的位置不固定",
+    when: "表格上方的內容長短不一，明細有時高、有時低。",
+    body: "框住表頭裡每份都一樣的字（例如第一欄的標題），表格上緣和分隔線會跟著表頭移動。",
+    needs: "table", manual: "table-place",
     setup: () => selectFirstTable("place", false),
-    target: "#right .region-card",
+    target: "#right .header-pick",
   },
   {
-    id: "feat-output", tab: "train", title: "輸出整理：乾淨資料與檢查用 Excel",
-    body: "設定乾淨資料要輸出哪些欄、欄名與順序；檢查用 Excel 一律保留完整內容給人核對。",
+    id: "feat-endmark", tab: "train", group: "表格", title: "表格長度不固定",
+    when: "明細列數每份不同，下面接著合計或備註。",
+    examples: [{ raw: "…第 8 列／合計 4,700", rule: "表尾「合計」", value: "抓到第 8 列為止" }],
+    body: "框住表格結束後緊接著的字，例如「合計」；或在「遇到這段文字就結束」填「以下空白」。",
+    needs: "table", manual: "table-place",
+    setup: () => selectFirstTable("place", false),
+    target: "#right .endmark-pick",
+  },
+  {
+    id: "feat-checks", tab: "train", group: "檢查與輸出", title: "加總對不上時提醒我",
+    when: "金額有加總關係，例如明細金額加起來要等於總金額。",
+    examples: [
+      { raw: "1,200 + 3,500", rule: "= 總金額 4,700", value: "相符" },
+      { raw: "1,200 + 3,500", rule: "= 總金額 4,800", value: "標記給人看" },
+    ],
+    manual: "checks",
+    setup: showList,
+    target: "#checksDetails > summary",
+  },
+  {
+    id: "feat-output", tab: "train", group: "檢查與輸出", title: "只輸出需要的欄位、改欄名",
+    when: "後續流程只要部分欄位，或欄名要對上其他系統。",
+    body: "勾選要輸出的欄、改輸出欄名、調整順序；只影響乾淨資料，檢查用 Excel 維持完整。",
+    manual: "output",
     setup: showList,
     target: "#outputBtn",
   },
 ];
+// 小導覽的步驟：做到了就自動跳下一步，也可以按下一項
+const TOUR_SPOTLIGHTS = [
+  {
+    id: "feat-pos-field-1", tab: "train", title: "切到「只有值的欄位」", manual: "pos-field",
+    body: "按 P 或點工具列這顆，再框住值的範圍；框好後在右邊取名。",
+    target: '[data-tool="pos"]',
+    done: () => state.tool === "pos",
+  },
+  {
+    id: "feat-cross-page-1", tab: "train", title: "切到「位置」分頁", manual: "table-place",
+    body: "表格設定分成欄、位置、進階三頁，每一頁的資料範圍在「位置」。",
+    setup: keepTableTab,
+    target: '#right .subtabs [data-tab="place"]',
+    done: () => state.selected?.type === "table" && state.tableTab === "place",
+  },
+  {
+    id: "feat-cross-page-2", tab: "train", title: "翻到第 2 頁", manual: "table-place",
+    body: "用上方的 › 或左邊的縮圖翻到明細接續的那一頁。範例只有 1 頁時，看過就按下一項。",
+    setup: () => selectFirstTable("place", false),
+    target: '#toolbar button[aria-label="下一頁"]',
+    done: () => state.page >= 1,
+  },
+  {
+    id: "feat-cross-page-3", tab: "train", title: "按「在目前這一頁加範圍」", manual: "table-place",
+    body: "框住這一頁的資料區，套用頁面維持「第 2 頁起」。",
+    setup: () => selectFirstTable("place", false),
+    target: "#addRegionBtn",
+    done: () => state.tool === "region",
+  },
+];
 const RUN_SPOTLIGHTS = [
   {
-    id: "run-alert-legend", tab: "run", title: "示警顏色速查",
-    body: "表格、PDF 上的框與 Excel 都照這個顏色規則。滑過色塊可看原因。",
-    legend: true,
+    id: "run-alert-legend", tab: "run", group: "核對", title: "顏色代表什麼",
+    when: "表格、PDF 上的框或 Excel 出現顏色時。",
+    body: "表格、PDF 上的框與 Excel 都照這個規則。有解析結果時，點色塊會跳到第一個那種狀態的項目。",
+    legend: true, manual: "flags",
   },
   {
-    id: "run-next-flagged", tab: "run", title: "跳到下一個待檢查", needs: "result",
-    body: "結果表格右上角，依檔案與頁面順序跨頁跨檔跳轉，處理完再按一次。",
-    target: "#nextFlaggedBtn",
-  },
-  {
-    id: "run-inline-edit", tab: "run", title: "結果表格就地修改", needs: "result",
-    body: "按兩下任一格就能改字，Shift+Enter 換行。改過的變藍色並保留原值，可以還原。",
+    id: "run-inline-edit", tab: "run", group: "核對", title: "在表格裡直接改字",
+    when: "任何值都想改，不只被標記的。",
+    body: "按兩下結果表格的格子就能改，改過的變藍色並保留原值，可以還原。",
+    list: [["Enter", "儲存"], ["Shift+Enter", "換行"], ["Esc", "取消，不改"]],
+    needs: "result", manual: "run",
     target: "#drawer td[data-ref]",
   },
   {
-    id: "run-popout", tab: "run", title: "雙視窗核對", needs: "result",
-    body: "PDF 和結果表格都能移到新視窗，兩個螢幕對照，選取與修改會同步。",
+    id: "run-next-flagged", tab: "run", group: "瀏覽", title: "直接跳到下一個要看的",
+    when: "待檢查很多，分散在不同頁或不同檔案。",
+    body: "結果表格右上角的「跳到待檢查 ›」依檔案與頁面順序跳到下一個，處理完再按一次。",
+    needs: "result", manual: "run",
+    target: "#nextFlaggedBtn",
+    tryIt: () => jumpNextFlagged(),
+  },
+  {
+    id: "run-popout", tab: "run", group: "瀏覽", title: "兩個螢幕對照",
+    when: "PDF 和表格擠在一起，想分開兩個螢幕看。",
+    body: "PDF 和結果表格都能移到新視窗，選取、翻頁與修改會同步。",
+    needs: "result", manual: "two-windows",
     target: "#popTableBtn",
   },
   {
-    id: "run-clean-export", tab: "run", title: "只輸出已確認的資料", needs: "result",
-    body: "勾選後，乾淨資料只輸出人確認或修改過的值；檢查用 Excel 仍保留全部給人核對。",
-    target: "#right .check-line",
+    id: "run-multi-template", tab: "run", group: "瀏覽", title: "一次丟不同格式的 PDF",
+    when: "一批裡混了報單和發票這類不同版面的單據。",
+    body: "把可能的範本都勾起來，每份 PDF 會比對定位點，自動用最符合的範本解析。",
+    manual: "multi-template",
+    target: "#left .template-picks",
   },
   {
-    id: "run-multi-template", tab: "run", title: "多個範本自動挑選",
-    body: "勾選多個範本時，每份 PDF 會比對定位點，自動用最符合的範本解析。",
-    target: "#left .template-picks",
+    id: "run-clean-export", tab: "run", group: "匯出", title: "只交出確認過的資料",
+    when: "後續流程只要人確認或修改過的值。",
+    body: "勾「乾淨資料只輸出已確認」再匯出；檢查用 Excel 仍保留全部給人核對。",
+    needs: "result", manual: "clean-data",
+    target: "#right .check-line",
   },
 ];
 // 觀摩做好的範本：一段 Spotlight 序列，不另寫邏輯
@@ -1028,38 +1182,178 @@ function startShowcaseTour() {
 }
 
 function missingFor(step) {
-  if (step.needs === "doc" && !currentDoc()) return "需要先載入 PDF";
+  const reference = state.view === "train" && !!state.referenceId && isReference();
+  if (["doc", "field", "table"].includes(step.needs) && !reference) return "需要先載入範例 PDF";
+  if (step.needs === "field" && !T().fields.length) return "需要先有欄位";
+  if (step.needs === "table" && !T().tables.length) return "需要先有表格";
   if (step.needs === "result" && !(state.view === "run" && activeResult())) return "需要先解析 PDF";
-  if (step.needs === "table" && !(state.view === "train" && isReference() && T().tables.length)) return "需要先有表格";
   return null;
 }
-// 打開一個 Spotlight：切到對應分頁與右欄介面、框住目標、在旁邊開浮動卡。inPlace 時不切換畫面（右欄 ?）
-function openSpotlight(id, opts = {}) {
-  const step = findSpotlight(id);
-  if (!step) return;
-  closeHelp(false);
-  const g = state.guide;
-  if (!opts.inPlace && step.tab && state.view !== step.tab) setView(step.tab);
-  const missing = opts.inPlace ? null : missingFor(step);
-  if (!opts.inPlace && !missing) { try { step.setup?.(); } catch (_e) { /* 設定失敗不影響說明 */ } }
-  g.spotlight = { step, opts, missing };
-  const seen = state.onboarding.spotlightsSeen;
-  if (!seen.includes(id)) { seen.push(id); saveOnboardingPrefs(); }
+// 判斷時要先切到那個分頁才準（例如從解析 PDF 頁看建立範本的項目）
+function missingOnTab(step) {
+  if (!step.needs || !step.tab || step.tab === state.view) return missingFor(step);
+  if (step.needs === "result") return state.run?.results.length ? null : "需要先解析 PDF";
+  const ref = state.docs.find((d) => d.id === state.referenceId);
+  if (!ref) return "需要先載入範例 PDF";
+  if (step.needs === "field" && !T().fields.length) return "需要先有欄位";
+  if (step.needs === "table" && !T().tables.length) return "需要先有表格";
+  return null;
+}
+const hasGo = (step) => !!(step.target || step.tour);
+// 帶我去設定：有小導覽就跑小導覽，否則切畫面並框出控制項
+function goToSpotlight(step) {
+  if (step.tour) {
+    openSpotlight(step.tour[0], { go: true, sequence: { index: 0, ids: step.tour, parent: step.id } });
+  } else {
+    openSpotlight(step.id, { go: true });
+  }
+}
+async function demoThen(step, then) {
+  closeSpotlight(false);
+  await startDemo(step.tab === "run" ? "run" : "showcase", { guide: false });
+  then();
+}
+
+/* 例子：原始內容 → 抓到的值，識別碼與內容用等寬字 */
+function cardExamples(examples) {
+  return h("div", { class: "card-examples", role: "table", "aria-label": "例子" },
+    h("div", { class: "card-example head", role: "row" },
+      h("span", { role: "columnheader" }, "原始內容"), h("span", { "aria-hidden": "true" }), h("span", { role: "columnheader" }, "抓到的值")),
+    examples.map((ex) => h("div", { class: "card-example", role: "row" },
+      h("span", { role: "cell" }, h("code", {}, ex.raw)),
+      h("span", { class: "card-arrow", role: "cell" }, ex.rule ? h("small", {}, ex.rule) : null, "→"),
+      h("span", { role: "cell" }, h("code", {}, ex.value)))));
+}
+function cardList(items) {
+  return h("ul", { class: "card-list" }, items.map(([name, text]) => h("li", {}, h("strong", {}, name), text)));
+}
+function cardSymbols(symbols) {
+  return h("dl", { class: "card-symbols", "aria-label": "符號速查" },
+    symbols.map(([sym, text]) => [h("dt", {}, h("code", {}, sym)), h("dd", {}, text)]));
+}
+
+/* 規則試算：結果由後端用和範本取值相同的函式算（/api/regex-try），不在前端用 JS RegExp（語法和 Python 不同）。
+ * context.apply 存在時（從某一欄或某個欄位的設定打開）多一顆「套用到這一欄」。 */
+function regexTrial(mode, context) {
+  const presets = REGEX_PRESETS[mode];
+  const text = h("textarea", {
+    class: "trial-text", id: "trialText", rows: 2, maxlength: 2000, "aria-label": "原始內容", spellcheck: false,
+    value: context?.text || presets[0][1],
+  });
+  const pattern = h("input", {
+    type: "text", class: "trial-pattern", id: "trialPattern", "aria-label": "規則", spellcheck: false, autocomplete: "off",
+    maxlength: 500, value: context?.pattern || presets[0][2],
+  });
+  const result = h("p", { class: "trial-result", id: "trialResult", "aria-live": "polite" }, "試算中");
+  let timer = 0;
+  let serial = 0;
+  const show = (data) => {
+    let message;
+    let kind;
+    if (!data.ok) { message = data.error; kind = "bad"; }
+    else if (mode === "extract") {
+      message = data.found ? `抓到「${data.value}」` : "沒抓到，這格會留空並標記";
+      kind = data.found ? "good" : "bad";
+    } else {
+      message = data.matched ? "符合" : "不符合，這格會標記給人看";
+      kind = data.matched ? "good" : "bad";
+    }
+    result.textContent = message;
+    result.className = `trial-result ${kind}`;
+  };
+  const run = () => {
+    clearTimeout(timer);
+    result.className = "trial-result";
+    timer = setTimeout(async () => {
+      const mine = ++serial;
+      try {
+        const data = await api("/api/regex-try", { json: { pattern: pattern.value, text: text.value, mode } });
+        if (mine === serial) show(data);
+      } catch (error) {
+        if (mine === serial) show({ ok: false, error: error.message });
+      }
+    }, 250);
+  };
+  text.addEventListener("input", run);
+  pattern.addEventListener("input", run);
+  const preset = h("select", {
+    class: "trial-preset", id: "trialPreset", "aria-label": "換個例子",
+    onchange: (e) => {
+      const chosen = presets[Number(e.target.value)];
+      if (!chosen) return;
+      [, text.value, pattern.value] = chosen;
+      e.target.value = "";
+      run();
+    },
+  }, h("option", { value: "" }, "換個例子"), presets.map((item, i) => h("option", { value: String(i) }, item[0])));
+  run();
+  return h("div", { class: "trial", "aria-label": mode === "extract" ? "規則試算" : "格式檢查試算" },
+    h("label", {}, "原始內容", text),
+    h("label", {}, mode === "extract" ? "規則" : "格式", h("span", { class: "trial-row" }, pattern, preset)),
+    result,
+    context?.apply && mode === "extract" ? h("button", {
+      type: "button", class: "btn", id: "trialApply", onclick: () => context.apply(pattern.value),
+    }, context.applyLabel || "套用到這一欄") : null);
+}
+
+/* 圖例的色塊：有解析結果時可以點，跳到第一個那種狀態的項目 */
+function jumpToStatus(kind) {
+  const results = state.run?.results || [];
+  if (kind === "notice") {
+    const issue = document.querySelector("#right .issue");
+    if (issue) { issue.scrollIntoView({ block: "nearest" }); return; }
+  }
+  const match = {
+    review: (v) => v.status === "review",
+    missing: (v) => v.status === "missing",
+    handled: (v) => isHandled(v) && !isPending(v),
+    ok: (v) => v.status === "ok" && !isHandled(v) && !!v.value,
+  }[kind];
+  const order = [activeResult(), ...results.filter((r) => r !== activeResult())].filter(Boolean);
+  for (const result of match ? order : []) {
+    const entry = allValues(result).find((e) => match(e.value));
+    if (!entry) continue;
+    if (result.doc_id !== state.docId) {
+      state.docId = result.doc_id;
+      state.page = 0;
+      state.focusRef = null;
+      renderAll();
+    }
+    focusValue(entry.ref);
+    return;
+  }
+  toast("這批沒有這種狀態的項目");
+}
+
+function cardNodes(step, opts, missing) {
   const seq = opts.sequence;
+  const go = !!(opts.go || seq);
   const actions = [];
+  const close = (label) => h("button", { type: "button", class: "btn", onclick: () => closeSpotlight() }, label);
   if (missing) {
+    // 沒有文件：用示範發票，載入後接著做同一件事
     actions.push(h("button", {
       type: "button", class: "btn primary", id: "spotDemoBtn",
-      onclick: async () => {
-        closeSpotlight(false);
-        await startDemo(step.tab === "run" ? "run" : "showcase", { guide: false });
-        openSpotlight(id, opts);
-      },
+      onclick: () => demoThen(step, () => (go ? openSpotlight(step.id, opts) : hasGo(step) ? goToSpotlight(step) : openSpotlight(step.id, opts))),
     }, "用示範發票看"));
+  } else if (!go && !opts.inPlace && hasGo(step)) {
+    actions.push(h("button", { type: "button", class: "btn primary", id: "spotGoBtn", onclick: () => goToSpotlight(step) }, "帶我去設定"));
   }
+  if (step.tryIt && !missing) {
+    actions.push(h("button", {
+      type: "button", class: "btn", id: "spotTryBtn",
+      onclick: () => { if (step.tab && state.view !== step.tab) setView(step.tab); step.tryIt(); scheduleGuide(); },
+    }, "試試看"));
+  }
+  if (step.manual) {
+    actions.push(h("a", {
+      class: "linkish card-manual", id: "spotManualLink", href: `${MANUAL_URL}#${step.manual}`, target: "_blank", rel: "noopener",
+    }, "看手冊 ↗"));
+  }
+  actions.push(h("span", { class: "spring" }));
   if (seq) {
     const last = seq.index >= seq.ids.length - 1;
-    actions.push(h("span", { class: "card-count" }, `${seq.index + 1} / ${seq.ids.length}`), h("span", { class: "spring" }));
+    actions.push(h("span", { class: "card-count" }, `${seq.index + 1} / ${seq.ids.length}`));
     if (!last) {
       actions.push(h("button", {
         type: "button", class: "btn primary", id: "spotNextBtn",
@@ -1067,26 +1361,59 @@ function openSpotlight(id, opts = {}) {
       }, "下一項"));
     }
     actions.push(h("button", { type: "button", class: "btn", id: "spotEndBtn", onclick: () => { closeSpotlight(); seq.onEnd?.(); } }, last ? "完成" : "結束"));
-  } else if (!missing) {
-    actions.push(h("span", { class: "spring" }), h("button", { type: "button", class: "btn", onclick: () => closeSpotlight() }, "知道了"));
   } else {
-    actions.push(h("button", { type: "button", class: "btn", onclick: () => closeSpotlight() }, "關閉"));
+    actions.push(close(missing ? "關閉" : "知道了"));
   }
+  const legendClickable = step.legend && state.view === "run" && !!state.run?.results.length;
+  return [
+    h("h2", {}, step.title),
+    step.when ? h("p", { class: "card-when" }, h("strong", {}, "什麼時候用："), step.when) : null,
+    step.examples ? cardExamples(step.examples) : null,
+    step.body ? h("p", { class: "card-body" }, step.body) : null,
+    step.list ? cardList(step.list) : null,
+    step.symbols ? cardSymbols(step.symbols) : null,
+    step.trial ? regexTrial(step.trial, opts.context) : null,
+    step.legend ? h("div", { class: "card-legend" }, alertLegendRow(legendClickable ? jumpToStatus : null)) : null,
+    missing ? h("p", { class: "card-missing" }, `${missing}，可以先用示範發票看。`) : null,
+    h("div", { class: "card-actions" }, actions),
+  ];
+}
+// 打開一個 Spotlight。預設只開說明卡；go（帶我去設定、小導覽、新功能導覽）才切畫面並框出控制項；
+// inPlace（右欄 ?）只開卡，不切換畫面
+function openSpotlight(id, opts = {}) {
+  const step = findSpotlight(id);
+  if (!step) return;
+  closeHelp(false);
+  const g = state.guide;
+  const go = !!(opts.go || opts.sequence) && !opts.inPlace;
+  if (go && step.tab && state.view !== step.tab) setView(step.tab);
+  const missing = opts.inPlace ? null : go ? missingFor(step) : missingOnTab(step);
+  if (go && !missing) { try { step.setup?.(); } catch (_e) { /* 設定失敗不影響說明 */ } }
+  g.spotlight = { step, opts: { ...opts, go }, missing };
+  const seen = state.onboarding.spotlightsSeen;
+  const seenId = opts.sequence?.parent || id;
+  if (!seen.includes(seenId)) { seen.push(seenId); saveOnboardingPrefs(); }
   const card = $("coachCard");
   card.dataset.spotlight = id;
-  showFloatCard(card, opts.anchor || $("helpBtn"), [
-    h("h2", {}, step.title),
-    h("p", {}, step.body),
-    step.legend ? h("div", { class: "card-legend" }, alertLegendRow()) : null,
-    missing ? h("p", { class: "card-missing" }, `${missing}才能指給你看。`) : null,
-    h("div", { class: "card-actions" }, actions),
-  ]);
+  card.classList.toggle("wide", !!step.trial || !!step.examples || !!step.symbols);
+  showFloatCard(card, opts.anchor || $("helpBtn"), cardNodes(step, { ...opts, go }, missing));
   scheduleGuide();
   requestAnimationFrame(() => {
-    const target = !opts.inPlace && !missing ? resolveTarget(step) : null;
+    const target = go && !missing ? resolveTarget(step) : null;
     if (target && visibility(target.el) !== "visible") target.el.scrollIntoView({ block: "nearest", inline: "nearest" });
     positionOpenCards();
   });
+}
+// 小導覽：這一步做到了就自動跳下一步
+function advanceTour() {
+  const spot = state.guide.spotlight;
+  const seq = spot?.opts.sequence;
+  if (!seq || !spot.step.done || spot.missing || spot.advanced || seq.index >= seq.ids.length - 1) return;
+  if (!safeCall(spot.step.done)) return;
+  spot.advanced = true;
+  setTimeout(() => {
+    if (state.guide.spotlight === spot) openSpotlight(seq.ids[seq.index + 1], { ...spot.opts, sequence: { ...seq, index: seq.index + 1 } });
+  }, 0);
 }
 function closeSpotlight(restoreFocus = true) {
   const g = state.guide;
@@ -1103,7 +1430,7 @@ function positionOpenCards() {
   const card = $("coachCard");
   if (g.spotlight && !card.hidden) {
     const { step, opts, missing } = g.spotlight;
-    const target = !opts.inPlace && !missing ? resolveTarget(step) : null;
+    const target = opts.go && !missing ? resolveTarget(step) : null;
     const anchor = opts.anchor?.isConnected ? opts.anchor : target && visibility(target.el) === "visible" ? target.el : $("helpBtn");
     positionFloatCard(card, anchor, anchor === $("helpBtn") ? ["bottom", "left"] : ["right", "bottom", "left", "top"]);
   }
@@ -1135,10 +1462,22 @@ function resumeOrStartGuide(view, trigger) {
   if (state.view !== view) setView(view);
   requestGuide(view, trigger);
 }
-function renderHelpPopover(section) {
+const TAB_NAMES = { train: "建立範本", run: "解析 PDF" };
+function advancedSection(view, first) {
   const seen = state.onboarding.spotlightsSeen;
-  const here = state.view === "run" ? RUN_SPOTLIGHTS : FEATURE_SPOTLIGHTS;
-  const there = state.view === "run" ? FEATURE_SPOTLIGHTS : RUN_SPOTLIGHTS;
+  const list = view === "run" ? RUN_SPOTLIGHTS : FEATURE_SPOTLIGHTS;
+  const groups = [...new Set(list.map((s) => s.group))];
+  return h("section", { class: "help-section", id: first ? "helpAdvanced" : null, "aria-label": `${TAB_NAMES[view]}的進階功能` },
+    h("h3", {}, `進階功能：${TAB_NAMES[view]}`),
+    groups.map((group) => [
+      h("h4", { class: "help-group" }, group),
+      h("ul", {}, list.filter((s) => s.group === group).map((step) => h("li", {}, h("button", {
+        type: "button", class: "help-row", dataset: { spotlight: step.id },
+        onclick: () => openSpotlight(step.id),
+      }, h("span", {}, step.title), seen.includes(step.id) ? h("span", { class: "help-meta seen" }, "已看過") : null)))),
+    ]));
+}
+function renderHelpPopover() {
   const guideRow = (view, label) => {
     const status = guideStatus(view);
     return h("li", {}, h("button", {
@@ -1146,19 +1485,14 @@ function renderHelpPopover(section) {
       onclick: (e) => resumeOrStartGuide(view, e.currentTarget),
     }, h("span", {}, label), h("span", { class: "help-meta" }, status.text)));
   };
-  const featureRow = (step) => h("li", {}, h("button", {
-    type: "button", class: "help-row", dataset: { spotlight: step.id },
-    onclick: () => openSpotlight(step.id),
-  }, h("span", {}, step.title), seen.includes(step.id) ? h("span", { class: "help-meta seen" }, "已看過") : null));
   const whatsNew = typeof whatsNewHelpRow === "function" ? whatsNewHelpRow() : null;
+  const order = state.view === "run" ? ["run", "train"] : ["train", "run"];  // 目前分頁的排前面
   return [
     h("h2", {}, "說明"),
     h("section", { class: "help-section", "aria-label": "新手導覽" },
       h("h3", {}, "新手導覽"),
       h("ul", {}, guideRow("train", "建立範本 8 步"), guideRow("run", "解析 PDF 6 步"))),
-    h("section", { class: "help-section", id: "helpAdvanced", "aria-label": "進階功能" },
-      h("h3", {}, "進階功能"),
-      h("ul", {}, here.map(featureRow), there.map(featureRow))),
+    order.map((view, i) => advancedSection(view, i === 0)),
     whatsNew ? h("section", { class: "help-section" }, whatsNew) : null,
     h("section", { class: "help-section" },
       h("ul", {}, h("li", {}, h("a", { class: "help-row", href: "/manual", target: "_blank", rel: "noopener", id: "helpManual" },
@@ -1191,10 +1525,15 @@ function closeHelp(restoreFocus = true) {
   scheduleGuide();
 }
 // 右欄設定旁的 ?：開該項的說明卡，不切換畫面
-function helpHint(id, label) {
+// context：從某一欄或某個欄位打開時，帶入目前的規則，並可「套用到這一欄」（點下去時才取，拿到最新的設定）
+function helpHint(id, label, context = null) {
   return h("button", {
     type: "button", class: "help-hint", "aria-label": `說明：${label}`, title: `說明：${label}`, dataset: { spotlight: id },
-    onclick: (e) => { e.preventDefault(); e.stopPropagation(); openSpotlight(id, { inPlace: true, anchor: e.currentTarget }); },
+    onclick: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openSpotlight(id, { inPlace: true, anchor: e.currentTarget, context: typeof context === "function" ? context() : context });
+    },
   }, "?");
 }
 
@@ -1233,13 +1572,15 @@ function setupHelpMenu() {
  */
 const GENERAL_SPOTLIGHTS = [
   {
-    id: "help-menu", title: "說明選單",
-    body: "新手導覽、進階功能、新功能與使用手冊都在這裡，關閉導覽後也找得到。",
+    id: "help-menu", title: "找導覽與進階功能",
+    when: "忘了某個功能在哪，或想重看新手導覽。",
+    body: "頂列「說明」集中新手導覽、進階功能、新功能與使用手冊，關閉導覽後也在。",
     target: "#helpBtn",
   },
   {
-    id: "welcome-demo", tab: "train", title: "用示範發票邊做邊學",
-    body: "還沒開檔案時，可以跟著示範發票一步步做出範本；解析 PDF 頁也能練習核對與匯出。",
+    id: "welcome-demo", tab: "train", title: "跟著示範發票學",
+    when: "第一次用，或想先練習再處理自己的檔案。",
+    body: "還沒開檔案時，畫面中間可以跟著示範發票做範本；解析 PDF 頁也能練習核對與匯出。",
     target: "#demoStartBtn",
   },
 ];

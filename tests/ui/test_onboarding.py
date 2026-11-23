@@ -233,7 +233,9 @@ def test_help_menu_stays_after_closing_guide(page):
     page.locator('#helpPopover [data-spotlight="feat-output"]').click()
     expect(page.locator("#helpPopover")).to_be_hidden()
     card = page.locator("#coachCard")
-    expect(card).to_contain_text("輸出整理")
+    expect(card).to_contain_text("只輸出需要的欄位、改欄名")
+    expect(card).to_contain_text("什麼時候用：")
+    card.get_by_role("button", name="帶我去設定").click()
     expect(page.locator("#outputBtn")).to_have_class(re.compile(r"\bguide-target\b"))
     page.keyboard.press("Escape")
     expect(card).to_be_hidden()
@@ -241,8 +243,10 @@ def test_help_menu_stays_after_closing_guide(page):
     # 另一分頁的項目：先切換分頁
     open_help(page)
     page.locator('#helpPopover [data-spotlight="run-multi-template"]').click()
+    expect(card).to_contain_text("一次丟不同格式的 PDF")
+    expect(page.locator("#tabTrain")).to_have_attribute("aria-current", "page")  # 只開說明卡，不切畫面
+    card.get_by_role("button", name="帶我去設定").click()
     expect(page.locator("#tabRun")).to_have_attribute("aria-current", "page")
-    expect(card).to_contain_text("多個範本自動挑選")
     expect(page.locator("#left .template-picks")).to_have_class(re.compile(r"\bguide-target\b"))
     open_help(page)
     expect(page.locator('#helpPopover [data-spotlight="run-multi-template"]')).to_contain_text("已看過")
@@ -260,9 +264,11 @@ def test_feature_needing_pdf_offers_demo(page):
     open_help(page)
     page.locator('#helpPopover [data-spotlight="feat-cell-extract"]').click()
     card = page.locator("#coachCard")
-    expect(card).to_contain_text("需要先有表格")
+    expect(card).to_contain_text("需要先載入範例 PDF")
+    expect(card.locator(".card-examples")).to_contain_text("ECCN: 5A992 Origin: TW")
+    expect(card.locator(".card-list li")).to_have_count(5)  # 5 種取值方式各一句
     card.get_by_role("button", name="用示範發票看").click()
-    expect(card).to_contain_text("表格 6 種取值", timeout=30_000)
+    expect(card).to_contain_text("一格有好幾個值，只取一個", timeout=30_000)
     expect(card.get_by_role("button", name="用示範發票看")).to_have_count(0)
     expect(page.locator('#right select[aria-label="這一欄怎麼取值"]')).to_have_class(re.compile(r"\bguide-target\b"))
     expect(page.locator("#saveButton")).to_have_text("另存成我的範本")  # 觀摩範本唯讀

@@ -6,22 +6,22 @@
       "items": [
         {
           "id": "0.4.0-help-menu",
-          "title": "說明選單",
-          "body": "頂列「說明」集中新手導覽、進階功能與手冊，關閉導覽後也找得到。",
+          "title": "找導覽與進階功能",
+          "body": "忘了功能在哪時，點頂列「說明」：導覽、進階功能與手冊都在這裡。",
           "spotlight": "help-menu"
         },
         {
           "id": "0.4.0-next-flagged",
-          "title": "跳到下一個待檢查",
-          "body": "結果表格右上角，跨頁跨檔依序跳轉。",
+          "title": "直接跳到下一個要看的",
+          "body": "待檢查分散在不同頁或檔案時，按表格右上角「跳到待檢查」。",
           "tab": "run",
           "spotlight": "run-next-flagged",
           "needsDoc": true
         },
         {
           "id": "0.4.0-demo",
-          "title": "用示範發票邊做邊學",
-          "body": "還沒開檔案時，可以跟著示範發票做範本，或練習核對與匯出。",
+          "title": "跟著示範發票學",
+          "body": "第一次用時，畫面中間可以跟著示範發票做範本、練習核對。",
           "tab": "train",
           "spotlight": "welcome-demo"
         }

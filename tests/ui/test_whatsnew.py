@@ -49,18 +49,19 @@ def test_upgrade_shows_dot_card_and_tour(page):
     expect(dot).to_be_visible()
     expect(card).to_be_visible()
     expect(card).to_contain_text("更新了 3 項")
-    expect(card).to_contain_text("說明選單、跳到下一個待檢查…")
+    expect(card).to_contain_text("找導覽與進階功能、直接跳到下一個要看的…")
     card.get_by_role("button", name="看看").click()
     expect(card).to_be_hidden()
     coach = page.locator("#coachCard")
-    expect(coach).to_contain_text("說明選單")
+    expect(coach).to_contain_text("找導覽與進階功能")
+    expect(coach).to_contain_text("什麼時候用：")  # 新功能和進階功能用同一種卡片
     expect(coach).to_contain_text("1 / 3")
     expect(page.locator("#helpBtn")).to_have_class(re.compile(r"\bguide-target\b"))
     coach.get_by_role("button", name="下一項").click()
-    expect(coach).to_contain_text("跳到下一個待檢查")
+    expect(coach).to_contain_text("直接跳到下一個要看的")
     expect(coach.get_by_role("button", name="用示範發票看")).to_be_visible()  # 需要 PDF 才能指給你看
     coach.get_by_role("button", name="下一項").click()
-    expect(coach).to_contain_text("用示範發票邊做邊學")
+    expect(coach).to_contain_text("跟著示範發票學")
     expect(page.locator("#tabTrain")).to_have_attribute("aria-current", "page")
     expect(dot).to_be_visible()
     coach.get_by_role("button", name="完成").click()
@@ -88,10 +89,10 @@ def test_later_keeps_dot_until_history_is_opened(page):
     row.click()
     popover = page.locator("#helpPopover")
     expect(popover.locator(".whatsnew-version")).to_have_count(1)
-    expect(popover).to_contain_text("跳到下一個待檢查")
+    expect(popover).to_contain_text("直接跳到下一個要看的")
     expect(dot).to_be_hidden()
     popover.locator('[data-spotlight="help-menu"]').click()
-    expect(page.locator("#coachCard")).to_contain_text("說明選單")
+    expect(page.locator("#coachCard")).to_contain_text("找導覽與進階功能")
 
 
 def test_guide_running_only_lights_dot(page):
