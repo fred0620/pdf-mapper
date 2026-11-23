@@ -1,15 +1,21 @@
 """本機網頁工具的後端。只綁定 127.0.0.1，檔案不會離開這台電腦。"""
 from __future__ import annotations
 
+import atexit
+import ctypes
 import hashlib
+import hmac
 import io
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
+import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 import uuid
 import webbrowser
@@ -19,10 +25,12 @@ from pathlib import Path
 import cv2
 from flask import Flask, jsonify, redirect, request, send_file, send_from_directory
 from werkzeug.exceptions import HTTPException
+from werkzeug.serving import make_server
 
 from . import __version__, logs, paths
 from . import ocr as ocr_engine
 from . import template as tpl
+from .build import RUNNING_BUILD, compute_build_id, disk_build
 from .clean import write_clean
 from .document import Document
 from .excel import write_excel
@@ -51,6 +59,7 @@ UPLOADS = paths.UPLOADS
 TEMPLATES = paths.TEMPLATES
 OUTPUT = paths.OUTPUT
 LOGS = paths.LOGS
+RUN_DIR = paths.RUN_DIR
 PREVIEW_DPI = 120
 MIN_DPI, MAX_DPI = 30, 220
 MAX_OPEN_DOCS = 8
@@ -86,6 +95,8 @@ _run_templates: dict[str, dict[str, dict]] = {}  # 含影像圖塊，不放進�
 _clients: dict[str, float] = {}
 _clients_lock = threading.Lock()
 _runs_lock = threading.Lock()
+_instance_token: str | None = None
+_instance_lock = threading.Lock()
 
 
 class Missing(Exception):
@@ -277,7 +288,7 @@ def web_file(name):
 @app.get("/api/ping")
 def ping():
     """給第二次啟動判斷「工具是否已經開著」，不能碰到載入中的 OCR。"""
-    return jsonify({"app": "pdfmapper", "root": ROOT_ID})
+    return jsonify({"app": "pdfmapper", "root": ROOT_ID, "version": __version__, "build": RUNNING_BUILD})
 
 
 @app.post("/api/heartbeat")
@@ -299,10 +310,25 @@ def bye():
     return jsonify({"ok": True})
 
 
+@app.post("/api/shutdown")
+def shutdown_api():
+    """給第二次啟動關閉舊版伺服器。必須帶實例檔內的 token，瀏覽器頁面不會有這個標頭。"""
+    token = request.headers.get("X-Instance-Token", "")
+    expected = _instance_token
+    if not expected or not token or not hmac.compare_digest(token, expected):
+        log.warning("拒絕關閉請求：憑證不符")
+        return _error("權限不符", 403)
+    if _busy():
+        log.info("暫緩關閉：解析進行中")
+        return jsonify({"ok": False, "reason": "busy"})
+    threading.Timer(0.1, _shutdown, args=("新版啟動，關閉舊版",)).start()
+    return jsonify({"ok": True})
+
+
 @app.get("/api/status")
 def status():
     return jsonify({"ocr": ocr_engine.available(), "ocr_error": ocr_engine.status(), "reasons": REASONS,
-                    "version": __version__})
+                    "version": __version__, "build": RUNNING_BUILD, "disk_build": disk_build()})
 
 
 @app.post("/api/docs")
@@ -748,9 +774,76 @@ def _busy() -> bool:
         return any(not run["finished"] for run in _runs.values())
 
 
+def _instance_path() -> Path:
+    return RUN_DIR / "instance.json"
+
+
+def _pid_exists(pid: int) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if os.name == "nt":
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return ctypes.GetLastError() == 5  # 行程存在但沒有存取權限
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _read_instance() -> dict | None:
+    try:
+        data = json.loads(_instance_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_instance(port: int) -> str:
+    """寫入本機實例檔，提供第二次啟動關閉舊版時驗證用。不進版控、不進日誌。"""
+    global _instance_token
+    existing = _read_instance()
+    if existing and existing.get("pid") != os.getpid():
+        old_pid = existing.get("pid")
+        old_port = existing.get("port")
+        if isinstance(old_pid, int) and _pid_exists(old_pid) and isinstance(old_port, int) and _is_this_tool(old_port):
+            log.warning("實例檔指向另一份執行中的工具 port=%s，改寫為目前實例", old_port)
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_urlsafe(24)
+    payload = {"port": port, "pid": os.getpid(), "build": RUNNING_BUILD, "version": __version__, "token": token}
+    path = _instance_path()
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    if os.name != "nt":
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    with _instance_lock:
+        _instance_token = token
+    return token
+
+
+def _remove_instance() -> None:
+    global _instance_token
+    with _instance_lock:
+        _instance_token = None
+    data = _read_instance()
+    if data is not None and data.get("pid") == os.getpid():
+        _instance_path().unlink(missing_ok=True)
+
+
+atexit.register(_remove_instance)
+
+
 def _shutdown(reason: str) -> None:
     print(f"\n  {reason}，工具已關閉。\n", flush=True)
     log.info("關閉：%s", reason)
+    _remove_instance()
     _clear_uploads()
     os._exit(0)  # 結束整個行程，連接埠、檔案和記憶體都由系統回收
 
@@ -796,25 +889,137 @@ def _port_is_free(port: int) -> bool:
             return False
 
 
-def _is_this_tool(port: int) -> bool:
+def _local_opener():
     # 不走系統代理：公司電腦常設 HTTP_PROXY，會讓 127.0.0.1 的檢查失敗
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _ping_tool(port: int) -> dict | None:
+    """檢查埠上是不是本工具；是的話回傳 ping 內容，不是回傳 None。"""
     try:
-        with opener.open(f"http://127.0.0.1:{port}/api/ping", timeout=2) as response:
+        with _local_opener().open(f"http://127.0.0.1:{port}/api/ping", timeout=2) as response:
             data = json.loads(response.read())
     except (OSError, ValueError):
-        return False
-    return data.get("app") == "pdfmapper" and data.get("root") == ROOT_ID
+        return None
+    if isinstance(data, dict) and data.get("app") == "pdfmapper" and data.get("root") == ROOT_ID:
+        return data
+    return None
 
 
-def _pick_port(start: int) -> tuple[int, bool]:
-    """回傳 (埠, 工具是否已在這個埠上執行)。"""
+def _is_this_tool(port: int) -> bool:
+    return _ping_tool(port) is not None
+
+
+def _fetch_version(port: int) -> str | None:
+    """0.4.0 以前的 /api/ping 沒有 version 欄位，改向 /api/status 取得版本號。"""
+    try:
+        with _local_opener().open(f"http://127.0.0.1:{port}/api/status", timeout=2) as response:
+            data = json.loads(response.read())
+    except (OSError, ValueError):
+        return None
+    version = data.get("version") if isinstance(data, dict) else None
+    return version if isinstance(version, str) and version else None
+
+
+def _pick_port(start: int) -> tuple[int, dict | None]:
+    """回傳 (埠, 執行中工具的 ping 資料；埠可用時為 None)。"""
     for port in range(start, start + PORT_RANGE):
         if _port_is_free(port):
-            return port, False
-        if _is_this_tool(port):
-            return port, True
+            return port, None
+        info = _ping_tool(port)
+        if info is not None:
+            return port, info
     raise OSError(f"連接埠 {start} 到 {start + PORT_RANGE - 1} 都被其他程式佔用")
+
+
+def _is_interactive() -> bool:
+    return sys.stdin is not None and sys.stdin.isatty()
+
+
+def _request_shutdown(port: int, token: str) -> str:
+    """呼叫舊版伺服器的 /api/shutdown，回傳 ok、busy 或 unavailable。"""
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/shutdown",
+        data=b"",
+        headers={"X-Instance-Token": token},
+        method="POST",
+    )
+    try:
+        with _local_opener().open(req, timeout=3) as response:
+            data = json.loads(response.read())
+    except (urllib.error.HTTPError, OSError, ValueError):
+        return "unavailable"
+    if not isinstance(data, dict):
+        return "unavailable"
+    if data.get("ok") is True:
+        return "ok"
+    if data.get("reason") == "busy":
+        return "busy"
+    return "unavailable"
+
+
+def _wait_port_free(port: int, timeout: float = 10.0, interval: float = 0.5) -> bool:
+    deadline = time.monotonic() + timeout
+    while True:
+        if _port_is_free(port):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
+
+
+MANUAL_CLOSE_NOTICE = "請關閉所有工具分頁，等這個視窗自動結束後再重新啟動；或在工作管理員結束 python"
+
+
+def _handle_running(chosen: int, ping_info: dict, open_browser: bool) -> bool:
+    """處理埠上已有本工具執行的情況。回傳 True 表示已關閉舊版且埠已釋放，可繼續啟動新版。"""
+    url = f"http://127.0.0.1:{chosen}"
+    running_build = ping_info.get("build")
+    if isinstance(running_build, str) and running_build and running_build == compute_build_id():
+        print(f"\n  工具已經開著，直接開啟 {url}\n", flush=True)
+        if open_browser:
+            webbrowser.open(url)
+        return False
+
+    old_version = ping_info.get("version") or _fetch_version(chosen) or "未知"
+    if not open_browser or not _is_interactive():
+        print(f"\n  偵測到舊版的工具還開著（版本 {old_version}），非互動模式不自動關閉，請先關閉舊版再重新啟動。\n",
+              flush=True)
+        raise SystemExit(1)
+
+    print(f"\n  偵測到舊版的工具還開著（版本 {old_version}）。", flush=True)
+    try:
+        answer = input(
+            "  要關閉舊版並啟動新版嗎？未匯出的解析結果會遺失，未儲存的範本會留在草稿。(Y/N) "
+        ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = "n"
+    if answer not in ("y", "yes"):
+        webbrowser.open(url)
+        return False
+
+    instance = _read_instance()
+    token = instance.get("token") if isinstance(instance, dict) and instance.get("port") == chosen else None
+    if not isinstance(token, str) or not token:
+        print(f"\n  {MANUAL_CLOSE_NOTICE}\n", flush=True)
+        webbrowser.open(url)
+        return False
+
+    result = _request_shutdown(chosen, token)
+    if result == "busy":
+        print("\n  舊版正在解析，完成後再重新啟動\n", flush=True)
+        webbrowser.open(url)
+        return False
+    if result != "ok":
+        print(f"\n  {MANUAL_CLOSE_NOTICE}\n", flush=True)
+        webbrowser.open(url)
+        return False
+
+    if not _wait_port_free(chosen):
+        print(f"\n  舊版尚未關閉，{MANUAL_CLOSE_NOTICE}\n", flush=True)
+        webbrowser.open(url)
+        return False
+    return True
 
 
 def serve(port: int = 8765, open_browser: bool = True) -> None:
@@ -823,15 +1028,19 @@ def serve(port: int = 8765, open_browser: bool = True) -> None:
     for notice in notices:
         print(f"  {notice}", flush=True)
     for attempt in range(3):
-        chosen, running = _pick_port(port)
+        chosen, running_info = _pick_port(port)
         url = f"http://127.0.0.1:{chosen}"
-        if running:
-            print(f"\n  工具已經開著，直接開啟 {url}\n", flush=True)
-            if open_browser:
-                webbrowser.open(url)
-            return
+        if running_info is not None:
+            if not _handle_running(chosen, running_info, open_browser):
+                return
         if attempt == 0:
             shutil.rmtree(UPLOADS, ignore_errors=True)  # 清掉上次異常結束留下的暫存
+        try:
+            httpd = make_server("127.0.0.1", chosen, app, threaded=True)
+        except OSError:  # 兩次啟動幾乎同時發生，等一下再判斷
+            time.sleep(1)
+            continue
+        _write_instance(chosen)
         print(f"\n  PDF 解析器 {__version__} 已啟動：{url}\n  使用完畢後關閉瀏覽器頁面，或關閉這個視窗。\n", flush=True)
         log.info("啟動 version=%s port=%d", __version__, chosen)
         if open_browser:
@@ -839,8 +1048,11 @@ def serve(port: int = 8765, open_browser: bool = True) -> None:
             threading.Thread(target=_watch_clients, daemon=True).start()
         threading.Thread(target=ocr_engine.available, daemon=True).start()  # 先載入模型
         try:
-            app.run(host="127.0.0.1", port=chosen, threaded=True)
-            return
-        except (OSError, SystemExit):  # 兩次啟動幾乎同時發生，等一下再判斷
-            time.sleep(1)
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            httpd.server_close()
+            _remove_instance()
+        return
     raise SystemExit("無法啟動工具，請關閉其他視窗後再試一次。")

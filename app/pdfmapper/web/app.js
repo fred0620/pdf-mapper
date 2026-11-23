@@ -77,7 +77,13 @@ async function api(path, options = {}) {
   }
   const response = await fetch(path, init);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "伺服器沒有回應，請確認啟動視窗還開著");
+  if (!response.ok) {
+    if (typeof data.error === "string" && data.error.includes("不認得的")) {
+      sawUnknownError = true;
+      if (serverHasBuild === false) showUpdateBanner(UPDATE_MSG);
+    }
+    throw new Error(data.error || "伺服器沒有回應，請確認啟動視窗還開著");
+  }
   return data;
 }
 let toastTimer;
@@ -2057,8 +2063,36 @@ const addFiles = guard(async (files) => {
 
 /* ---------- 與本機程式的連線 ---------- */
 /* 頁面全部關閉後，本機程式會自動結束，不會留在背景。 */
+const UPDATE_MSG = "程式已更新。請關閉所有工具分頁，再重新開啟 run.bat。";
+const CLOSED_MSG = "工具已關閉，請重新開啟 run.bat";
 const clientId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 let heartbeatFailures = 0;
+let serverHasBuild = null;
+let sawUnknownError = false;
+let updateBannerDismissed = false;
+let serverClosedShown = false;
+
+function showUpdateBanner(message, force = false) {
+  if (!force && updateBannerDismissed) return;
+  const banner = $("updateBanner");
+  const text = $("updateBannerText");
+  if (!banner || !text) return;
+  text.textContent = message;
+  banner.hidden = false;
+}
+
+function checkBuildStatus(status) {
+  if (!status || typeof status !== "object") return;
+  const hasBuild = typeof status.build === "string" && status.build.length > 0;
+  serverHasBuild = hasBuild;
+  if (serverClosedShown) return;
+  if (hasBuild && typeof status.disk_build === "string" && status.disk_build && status.build !== status.disk_build) {
+    showUpdateBanner(UPDATE_MSG);
+  } else if (!hasBuild && sawUnknownError) {
+    showUpdateBanner(UPDATE_MSG);
+  }
+}
+
 async function heartbeat() {
   try {
     const response = await fetch(`/api/heartbeat?client=${encodeURIComponent(clientId)}`, { method: "POST" });
@@ -2067,6 +2101,10 @@ async function heartbeat() {
   } catch (_error) {
     heartbeatFailures += 1;
     if (heartbeatFailures === 2) toast("工具已經關閉。請重新執行 run.bat，再重新整理這個頁面。", true);
+    if (heartbeatFailures === 3) {
+      serverClosedShown = true;
+      showUpdateBanner(CLOSED_MSG, true);
+    }
   }
 }
 const hasUnsavedResults = () => !!state.run?.results.length && !state.run.exported;
@@ -2075,6 +2113,11 @@ function watchConnection() {
   setInterval(heartbeat, 15000);
   window.addEventListener("pagehide", () => navigator.sendBeacon(`/api/bye?client=${encodeURIComponent(clientId)}`));
   window.addEventListener("pageshow", (event) => { if (event.persisted) heartbeat(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      api("/api/status").then(checkBuildStatus).catch(() => {});
+    }
+  });
   // 另開的視窗只是同一份結果的另一個畫面，關掉不會遺失資料
   if (!POPOUT) window.addEventListener("beforeunload", (event) => { if (hasUnsavedResults()) event.preventDefault(); });
 }
@@ -2196,6 +2239,10 @@ function onKey(event) {
 async function main() {
   $("tabTrain").addEventListener("click", () => setView("train"));
   $("tabRun").addEventListener("click", () => setView("run"));
+  $("updateBannerClose").addEventListener("click", () => {
+    updateBannerDismissed = true;
+    $("updateBanner").hidden = true;
+  });
   $("overlay").addEventListener("pointerdown", startDraw);
   $("filePicker").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
   window.addEventListener("keydown", onKey);
@@ -2222,6 +2269,7 @@ async function main() {
     $("version").textContent = status.version ? `v${status.version}` : "";
     $("engine").textContent = status.ocr ? "只在這台電腦處理" : "影像辨識無法使用，只能讀文字層";
     $("engine").classList.toggle("bad", !status.ocr);
+    checkBuildStatus(status);
     await loadTemplates();
     renderAll();
     if (POPOUT) channel.postMessage({ type: "hello", from: POPOUT });
