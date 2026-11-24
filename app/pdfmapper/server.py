@@ -95,6 +95,7 @@ _run_templates: dict[str, dict[str, dict]] = {}  # 含影像圖塊，不放進�
 _clients: dict[str, float] = {}
 _clients_lock = threading.Lock()
 _runs_lock = threading.Lock()
+_closing = False  # 已答應關閉（/api/shutdown 回 ok），之後不再接受新的解析
 _instance_token: str | None = None
 _instance_lock = threading.Lock()
 
@@ -318,7 +319,13 @@ def shutdown_api():
     if not expected or not token or not hmac.compare_digest(token, expected):
         log.warning("拒絕關閉請求：憑證不符")
         return _error("權限不符", 403)
-    if _busy():
+    global _closing
+    # 檢查與標記在同一把鎖裡完成，答應關閉後到真正結束之間不會再開始新的解析
+    with _runs_lock:
+        busy = any(not run["finished"] for run in _runs.values())
+        if not busy:
+            _closing = True
+    if busy:
         log.info("暫緩關閉：解析進行中")
         return jsonify({"ok": False, "reason": "busy"})
     threading.Timer(0.1, _shutdown, args=("新版啟動，關閉舊版",)).start()
@@ -662,6 +669,8 @@ def _forget_old_runs(demo: bool = False) -> None:
 
 @app.post("/api/runs")
 def start_run():
+    if _closing:
+        return _error("工具正在關閉，請重新開啟 run.bat", 503)
     body = _json_body()
     # 示範解析：伺服器端固定用 app 內附的示範範本，不接受頁面傳來的範本內容
     lab_id = body.get("lab")
@@ -693,6 +702,8 @@ def start_run():
     _forget_old_runs(demo)
     run_id = uuid.uuid4().hex
     with _runs_lock:
+        if _closing:
+            return _error("工具正在關閉，請重新開啟 run.bat", 503)
         _runs[run_id] = {"total": len(docs), "done": 0, "current": "", "results": [], "finished": False, "demo": demo}
         _run_templates[run_id] = {t["template_id"]: t for t in templates}
     log.info("開始解析 run=%s files=%d templates=%s demo=%s", run_id, len(docs),

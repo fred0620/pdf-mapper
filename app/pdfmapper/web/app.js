@@ -2098,6 +2098,12 @@ async function heartbeat() {
     const response = await fetch(`/api/heartbeat?client=${encodeURIComponent(clientId)}`, { method: "POST" });
     if (!response.ok) throw new Error();
     heartbeatFailures = 0;
+    if (serverClosedShown) {
+      // 連線恢復（例如電腦睡眠後喚醒），收起「工具已關閉」並重新比對版本
+      serverClosedShown = false;
+      $("updateBanner").hidden = true;
+      api("/api/status").then(checkBuildStatus).catch(() => {});
+    }
   } catch (_error) {
     heartbeatFailures += 1;
     if (heartbeatFailures === 2) toast("工具已經關閉。請重新執行 run.bat，再重新整理這個頁面。", true);
