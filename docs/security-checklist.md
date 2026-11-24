@@ -14,6 +14,7 @@
 [ ] 9. 畫面測試通過（手動：uv run --project app --group ui pytest tests/ui，CI 沒有瀏覽器）
 [ ] 10. 新功能導覽已更新：whatsnew.json 有這一版的條目（自動：check_whatsnew.py，沒寫不能發布）
 [ ] 11. 手冊截圖已更新：發版前執行 manual_shots.py，再重建手冊（手動：uv run --project app --group ui python scripts/manual_shots.py，接著 python scripts/build_manual.py）
+[ ] 12. 使用者看得到的改變都要升版號
 ```
 
 ## 已經內建、修改時要維持的

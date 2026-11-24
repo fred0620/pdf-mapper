@@ -26,6 +26,7 @@ OUTPUT = WORKSPACE / "output"
 CUSTOM = WORKSPACE / "custom"
 LOGS = WORKSPACE / "logs"
 UPLOADS = WORKSPACE / "uploads"
+RUN_DIR = WORKSPACE / "run"
 
 EXAMPLES = APP / "examples"
 SAMPLES = APP / "samples"
