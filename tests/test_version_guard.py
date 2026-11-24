@@ -125,19 +125,37 @@ def test_shutdown_api_auth_origin_busy_and_ok(monkeypatch):
         called.set()
 
     monkeypatch.setattr(server, "_shutdown", fake_shutdown)
-    monkeypatch.setattr(server, "_busy", lambda: True)
+    monkeypatch.setattr(server, "_closing", False)
+    monkeypatch.setattr(server, "_runs", {"r1": {"finished": False}})
     busy_resp = client.post("/api/shutdown", headers={"X-Instance-Token": "secret-token-123"})
     assert busy_resp.status_code == 200
     assert busy_resp.json == {"ok": False, "reason": "busy"}
     assert not called.wait(0.25)
 
+    assert server._closing is False
+
     # 非解析中 -> ok，並在回應後觸發 _shutdown
-    monkeypatch.setattr(server, "_busy", lambda: False)
+    monkeypatch.setattr(server, "_runs", {"r1": {"finished": True}})
     ok_resp = client.post("/api/shutdown", headers={"X-Instance-Token": "secret-token-123"})
     assert ok_resp.status_code == 200
     assert ok_resp.json == {"ok": True}
     assert called.wait(2.0)
     assert reasons == ["新版啟動，關閉舊版"]
+
+
+def test_no_new_run_after_shutdown_accepted(monkeypatch):
+    """/api/shutdown 回 ok 之後到真正結束之前，新的解析會被拒絕，不會被關閉中斷。"""
+    client = server.app.test_client()
+    monkeypatch.setattr(server, "_instance_token", "secret-token-123")
+    monkeypatch.setattr(server, "_closing", False)
+    monkeypatch.setattr(server, "_runs", {})
+    monkeypatch.setattr(server.threading, "Timer", lambda *_args, **_kwargs: type("T", (), {"start": lambda self: None})())
+
+    assert client.post("/api/shutdown", headers={"X-Instance-Token": "secret-token-123"}).json == {"ok": True}
+    resp = client.post("/api/runs", json={"demo": "run", "docs": ["x"]})
+    assert resp.status_code == 503
+    assert "正在關閉" in resp.json["error"]
+    assert server._runs == {}
 
 
 def test_instance_file_write_remove_and_overwrite_stale(tmp_path, monkeypatch):
