@@ -1,8 +1,8 @@
 [project]
 name = "pdf-mapper"
-version = "0.4.1"
+version = "0.4.2"
 description = "標注範本後，批次把 PDF 轉成 Excel 的本機工具"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "flask>=3.0",
     "numpy>=1.24",
