@@ -1100,6 +1100,54 @@ function columnRegexContext(table, column) {
   });
 }
 const redraw = () => { saveDraft(); renderRight(); };
+// 分段選擇（Stageshow ss-seg）。選項少、互斥、想一眼看到全部時用；選項多或文字長時仍用 select。
+// 切換時就地更新，不重畫右欄，滑塊才有動畫、焦點也不會跑掉。
+function segmented(label, options, current, onChange) {
+  const index = () => Math.max(0, options.findIndex(([value]) => value === current));
+  const thumb = h("span", { class: "seg-thumb", "aria-hidden": "true" });
+  const group = h("div", {
+    class: "seg", role: "radiogroup", "aria-label": label,
+    style: `--n:${options.length};--i:${index()}`,
+  }, thumb);
+  const buttons = options.map(([value, text], i) => h("button", {
+    type: "button", class: "seg-option", role: "radio", dataset: { value },
+    "aria-checked": String(value === current), tabindex: value === current ? "0" : "-1",
+    onclick: () => choose(i),
+  }, text));
+  const choose = (i, focus = false) => {
+    const [value] = options[i];
+    if (value === current) { if (focus) buttons[i].focus(); return; }
+    current = value;
+    buttons.forEach((b, j) => { b.setAttribute("aria-checked", String(j === i)); b.tabIndex = j === i ? 0 : -1; });
+    group.style.setProperty("--i", String(i));
+    if (focus) buttons[i].focus();
+    onChange(value);
+  };
+  group.addEventListener("keydown", (e) => {
+    const keys = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 };
+    let next = null;
+    if (e.key in keys) next = (index() + keys[e.key] + options.length) % options.length;
+    if (e.key === "Home") next = 0;
+    if (e.key === "End") next = options.length - 1;
+    if (next === null) return;
+    e.preventDefault();
+    choose(next, true);
+  });
+  group.append(...buttons);
+  return group;
+}
+const OVERFLOW_MODES = [["auto", "自動"], ["allow", "可超出"], ["deny", "不可超出"]];
+const OVERFLOW_NOTES = {
+  auto: "壓線的長內容自動判斷歸屬，沒把握時標記。",
+  allow: "壓到隔壁欄的文字都算這欄，不標記。適合很長的品名。",
+  deny: "分隔線是硬邊界，黏在一起的文字在線上切開。",
+};
+function overflowMode(column) { return column.overflow === "allow" || column.overflow === "deny" ? column.overflow : "auto"; }
+function setOverflow(table, column, mode) {
+  for (const c of table.columns.filter((c) => c.band === column.band)) {
+    if (mode === "auto") delete c.overflow; else c.overflow = mode;
+  }
+}
 const VALUE_MODES = [
   ["whole", "整格內容（預設）"], ["line", "第幾行"], ["start", "開頭文字"],
   ["regex", "正規表達式"], ["space", "依空格分段"], ["gap", "依字距分段"],
@@ -1201,6 +1249,19 @@ function columnDetail(table, column) {
       onchange: (e) => { if (e.target.value === "newline") column.join = "newline"; else delete column.join; saveDraft(); },
     }, [["space", "接成一行"], ["newline", "保留換行"]].map(([value, label]) =>
       h("option", { value, selected: (column.join || "space") === value }, label)))),
+    (() => {
+      const note = h("p", { class: "note overflow-note" },
+        OVERFLOW_NOTES[overflowMode(column)], split ? "同一直欄的輸出欄一起套用。" : null);
+      return h("div", { class: "field-label overflow-field" },
+        h("span", { class: "label-line" }, "內容超出分隔線", helpHint("feat-overflow", "長內容壓到隔壁欄")),
+        segmented("內容超出分隔線", OVERFLOW_MODES, overflowMode(column), (mode) => {
+          snapshot();
+          setOverflow(table, column, mode);
+          note.replaceChildren(OVERFLOW_NOTES[mode], split ? "同一直欄的輸出欄一起套用。" : "");
+          saveDraft();
+        }),
+        note);
+    })(),
     h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: !!column.row_required,
       onchange: (e) => { if (e.target.checked) column.row_required = true; else delete column.row_required; saveDraft(); },
@@ -1222,6 +1283,7 @@ function columnDetail(table, column) {
         class: "linkish", style: "text-align:left", onclick: () => {
           snapshot();
           const added = { id: nextId("c", table.columns), name: `欄${table.columns.length + 1}`, band: column.band };
+          if (column.overflow) added.overflow = column.overflow;
           const mode = valueMode(column) === "whole" ? "line" : valueMode(column);
           if (valueMode(column) === "whole") setValueMode(table, column, "line");
           table.columns.push(added);

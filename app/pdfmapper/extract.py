@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from statistics import median
@@ -41,6 +42,7 @@ REASONS = {
     "split_count_mismatch": "段數和設定不符，已留空，請看原始內容",
     "extract_no_match": "擷取規則比對不到，已留空，請看原始內容",
     "column_collision": "同一行有兩段內容搶同一欄，請確認分欄",
+    "split_at_divider": "文字壓在分隔線上，已在線上切開，請確認",
 }
 
 
@@ -350,6 +352,7 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
     stop_pattern = spec.get("stop_pattern")
     # 用字距分段的直欄，一行本來就會有好幾段，不檢查搶欄
     gap_bands = {_band(c, i) for i, c in enumerate(columns) if c.get("part_by") == "gap"}
+    overflow = _band_overflow(columns)  # 各直欄能不能超出分隔線，沒設定就是自動
     rows: list[list[_Piece]] = []  # 每一列由一到多個片段組成，跨頁時片段來自不同頁
     above_key: list[float] = []    # 各列在項次上方有多高，用來判斷下一頁開頭是否異常
     issues: list[dict] = []
@@ -383,7 +386,7 @@ def extract_table(spec: dict, pages: list[Page], transforms: dict[int, Transform
             keys = _key_lines(glyphs, dividers, key_index, key_pattern)
             if keys:
                 key_at_top = _key_on_first_line(keys, glyphs)
-        layout = _assign_chunks(glyphs, dividers, gap_bands)
+        layout = _assign_chunks(glyphs, dividers, gap_bands, overflow)
         piece = lambda top, bottom, group: _Piece(group, layout, dividers, source, page, transform,
                                                   (box[0], top, box[2], bottom), page_reasons)
         bands = _rows_on_page(glyphs, dividers, key_index, key_pattern, box, bool(key_at_top))
@@ -703,33 +706,136 @@ def _choose_band(chunk: list[Glyph], first: int, last: int, dividers: list[float
     return first + overlaps.index(max(overlaps)), True
 
 
+OVERHANG_WIDTHS = 1.0      # 只超出分隔線不到一個字寬，算壓線，不算跨過去
+SPLIT_WINDOW_WIDTHS = 2.0  # 在分隔線左右兩個字寬內找切點
+NATURAL_GAP_WIDTHS = 0.6   # 和 line_text 判斷空白的門檻一致
+
+
+def _band_overflow(columns: list[dict]) -> dict[int, str]:
+    """每個直欄超出分隔線的規則。同一直欄的設定不一致時取最嚴格的：deny > allow。"""
+    modes: dict[int, str] = {}
+    for i, column in enumerate(columns):
+        mode = column.get("overflow")
+        if mode not in ("allow", "deny"):
+            continue
+        band = _band(column, i)
+        if modes.get(band) != "deny":
+            modes[band] = mode
+    return modes
+
+
+def _hard_dividers(dividers: list[float], overflow: dict[int, str]) -> list[int]:
+    """哪幾條分隔線是硬邊界。第 i 條線隔開第 i-1 和第 i 直欄，最外側的框線不算。"""
+    return [i for i in range(1, len(dividers) - 1)
+            if overflow.get(i - 1) == "deny" or overflow.get(i) == "deny"]
+
+
+def _glyph_kind(char: str) -> str | None:
+    """切段用的字種：英文字母、數字、中日韓文字。標點、符號、空白回傳 None。"""
+    if not char:
+        return None
+    category = unicodedata.category(char)
+    if category == "Nd":
+        return "digit"
+    if category.startswith("L"):
+        return "latin" if "LATIN" in unicodedata.name(char, "") else "cjk"
+    return None
+
+
+def _char_width(chunk: list[Glyph]) -> float:
+    """這段的代表字寬（不含空白），和 _split_chunks 同一種算法。"""
+    widths = sorted(g.width for g in chunk if g.width > 0 and g.text.strip())
+    return widths[len(widths) // 2] if widths else 0.005
+
+
+def _split_point(chunk: list[Glyph], divider: float, width: float) -> tuple[int, bool]:
+    """在分隔線附近找切點。回傳 (切在第幾個字之前, 是否沒有把握)。"""
+    candidates: list[tuple[float, int]] = []
+    for k in range(1, len(chunk)):
+        a, b = chunk[k - 1], chunk[k]
+        position = (a.x1 + b.x0) / 2
+        if abs(position - divider) > width * SPLIT_WINDOW_WIDTHS:
+            continue
+        if not any(g.text.strip() for g in chunk[:k]) or not any(g.text.strip() for g in chunk[k:]):
+            continue
+        spaced = b.x0 - a.x1 > width * NATURAL_GAP_WIDTHS or not a.text.strip() or not b.text.strip()
+        kind_a, kind_b = _glyph_kind(a.text[-1:]), _glyph_kind(b.text[:1])
+        switched = kind_a is not None and kind_b is not None and kind_a != kind_b
+        if spaced or switched:
+            candidates.append((abs(position - divider), k))
+    if candidates:
+        return min(candidates)[1], False
+    return sum(1 for g in chunk if g.cx < divider), True
+
+
+def _cut_at_hard(chunk: list[Glyph], dividers: list[float], hard: list[int]
+                 ) -> list[tuple[list[Glyph], int, int, bool]]:
+    """在硬邊界上切開一段文字。回傳 [(片段, 最左可到的直欄, 最右可到的直欄, 是否沒有把握)]。"""
+    last_band = len(dividers) - 2
+    pieces: list[tuple[list[Glyph], int, int, bool]] = []
+    rest, low, high, unsure = chunk, 0, last_band, False
+    for i in hard:
+        divider = dividers[i]
+        left = [g for g in rest if g.cx < divider]
+        right = [g for g in rest if g.cx >= divider]
+        if not right:
+            high = min(high, i - 1)
+            break
+        if not left:
+            low = max(low, i)
+            continue
+        width = _char_width(rest)
+        if max(g.x1 for g in right) <= divider + width * OVERHANG_WIDTHS:
+            high = min(high, i - 1)
+            break
+        if min(g.x0 for g in left) >= divider - width * OVERHANG_WIDTHS:
+            low = max(low, i)
+            continue
+        k, cut_unsure = _split_point(rest, divider, width)
+        pieces.append((rest[:k], low, i - 1, unsure or cut_unsure))
+        rest, low, unsure = rest[k:], i, cut_unsure
+    pieces.append((rest, low, high, unsure))
+    return pieces
+
+
 COLLISION_USUAL_SHARE = 0.2  # 一欄裡有這個比例以上的行都有多段，就當作這欄本來的格式
 
 
 def _assign_chunks(glyphs: list[Glyph], dividers: list[float],
-                   gap_bands: set[int] = frozenset()) -> dict[int, tuple[int, object]]:
+                   gap_bands: set[int] = frozenset(),
+                   overflow: dict[int, str] | None = None) -> dict[int, tuple[int, object]]:
     """以「一段文字」為單位分欄，長內容跨到隔壁欄時才不會被切成兩半。
 
     回傳 {id(字): (直欄, 標記)}，標記不為空時代表這段需要人確認。
+    overflow 是各直欄超出分隔線的規則（_band_overflow），沒有設定的直欄維持自動判斷。
     """
-    placed: list[tuple[list[Glyph], int, int, int]] = []  # (文字, 開始欄, 結束欄, 行號)
+    overflow = overflow or {}
+    hard = _hard_dividers(dividers, overflow)
+    placed: list[tuple[list[Glyph], int, int, int, object]] = []  # (文字, 開始欄, 結束欄, 行號, 標記)
     whole: dict[int, list[list[Glyph]]] = {}
     for number, line in enumerate(group_lines(glyphs)):
         for chunk in _split_chunks(line):
-            first = _band_of(chunk[0].x0 + chunk[0].width * 0.3, dividers)
-            last = _band_of(chunk[-1].x1 - chunk[-1].width * 0.3, dividers)
-            placed.append((chunk, first, last, number))
-            if first == last:
-                whole.setdefault(first, []).append(chunk)
+            for piece, low, high, unsure in _cut_at_hard(chunk, dividers, hard):
+                first = _band_of(piece[0].x0 + piece[0].width * 0.3, dividers)
+                last = _band_of(piece[-1].x1 - piece[-1].width * 0.3, dividers)
+                first, last = min(max(first, low), high), min(max(last, low), high)
+                preset = "split_at_divider" if unsure else None
+                placed.append((piece, first, last, number, preset))
+                if first == last and not unsure:
+                    whole.setdefault(first, []).append(piece)
     aligned = _detect_alignment(whole)
 
     decided = []
-    for chunk, first, last, number in placed:
+    for chunk, first, last, number, preset in placed:
         if first == last:
-            decided.append((chunk, first, number, None))
+            decided.append((chunk, first, number, preset))
+            continue
+        owners = [band for band in (first, last) if overflow.get(band) == "allow"]
+        if len(owners) == 1:
+            decided.append((chunk, owners[0], number, preset))
             continue
         band, unsure = _choose_band(chunk, first, last, dividers, aligned)
-        decided.append((chunk, band, number, "crosses_column" if unsure else None))
+        decided.append((chunk, band, number, "crosses_column" if unsure else preset))
 
     flags = _collisions(decided, dividers, aligned, gap_bands)
     layout: dict[int, tuple[int, object]] = {}

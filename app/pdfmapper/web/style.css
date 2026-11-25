@@ -355,6 +355,13 @@ details .form { margin-top: 10px; }
 .column-row.open .column-more { color: var(--accent-text); background: var(--accent-soft); box-shadow: none; }
 .column-detail { margin: 6px 0 10px 30px; padding: 10px 0 10px 12px; border-left: 2px solid var(--ink-3); }
 .column-detail .note { margin: -4px 0 0; }
+/* 分段選擇：Stageshow ss-seg，滑塊用 --surface（本工具沒有 --raised） */
+.seg { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; border-radius: var(--radius-md); background: var(--ink-2); }
+.seg-thumb { position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / var(--n)); border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow-thumb); transform: translateX(calc(100% * var(--i, 0))); transition: transform .3s cubic-bezier(0.22, 1, 0.36, 1); }
+.seg-option { position: relative; display: grid; place-items: center; height: var(--row); padding: 0 10px; border: 0; background: none; font: 500 12.5px/1 var(--font); color: var(--text); cursor: pointer; transition: color .2s ease; }
+.seg-option[aria-checked="true"] { color: var(--text-strong); }
+.seg-option:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-sm); }
+@media (prefers-reduced-motion: reduce) { .seg-thumb, .seg-option { transition: none; } }
 .region-card { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .region-card label { display: grid; gap: 6px; margin: 6px 0; font-size: 12.5px; font-weight: 500; color: var(--text-strong); }
 .region-card .linkish, .marker-row .linkish { font-size: 12.5px; }

@@ -1121,6 +1121,19 @@ const FEATURE_SPOTLIGHTS = [
     },
   },
   {
+    id: "feat-overflow", tab: "train", group: "表格", title: "長內容壓到隔壁欄",
+    when: "品名很長壓到隔壁欄，或文字和隔壁的數字黏在一起。",
+    examples: [{ raw: "Distribution8537.10.90.00-5", rule: "品名欄設成不可超出", value: "Distribution｜8537.10.90.00-5" }],
+    list: [
+      ["自動", "預設。壓線的內容依對齊判斷歸屬，沒把握時標記。"],
+      ["可超出", "這欄的長內容常常壓到隔壁，直接算這欄。"],
+      ["不可超出", "分隔線是硬邊界，在線附近的空白或字種改變處切開。"],
+    ],
+    needs: "table", manual: "overflow",
+    setup: () => selectFirstTable("columns", true),
+    target: '#right [role="radiogroup"][aria-label="內容超出分隔線"]',
+  },
+  {
     id: "feat-cross-page", tab: "train", group: "表格", title: "明細接到下一頁",
     when: "明細很長，會接到第 2 頁以後。",
     examples: [{ raw: "第 1 頁 10 列＋第 2 頁 4 列", value: "一張表 14 列" }],

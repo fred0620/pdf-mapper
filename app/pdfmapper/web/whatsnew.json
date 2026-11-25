@@ -1,8 +1,21 @@
 {
   "versions": [
     {
+      "version": "0.4.2",
+      "date": "2026/11/25",
+      "items": [
+        {
+          "id": "0.4.2-overflow",
+          "title": "控制內容能不能超出欄",
+          "body": "文字黏著隔壁欄的數字時，設成不可超出就會在分隔線上切開。",
+          "tab": "train",
+          "spotlight": "feat-overflow"
+        }
+      ]
+    },
+    {
       "version": "0.4.1",
-      "date": "未發布",
+      "date": "2026/11/24",
       "items": []
     },
     {

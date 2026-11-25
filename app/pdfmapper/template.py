@@ -161,6 +161,8 @@ def validate(template: dict) -> list[str]:
         _check_regex(t, ("key_pattern", "stop_pattern"), where, errors)
         for column in columns:
             _check_regex(column, ("extract", "pattern"), f"{where} 的欄「{column.get('name', '?')}」", errors)
+            if "overflow" in column and column["overflow"] not in ("allow", "deny"):
+                errors.append(f"{where} 的欄「{column.get('name', '?')}」超出分隔線的設定只能是 allow 或 deny")
         if not columns:
             errors.append(f"{where} 沒有欄")
         if not t.get("regions"):
